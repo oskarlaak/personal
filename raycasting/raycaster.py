@@ -1,7 +1,6 @@
 # Main TODOs:
-# Wall rendering can be more optimized so it doesn't calculate two interceptions every move
-# Depending on the interception type, some walls could be made darker
 # Player collision
+# Wall height
 
 from math import *
 
@@ -104,19 +103,28 @@ def wall_calc(rayangle):
             ray_x += horizontalInterception_x
             ray_y += horizontalInterception_y
 
+            map_y = int(ray_y) + (A - 1)
+            map_x = int(ray_x)
+            grid_value = TILEMAP[map_y][map_x]
+            color_multiplier = 1
+
         # If hitting vertical gridline
         else:
             ray_x += verticalInterception_x
             ray_y += verticalInterception_y
 
-        grid_value = check_interception(ray_x, ray_y)
+            map_y = int(ray_y)
+            map_x = int(ray_x) + (B - 1)
+            grid_value = TILEMAP[map_y][map_x]
+            color_multiplier = 0.5
+
         if grid_value != 0:  # If anything other than 0; If hitting a wall/something
 
             deltax = ray_x - PLAYER_X
             deltay = ray_y - PLAYER_Y
 
             distance_along_VIEWANGLE = deltax * cos(VIEWANGLE) + deltay * sin(VIEWANGLE)  # Needed to avoid fisheye
-            WALL_DATA.append((distance_along_VIEWANGLE, grid_value))
+            WALL_DATA.append((distance_along_VIEWANGLE, grid_value, color_multiplier))
 
             hit = True
 
@@ -127,8 +135,10 @@ def draw_walls():
     wall_width = D_W / RAYS
 
     for i, wall in enumerate(WALL_DATA):
+        # Naming the values stored in element
         distance_along_VIEWANGLE = wall[0]
         grid_value = wall[1]
+        color_multiplier = wall[2]
 
         wall_height = constant / distance_along_VIEWANGLE
         if wall_height > D_H:
@@ -136,7 +146,10 @@ def draw_walls():
 
         rect_start_pos = (i * wall_width, (D_H - wall_height) / 2)
         rect_size = (wall_width, wall_height)
-        pygame.draw.rect(GAMEDISPLAY, COLOURS[grid_value], (rect_start_pos, rect_size))
+
+        # Takes the value stored in COLOURS and multiplies each rgb value by color_multiplier
+        rect_color = tuple(color_multiplier*x for x in COLOURS[grid_value])
+        pygame.draw.rect(GAMEDISPLAY, rect_color, (rect_start_pos, rect_size))
     WALL_DATA = []
 
 
@@ -150,7 +163,7 @@ def rays():
 
 
 def fixed_angle(angle):
-    # Fuction made for angles to never go over abs(pi)
+    # Function made for angles to never go over abs(pi)
     # For example 3.18 will be turned to -3.10, bc it's 0.04 over pi
     if abs(angle) <= pi:  # If already normal
         return angle
@@ -164,26 +177,6 @@ def fixed_angle(angle):
         angle = pi + over_the_limit
 
     return angle
-
-
-def check_interception(x, y):
-    # Checking both sides of the intercepted gridline and returning the grid_value
-
-    if x == int(x):  # If touching vertical gridline
-        if TILEMAP[int(y)][int(x)] != 0:  # Checking right side of the vertical gridline
-            return TILEMAP[int(y)][int(x)]
-
-        if TILEMAP[int(y)][int(x) - 1] != 0:  # Checking left side of the vertical gridline
-            return TILEMAP[int(y)][int(x) - 1]
-
-    elif y == int(y):  # If touching horizontal gridline
-        if TILEMAP[int(y)][int(x)] != 0:  # Checking lower side of the horizontal gridline
-            return TILEMAP[int(y)][int(x)]
-
-        if TILEMAP[int(y) - 1][int(x)] != 0:  # Checking upper side of the horizontal gridline
-            return TILEMAP[int(y) - 1][int(x)]
-
-    return 0
 
 
 def mouse():
@@ -224,7 +217,7 @@ def keys():
             movement_x += cos(fixed_angle(VIEWANGLE + pi / 2))
             movement_y += sin(fixed_angle(VIEWANGLE + pi / 2))
 
-        # Needed for normalize() funtion
+        # Needed for normalize() function
         movement_vector = np.asarray([[movement_x, movement_y]])
 
         # Normalized vector
