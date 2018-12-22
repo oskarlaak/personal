@@ -1,6 +1,7 @@
 # Main TODOs:
+# Interception type (horizontal/vertical) could be determined faster without manually comparing squared distances
 # Player collision
-# Wall height
+# Wall height??
 
 from math import *
 
@@ -14,14 +15,14 @@ D_W = 1920
 D_H = 1080
 FPS = 30
 FOV = 1.4  # 1.4 radians == about 80 degrees
-RAYS = 240  # Drawing frequency across the screen, D_W / RAYS should always be int
+RAYS = 240  # Drawing frequency across the screen ; Rays casted each frame ; D_W / RAYS should always be int
 VIEWANGLE = 0.1  # Any starting VIEWANGLE parallel with a gridline will run into errors
 SENSITIVITY = 0.003
 
 PLAYER_X = 6.5
 PLAYER_Y = 2.3
 PLAYER_SPEED = 0.14
-HITBOX_HALFSIZE = 0.1  # Player's hitbox halfsize
+HITBOX_HALFSIZE = 0.14  # Player's hitbox halfsize
 
 WALL_DATA = []
 
@@ -149,6 +150,7 @@ def draw_walls():
 
         # Takes the value stored in COLOURS and multiplies each rgb value by color_multiplier
         rect_color = tuple(color_multiplier*x for x in COLOURS[grid_value])
+
         pygame.draw.rect(GAMEDISPLAY, rect_color, (rect_start_pos, rect_size))
     WALL_DATA = []
 
@@ -222,13 +224,92 @@ def keys():
 
         # Normalized vector
         normalized_vector = normalize(movement_vector)[0]  # [0] because vector is inside of list with one element
-        movement_x = normalized_vector[0]
-        movement_y = normalized_vector[1]
+        movement_x = normalized_vector[0] * PLAYER_SPEED
+        movement_y = normalized_vector[1] * PLAYER_SPEED
 
-        PLAYER_X += movement_x * PLAYER_SPEED
-        PLAYER_Y += movement_y * PLAYER_SPEED
+        PLAYER_X += movement_x
+        PLAYER_Y += movement_y
+        player_collision()  # Resets x or y if needed
 
-        # Collision to be made
+
+def player_collision():
+    # One point collision interceptions not done
+
+    # As long as HITBOX_HALFSIZE >= PLAYER_SPEED, collisions should work
+    # When not, player could clip inside a wall, making the program reset it's position incorrectly
+    # For example when hitbox right side would be hitting a wall at 13.01,
+    # it would reset x to 14 - HITBOX_HALFSIZE instead of 13 - HITBOX_HALFSIZE
+
+    global PLAYER_X, PLAYER_Y
+
+    down_right = TILEMAP[int(PLAYER_Y + HITBOX_HALFSIZE)][int(PLAYER_X + HITBOX_HALFSIZE)]
+    down_left = TILEMAP[int(PLAYER_Y + HITBOX_HALFSIZE)][int(PLAYER_X - HITBOX_HALFSIZE)]
+    up_right = TILEMAP[int(PLAYER_Y - HITBOX_HALFSIZE)][int(PLAYER_X + HITBOX_HALFSIZE)]
+    up_left = TILEMAP[int(PLAYER_Y - HITBOX_HALFSIZE)][int(PLAYER_X - HITBOX_HALFSIZE)]
+
+    x_collision = False
+    y_collision = False
+
+    # Requires a bit of thinking to get it around your head, but it's managable
+    # Feel like commenting it will make it even harder to read
+    # Should be about as optimized as you can get with somewhat realistic collision
+    # If there is only one interception point, x and y offsets are needed
+
+    if down_right != 0:
+        if down_left != 0:
+            y_collision = True
+            if up_right != 0 or up_left != 0:
+                x_collision = True
+        elif up_right != 0:
+            x_collision = True
+            if up_left != 0:
+                y_collision = True
+        else:
+            pass
+            #x_offset = PLAYER_X + HITBOX_HALFSIZE - int(PLAYER_X + HITBOX_HALFSIZE)
+            #y_offset = PLAYER_Y + HITBOX_HALFSIZE - int(PLAYER_Y + HITBOX_HALFSIZE)
+            #
+            ## If changing x makes more sense
+            #if x_offset < y_offset:
+            #    x_collision = True
+            ## If changing y makes more sense
+            #else:
+            #    y_collision = True
+
+    elif up_left != 0:
+        if up_right != 0:
+            y_collision = True
+            if down_left != 0:
+                x_collision = True
+        elif down_left != 0:
+            x_collision = True
+
+        else:
+            pass
+
+    elif up_right != 0:
+        pass
+
+    elif down_left != 0:
+        pass
+
+
+    # Applying changes to x and y position
+    if x_collision:
+        # Hitbox left side colliding
+        if PLAYER_X - int(PLAYER_X) < HITBOX_HALFSIZE:
+            PLAYER_X = int(PLAYER_X) + HITBOX_HALFSIZE
+
+        # Hitbox right side colliding
+        else:
+            PLAYER_X = ceil(PLAYER_X) - HITBOX_HALFSIZE
+    if y_collision:
+        # Hitbox upper side colliding
+        if PLAYER_Y - int(PLAYER_Y) < HITBOX_HALFSIZE:
+            PLAYER_Y = int(PLAYER_Y) + HITBOX_HALFSIZE
+        # Hitbox lower side colliding
+        else:
+            PLAYER_Y = ceil(PLAYER_Y) - HITBOX_HALFSIZE
 
 
 def game_loop():
