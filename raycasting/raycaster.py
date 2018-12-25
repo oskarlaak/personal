@@ -1,7 +1,6 @@
 # Main TODOs:
 # Interception type (horizontal/vertical) could be determined faster without manually comparing squared distances
-# Should probably rework player_collision() as it shouldn't ever be this long and complex,
-# unless new one turns out to be noticeably slower
+# Add FPS counter and test old and new player_collision() performance
 # Simple wall texturing if everything else done (for example black lines surrounding the walls/blocks)
 
 # NOTES:
@@ -107,6 +106,7 @@ def raycast(rayangle):
             ray_x += horizontalInterception_x
             ray_y += horizontalInterception_y
 
+            # Map positions to check
             map_y = int(ray_y) + (A - 1)
             map_x = int(ray_x)
             grid_value = TILEMAP[map_y][map_x]
@@ -117,6 +117,7 @@ def raycast(rayangle):
             ray_x += verticalInterception_x
             ray_y += verticalInterception_y
 
+            # Map positions to check
             map_y = int(ray_y)
             map_x = int(ray_x) + (B - 1)
             grid_value = TILEMAP[map_y][map_x]
@@ -230,113 +231,78 @@ def keys():
 
         PLAYER_X += movement_x
         PLAYER_Y += movement_y
-        player_collision(movement_x, movement_y)  # Corrects player position when needed
+        player_collision(movement_x)  # Corrects player position when needed
 
 
-def player_collision(movement_x, movement_y):
+def player_collision(movement_x):
     # As long as HITBOX_HALFSIZE >= PLAYER_SPEED, collisions should work
-    # When not, player could clip inside a wall, making the program reset it's position incorrectly
-    # For example when hitbox right side would be hitting a wall at 13.01,
+    # If not, player could clip inside a wall, making the program reset it's position incorrectly
+    # For example when hitbox right side would be colliding with a wall at 13.01,
     # it would reset x to 14 - HITBOX_HALFSIZE instead of 13 - HITBOX_HALFSIZE
+    #
+    # Function requires movement_x bc in one point interceptions, old_x is needed
 
     global PLAYER_X, PLAYER_Y
 
-    # Already moved hitbox vertexies positions
-    downright_x = PLAYER_X + HITBOX_HALFSIZE
-    downright_y = PLAYER_Y + HITBOX_HALFSIZE
-    downleft_x = PLAYER_X - HITBOX_HALFSIZE
-    downleft_y = PLAYER_Y + HITBOX_HALFSIZE
-    upright_x = PLAYER_X + HITBOX_HALFSIZE
-    upright_y = PLAYER_Y - HITBOX_HALFSIZE
-    upleft_x = PLAYER_X - HITBOX_HALFSIZE
-    upleft_y = PLAYER_Y - HITBOX_HALFSIZE
+    # Checking if hitbox edges collide with a object/wall
+    down_right = TILEMAP[int(PLAYER_Y + HITBOX_HALFSIZE)][int(PLAYER_X + HITBOX_HALFSIZE)] != 0
+    up_right = TILEMAP[int(PLAYER_Y - HITBOX_HALFSIZE)][int(PLAYER_X + HITBOX_HALFSIZE)] != 0
+    down_left = TILEMAP[int(PLAYER_Y + HITBOX_HALFSIZE)][int(PLAYER_X - HITBOX_HALFSIZE)] != 0
+    up_left = TILEMAP[int(PLAYER_Y - HITBOX_HALFSIZE)][int(PLAYER_X - HITBOX_HALFSIZE)] != 0
+    edges = (down_right, up_right, down_left, up_left)  # Maybe there is a better variable name
 
-    # These are true if position is inside a wall
-    down_right = TILEMAP[int(downright_y)][int(downright_x)] != 0
-    down_left = TILEMAP[int(downleft_y)][int(downleft_x)] != 0
-    up_right = TILEMAP[int(upright_y)][int(upright_x)] != 0
-    up_left = TILEMAP[int(upleft_y)][int(upleft_x)] != 0
+    # If touching anything to begin with
+    if edges:
+        x_collision = False
+        y_collision = False
 
-    x_collision = False
-    y_collision = False
-
-    # Black magic
-    # Requires a bit of thinking to get it around your head
-    # Feel like commenting it will make it even harder to read
-
-    if down_right:
-        if down_left:
-            y_collision = True
-            if up_right or up_left:
-                x_collision = True
-        elif up_right:
-            x_collision = True
-            if up_left:
-                y_collision = True
-        elif up_left:
+        # If diagonals touching
+        if down_right and up_left or down_left and up_right:
             x_collision = True
             y_collision = True
+
+        # If top or bottom touching
+        elif down_right and down_left or up_right and up_left:
+            y_collision = True
+
+        # If left or right touching
+        elif down_right and up_right or down_left and up_left:
+            x_collision = True
+
         else:
-            ###
-            old_downright_x = downright_x - movement_x
-            if int(old_downright_x) != int(downright_x) or int(old_downright_x) == old_downright_x:
-                x_collision = True
+            # If it reaches here it has to be one point interception
+            for c, edge in enumerate(edges):  # Step through all the edges
+                if edge:  # If the interception edge found
+                    if c < 2:  # If down_right or up_right
+                        current_x = PLAYER_X + HITBOX_HALFSIZE
+
+                    else:  # If down_left or up_left
+                        current_x = PLAYER_X - HITBOX_HALFSIZE
+
+                    old_x = current_x - movement_x  # This is where movement_x is needed
+
+                    # If x was already reset on previous frame or if it has exited it's grid position
+                    if old_x == int(old_x) or int(old_x) != int(current_x):
+                        x_collision = True
+                    else:
+                        y_collision = True
+
+        if x_collision:
+            # Hitbox left side colliding
+            if PLAYER_X - int(PLAYER_X) < HITBOX_HALFSIZE:
+                PLAYER_X = int(PLAYER_X) + HITBOX_HALFSIZE
+
+            # Hitbox right side colliding
             else:
-                y_collision = True
+                PLAYER_X = ceil(PLAYER_X) - HITBOX_HALFSIZE
 
-    elif up_left:
-        if up_right:
-            y_collision = True
-            if down_left:
-                x_collision = True
-        elif down_left:
-            x_collision = True
-        else:
-            ###
-            old_upleft_x = upleft_x - movement_x
-            if int(old_upleft_x) != int(upleft_x) or int(old_upleft_x) == old_upleft_x:
-                x_collision = True
+        if y_collision:
+            # Hitbox upper side colliding
+            if PLAYER_Y - int(PLAYER_Y) < HITBOX_HALFSIZE:
+                PLAYER_Y = int(PLAYER_Y) + HITBOX_HALFSIZE
+            # Hitbox lower side colliding
             else:
-                y_collision = True
-
-    elif up_right:
-        if down_left:
-            x_collision = True
-            y_collision = True
-        else:
-            ###
-            old_upright_x = upright_x - movement_x
-            if int(old_upright_x) != int(upright_x) or int(old_upright_x) == old_upright_x:
-                x_collision = True
-            else:
-                y_collision = True
-
-    elif down_left:
-        ###
-        old_downleft_x = downleft_x - movement_x
-        if int(old_downleft_x) != int(downleft_x) or int(old_downleft_x) == old_downleft_x:
-            x_collision = True
-        else:
-            y_collision = True
-
-    # Applying changes to x
-    if x_collision:
-        # Hitbox left side colliding
-        if PLAYER_X - int(PLAYER_X) < HITBOX_HALFSIZE:
-            PLAYER_X = int(PLAYER_X) + HITBOX_HALFSIZE
-
-        # Hitbox right side colliding
-        else:
-            PLAYER_X = ceil(PLAYER_X) - HITBOX_HALFSIZE
-
-    # Applying changes to y
-    if y_collision:
-        # Hitbox upper side colliding
-        if PLAYER_Y - int(PLAYER_Y) < HITBOX_HALFSIZE:
-            PLAYER_Y = int(PLAYER_Y) + HITBOX_HALFSIZE
-        # Hitbox lower side colliding
-        else:
-            PLAYER_Y = ceil(PLAYER_Y) - HITBOX_HALFSIZE
+                PLAYER_Y = ceil(PLAYER_Y) - HITBOX_HALFSIZE
 
 
 def game_loop():
