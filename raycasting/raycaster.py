@@ -1,9 +1,10 @@
 # Main TODOs:
 # Interception type (horizontal/vertical) could be determined faster without manually comparing squared distances
-# Make FPS counter show other variables aswell such as player position and viewangle
+# Rayangle correction if its parallel with any of the gridlines
 # Simple wall texturing if everything else done (for example black lines surrounding the walls/blocks)
 
 # NOTES:
+# Laggy in open areas
 # Movement keys are handled in movement() and other keys in events()
 # Collisions are still not 100% working
 
@@ -19,21 +20,28 @@ D_W = 1920
 D_H = 1080
 FOV = 1.4  # 1.4 radians == about 80 degrees
 RAYS = 240  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS should always be int
-VIEWANGLE = 0.11  # Any starting VIEWANGLE parallel with a gridline will run into errors
+VIEWANGLE = 0.0001  # Any starting VIEWANGLE parallel with a gridline will run into errors
 SENSITIVITY = 0.003
 
-PLAYER_X = 10
-PLAYER_Y = 17
-PLAYER_SPEED = 0.15  # Must be <= HITBOX_HALFSIZE
+PLAYER_X = 29.5
+PLAYER_Y = 57.5
+PLAYER_SPEED = 0.1  # Must be <= HITBOX_HALFSIZE
 HITBOX_HALFSIZE = 0.2  # Player's hitbox halfsize
 
 WALL_DATA = []
 
+# Naming colours
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+
+
 # Assigning colours to tilemap indexes
-COLOURS = {
-    1: (12 ,123, 32),
-    2: (123,23 , 19),
-    3: (234,3  ,255)
+TILEMAP_COLOURS = {
+    1: RED,
+    2: GREEN,
+    3: BLUE
 }
 
 # Pygame stuff
@@ -48,7 +56,7 @@ pygame.event.set_grab(True)
 pygame.font.init()
 myfont = pygame.font.SysFont('franklingothicmedium', 20)
 
-FPScounter = False
+info_layer = False
 
 # Getting tilemap from text file
 with open('tilemap.txt', 'r') as f:
@@ -62,7 +70,7 @@ with open('tilemap.txt', 'r') as f:
 
 
 def raycast(rayangle):
-    # Consider manual rayangle correction if it's parallel with any of the gridlines
+    # Rayangle correction here
 
     ray_x = PLAYER_X
     ray_y = PLAYER_Y
@@ -160,7 +168,7 @@ def draw_walls():
         rect_size = (wall_width, wall_height)
 
         # Takes the value stored in COLOURS and multiplies each rgb value by color_multiplier
-        rect_color = tuple(color_multiplier*x for x in COLOURS[grid_value])
+        rect_color = tuple(color_multiplier*x for x in TILEMAP_COLOURS[grid_value])
 
         pygame.draw.rect(GAMEDISPLAY, rect_color, (rect_start_pos, rect_size))
     WALL_DATA = []
@@ -310,21 +318,35 @@ def player_collision(movement_x):
 
 def events():
     global running
-    global FPScounter
+    global info_layer
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
             if event.key == K_F1:
-                FPScounter = not FPScounter  # Toggles the counter
+                info_layer = not info_layer  # Toggles the counter
             if event.key == K_ESCAPE:
                 running = False
 
 
 def top_layer_sprites():
-    if FPScounter == True:
+    if info_layer:
+        decimals = 3
         FPStext = 'FPS: {}'.format(int(GAMECLOCK.get_fps()))
-        FPSimage = myfont.render(FPStext, True, (255, 255, 255))
+        FPSimage = myfont.render(FPStext, True, WHITE)
+
+        PLAYER_Xtext = 'X: {}'.format(round(PLAYER_X, decimals))
+        PLAYER_Ximage = myfont.render(PLAYER_Xtext, True, WHITE)
+
+        PLAYER_Ytext = 'Y: {}'.format(round(PLAYER_Y, decimals))
+        PLAYER_Yimage = myfont.render(PLAYER_Ytext, True, WHITE)
+
+        VIEWANGLEtext = 'RAD: {}'.format(round(VIEWANGLE, decimals))
+        VIEWANGLEimage = myfont.render(VIEWANGLEtext, True, WHITE)
+
         GAMEDISPLAY.blit(FPSimage, (4, 0))
+        GAMEDISPLAY.blit(PLAYER_Ximage, (4, 20))
+        GAMEDISPLAY.blit(PLAYER_Yimage, (4, 40))
+        GAMEDISPLAY.blit(VIEWANGLEimage, (4, 60))
 
 
 def game_loop():
