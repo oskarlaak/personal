@@ -1,9 +1,11 @@
 # Main TODOs:
 # Interception type (horizontal/vertical) could be determined faster without manually comparing squared distances
-# Add FPS counter and test old and new player_collision() performance
+# Make FPS counter show other variables aswell such as player position and viewangle
 # Simple wall texturing if everything else done (for example black lines surrounding the walls/blocks)
 
 # NOTES:
+# Movement keys are handled in movement() and other keys in events()
+# Collisions are still not 100% working
 
 from math import *
 
@@ -15,14 +17,13 @@ from pygame.locals import *
 
 D_W = 1920
 D_H = 1080
-FPS = 30
 FOV = 1.4  # 1.4 radians == about 80 degrees
 RAYS = 240  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS should always be int
-VIEWANGLE = 0.1  # Any starting VIEWANGLE parallel with a gridline will run into errors
+VIEWANGLE = 0.11  # Any starting VIEWANGLE parallel with a gridline will run into errors
 SENSITIVITY = 0.003
 
-PLAYER_X = 6.5
-PLAYER_Y = 2.3
+PLAYER_X = 10
+PLAYER_Y = 17
 PLAYER_SPEED = 0.15  # Must be <= HITBOX_HALFSIZE
 HITBOX_HALFSIZE = 0.2  # Player's hitbox halfsize
 
@@ -42,6 +43,12 @@ GAMEDISPLAY = pygame.display.set_mode((D_W, D_H))
 GAMECLOCK = pygame.time.Clock()
 pygame.mouse.set_visible(False)
 pygame.event.set_grab(True)
+
+# Font stuff
+pygame.font.init()
+myfont = pygame.font.SysFont('franklingothicmedium', 20)
+
+FPScounter = False
 
 # Getting tilemap from text file
 with open('tilemap.txt', 'r') as f:
@@ -159,8 +166,8 @@ def draw_walls():
     WALL_DATA = []
 
 
-# Sending rays to calculate
 def rays():
+    # Sending rays to calculate
     starting_angle = VIEWANGLE - FOV / 2
     rayangles_difference = FOV / RAYS
     for i in range(RAYS):
@@ -193,15 +200,11 @@ def mouse():
     VIEWANGLE = fixed_angle(VIEWANGLE)
 
 
-def keys():
-    global running
+def movement():
     global PLAYER_X, PLAYER_Y
 
     keys = pygame.key.get_pressed()
-    if keys[K_ESCAPE]:
-        running = False
 
-    # Movement
     if keys[K_w] or keys[K_a] or keys[K_s] or keys[K_d]:
         movement_x = 0
         movement_y = 0
@@ -249,10 +252,10 @@ def player_collision(movement_x):
     up_right = TILEMAP[int(PLAYER_Y - HITBOX_HALFSIZE)][int(PLAYER_X + HITBOX_HALFSIZE)] != 0
     down_left = TILEMAP[int(PLAYER_Y + HITBOX_HALFSIZE)][int(PLAYER_X - HITBOX_HALFSIZE)] != 0
     up_left = TILEMAP[int(PLAYER_Y - HITBOX_HALFSIZE)][int(PLAYER_X - HITBOX_HALFSIZE)] != 0
-    edges = (down_right, up_right, down_left, up_left)  # Maybe there is a better variable name
+    edges = (down_right, up_right, down_left, up_left)
 
     # If touching anything to begin with
-    if edges:
+    if any(edges):
         x_collision = False
         y_collision = False
 
@@ -305,23 +308,42 @@ def player_collision(movement_x):
                 PLAYER_Y = ceil(PLAYER_Y) - HITBOX_HALFSIZE
 
 
-def game_loop():
+def events():
+    global running
+    global FPScounter
 
-    global running  # Making running global so it's accessible in keys()
+    for event in pygame.event.get():
+        if event.type == pygame.KEYDOWN:
+            if event.key == K_F1:
+                FPScounter = not FPScounter  # Toggles the counter
+            if event.key == K_ESCAPE:
+                running = False
+
+
+def top_layer_sprites():
+    if FPScounter == True:
+        FPStext = 'FPS: {}'.format(int(GAMECLOCK.get_fps()))
+        FPSimage = myfont.render(FPStext, True, (255, 255, 255))
+        GAMEDISPLAY.blit(FPSimage, (4, 0))
+
+
+def game_loop():
+    global running  # Making running global so it's accessible in keys() and events()
     running = True
     while running:
         GAMEDISPLAY.fill((0, 0, 0))
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
+
+        events()
+
         mouse()
-        keys()
+        movement()
 
         rays()
         draw_walls()
+        top_layer_sprites()
 
         pygame.display.flip()
-        GAMECLOCK.tick(FPS)
+        GAMECLOCK.tick(60)
 
     pygame.quit()
 
