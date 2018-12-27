@@ -1,12 +1,20 @@
 # Main TODOs:
-# Interception type (horizontal/vertical) could be determined faster without manually comparing squared distances
-# Rayangle correction if its parallel with any of the gridlines
+# Either make raycast() correct rayangle if it's parallel with any of the gridlines
+# or make it so that parallel rayangles are not a problem - preferably this one
+#
+# Finish tilemap bottom right side which is not completely done
+#
+# Make a very simple collision system (if new position in a wall simply dont move)
+# to see if the current one is taking down framerate
+#
 # Simple wall texturing if everything else done (for example black lines surrounding the walls/blocks)
 
 # NOTES:
-# Laggy in open areas
+# Somewhat laggy in big open areas
 # Movement keys are handled in movement() and other keys in events()
-# Collisions are still not 100% working
+# Collisions are still not 100% working - needs testing
+# Angle values are all in radians
+# raycast() performance could be improved but it's good enough
 
 from math import *
 
@@ -20,11 +28,11 @@ D_W = 1920
 D_H = 1080
 FOV = 1.4  # 1.4 radians == about 80 degrees
 RAYS = 240  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS should always be int
-VIEWANGLE = 0.0001  # Any starting VIEWANGLE parallel with a gridline will run into errors
+VIEWANGLE = 0.7001  # Any starting VIEWANGLE parallel with a gridline will run into errors
 SENSITIVITY = 0.003
 
-PLAYER_X = 29.5
-PLAYER_Y = 57.5
+PLAYER_X = 30.5
+PLAYER_Y = 58.5
 PLAYER_SPEED = 0.1  # Must be <= HITBOX_HALFSIZE
 HITBOX_HALFSIZE = 0.2  # Player's hitbox halfsize
 
@@ -35,7 +43,6 @@ WHITE = (255, 255, 255)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
-
 
 # Assigning colours to tilemap indexes
 TILEMAP_COLOURS = {
@@ -94,59 +101,58 @@ def raycast(rayangle):
     else:
         B = 0
 
-    hit = False
-    while not hit:
+    while True:
+        # "if (x/y)_offset == (A/B)" only resets offset depending on the rayangle
+        # This will help to determine interception type correctly
+        # and it also prevents rays getting stuck on some angles
 
         x_offset = ray_x - int(ray_x)
-        y_offset = ray_y - int(ray_y)
-
-        # If (x or y)_offset == (A or B) only resets offset depending on the angle
-        # Otherwise ray will get stuck on some angles
-        if y_offset == A:
-            y_offset = 1
-        horizontalInterception_x = (A - y_offset) / tan(rayangle)
-        horizontalInterception_y = A - y_offset
-
         if x_offset == B:
             x_offset = 1
-        verticalInterception_y = (B - x_offset) * tan(rayangle)
-        verticalInterception_x = B - x_offset
 
-        # Getting the distances squared values because sqrt() is slow
-        horizontalInterception_dist_squared = horizontalInterception_x ** 2 + horizontalInterception_y ** 2
-        verticalInterception_dist_squared = verticalInterception_x ** 2 + verticalInterception_y ** 2
+        y_offset = ray_y - int(ray_y)
+        if y_offset == A:
+            y_offset = 1
 
-        # If hitting horizontal gridline
-        if horizontalInterception_dist_squared < verticalInterception_dist_squared:
-            ray_x += horizontalInterception_x
-            ray_y += horizontalInterception_y
+        # Very simple system
+        # Every loop it blindly calculates vertical gridline Interception_x and checks it's distance
+        # to determine the interception type and to calculate other varibles depending on that interception type
+        # Originally it remembered previous interception type to calculate the new one
+        # but doing it this way turns out to be slightly faster
 
-            # Map positions to check
+        Interception_x = (A - y_offset) / tan(rayangle)
+        if int(ray_x - x_offset) == int(ray_x + Interception_x):
+            # Hitting horizontal gridline
+            Interception_y = A - y_offset
+
+            ray_x += Interception_x
+            ray_y += Interception_y
             map_y = int(ray_y) + (A - 1)
             map_x = int(ray_x)
-            grid_value = TILEMAP[map_y][map_x]
-            color_multiplier = 1
+            side = 0
 
-        # If hitting vertical gridline
         else:
-            ray_x += verticalInterception_x
-            ray_y += verticalInterception_y
+            # Hitting vertical gridline
+            Interception_y = (B - x_offset) * tan(rayangle)
+            Interception_x = B - x_offset
 
-            # Map positions to check
+            ray_x += Interception_x
+            ray_y += Interception_y
             map_y = int(ray_y)
             map_x = int(ray_x) + (B - 1)
-            grid_value = TILEMAP[map_y][map_x]
-            color_multiplier = 0.5
+            side = 1
 
-        if grid_value != 0:  # If anything other than 0; If hitting a wall/something
+        grid_value = TILEMAP[map_y][map_x]
 
+        if grid_value != 0:  # If anything other than 0 ; If hitting a wall/something
             deltax = ray_x - PLAYER_X
             deltay = ray_y - PLAYER_Y
 
             distance_along_VIEWANGLE = deltax * cos(VIEWANGLE) + deltay * sin(VIEWANGLE)  # Needed to avoid fisheye
+            color_multiplier = 1 - side / 2
             WALL_DATA.append((distance_along_VIEWANGLE, grid_value, color_multiplier))
 
-            hit = True
+            break
 
 
 def draw_walls():
