@@ -1,20 +1,17 @@
 # Main TODOs:
-# Either make raycast() correct rayangle if it's parallel with any of the gridlines
-# or make it so that parallel rayangles are not a problem - preferably this one
-#
 # Finish tilemap bottom right side which is not completely done
 #
-# Make a very simple collision system (if new position in a wall simply dont move)
-# to see if the current one is taking down framerate
+# Simple wall texturing (for example black lines on the bottom of the wall)
 #
-# Simple wall texturing if everything else done (for example black lines surrounding the walls/blocks)
+# Perhaps PLAYER could be a class to clean code
+#
+# Toggleable shades and maybe add draw settings (color_multiplier)
 
 # NOTES:
 # Somewhat laggy in big open areas
 # Movement keys are handled in movement() and other keys in events()
 # Collisions are still not 100% working - needs testing
-# Angle values are all in radians
-# raycast() performance could be improved but it's good enough
+# All angles are in radians
 
 from math import *
 
@@ -28,12 +25,12 @@ D_W = 1920
 D_H = 1080
 FOV = 1.4  # 1.4 radians == about 80 degrees
 RAYS = 240  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS should always be int
-VIEWANGLE = 0.7001  # Any starting VIEWANGLE parallel with a gridline will run into errors
-SENSITIVITY = 0.003
+VIEWANGLE = 0
+SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved
 
 PLAYER_X = 30.5
 PLAYER_Y = 58.5
-PLAYER_SPEED = 0.1  # Must be <= HITBOX_HALFSIZE
+PLAYER_SPEED = 0.1  # Must be <= HITBOX_HALFSIZE - not a problem with high tickrates
 HITBOX_HALFSIZE = 0.2  # Player's hitbox halfsize
 
 WALL_DATA = []
@@ -77,29 +74,27 @@ with open('tilemap.txt', 'r') as f:
 
 
 def raycast(rayangle):
-    # Rayangle correction here
+    #   Variables depending
+    #     on the rayangle
+    #            |
+    #      A = 0 | A = 1
+    # -pi  B = 0 | B = 0  -
+    #     -------|------- 0 rad
+    #  pi  A = 0 | A = 1  +
+    #      B = 1 | B = 1
+    #            |
+
+    if abs(rayangle) > pi / 2:
+        A = 0
+    else:
+        A = 1
+    if rayangle < 0:
+        B = 0
+    else:
+        B = 1
 
     ray_x = PLAYER_X
     ray_y = PLAYER_Y
-
-    # Variables depending
-    #   on the rayangle
-    #          |
-    #    A = 0 | A = 0
-    #    B = 0 | B = 1
-    #   -------|-------
-    #    A = 1 | A = 1
-    #    B = 0 | B = 1
-    #          |
-
-    if rayangle > 0:
-        A = 1
-    else:
-        A = 0
-    if abs(rayangle) < pi / 2:
-        B = 1
-    else:
-        B = 0
 
     while True:
         # "if (x/y)_offset == (A/B)" only resets offset depending on the rayangle
@@ -107,39 +102,42 @@ def raycast(rayangle):
         # and it also prevents rays getting stuck on some angles
 
         x_offset = ray_x - int(ray_x)
-        if x_offset == B:
+        if x_offset == A:
             x_offset = 1
 
         y_offset = ray_y - int(ray_y)
-        if y_offset == A:
+        if y_offset == B:
             y_offset = 1
 
         # Very simple system
-        # Every loop it blindly calculates vertical gridline Interception_x and checks it's distance
+        # Every loop it blindly calculates vertical* gridline Interception_y and checks it's distance
         # to determine the interception type and to calculate other varibles depending on that interception type
         # Originally it remembered previous interception type to calculate the new one
         # but doing it this way turns out to be slightly faster
+        #
+        # *It calculates vertical gridline interception by default bc in those calculations
+        # there are no divisions which could bring up ZeroDivisionError
 
-        Interception_x = (A - y_offset) / tan(rayangle)
-        if int(ray_x - x_offset) == int(ray_x + Interception_x):
-            # Hitting horizontal gridline
-            Interception_y = A - y_offset
-
-            ray_x += Interception_x
-            ray_y += Interception_y
-            map_y = int(ray_y) + (A - 1)
-            map_x = int(ray_x)
-            side = 0
-
-        else:
+        Interception_y = (A - x_offset) * tan(rayangle)
+        if int(ray_y - y_offset) == int(ray_y + Interception_y):
             # Hitting vertical gridline
-            Interception_y = (B - x_offset) * tan(rayangle)
-            Interception_x = B - x_offset
+            Interception_x = A - x_offset
 
             ray_x += Interception_x
             ray_y += Interception_y
             map_y = int(ray_y)
-            map_x = int(ray_x) + (B - 1)
+            map_x = int(ray_x) + (A - 1)
+            side = 0
+
+        else:
+            # Hitting horizontal gridline
+            Interception_x = (B - y_offset) / tan(rayangle)
+            Interception_y = B - y_offset
+
+            ray_x += Interception_x
+            ray_y += Interception_y
+            map_y = int(ray_y) + (B - 1)
+            map_x = int(ray_x)
             side = 1
 
         grid_value = TILEMAP[map_y][map_x]
@@ -148,32 +146,36 @@ def raycast(rayangle):
             deltax = ray_x - PLAYER_X
             deltay = ray_y - PLAYER_Y
 
-            distance_along_VIEWANGLE = deltax * cos(VIEWANGLE) + deltay * sin(VIEWANGLE)  # Needed to avoid fisheye
-            color_multiplier = 1 - side / 2
-            WALL_DATA.append((distance_along_VIEWANGLE, grid_value, color_multiplier))
+            # Perpendicular distance needed to avoid fisheye
+            perpendicular_distance = deltax * cos(VIEWANGLE) + deltay * sin(VIEWANGLE)
+
+            WALL_DATA.append((perpendicular_distance, grid_value, side))
 
             break
 
 
 def draw_walls():
     global WALL_DATA
+
     constant = 0.8 * D_H
     wall_width = D_W / RAYS
 
     for i, wall in enumerate(WALL_DATA):
         # Naming the values stored in element
-        distance_along_VIEWANGLE = wall[0]
+        p = wall[0]
         grid_value = wall[1]
-        color_multiplier = wall[2]
+        side = wall[2]
 
-        wall_height = constant / distance_along_VIEWANGLE
+        color_multiplier = 1 - side / 2
+
+        wall_height = constant / p
         if wall_height > D_H:
             wall_height = D_H
 
         rect_start_pos = (i * wall_width, (D_H - wall_height) / 2)
         rect_size = (wall_width, wall_height)
 
-        # Takes the value stored in COLOURS and multiplies each rgb value by color_multiplier
+        # Takes the value stored in TILEMAP_COLOURS and multiplies each rgb value by color_multiplier
         rect_color = tuple(color_multiplier*x for x in TILEMAP_COLOURS[grid_value])
 
         pygame.draw.rect(GAMEDISPLAY, rect_color, (rect_start_pos, rect_size))
@@ -194,12 +196,10 @@ def fixed_angle(angle):
     # For example 3.18 will be turned to -3.10, bc it's 0.04 over pi
 
     if angle > pi:  # 3.14+
-        over_the_limit = angle - pi
-        angle = -pi + over_the_limit
+        angle -= 2 * pi
 
     elif angle < -pi:  # 3.14-
-        over_the_limit = angle + pi
-        angle = pi + over_the_limit
+        angle += 2 * pi
 
     return angle
 
@@ -374,6 +374,5 @@ def game_loop():
         GAMECLOCK.tick(60)
 
     pygame.quit()
-
 
 game_loop()
