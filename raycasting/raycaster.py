@@ -4,8 +4,6 @@
 # Simple wall texturing (for example black lines on the bottom of the wall)
 #
 # Perhaps PLAYER could be a class to clean code
-#
-# Toggleable shades and maybe add draw settings (color_multiplier)
 
 # NOTES:
 # Somewhat laggy in big open areas
@@ -60,7 +58,9 @@ pygame.event.set_grab(True)
 pygame.font.init()
 myfont = pygame.font.SysFont('franklingothicmedium', 20)
 
+# Game settings
 info_layer = False
+shades = True
 
 # Getting tilemap from text file
 with open('tilemap.txt', 'r') as f:
@@ -73,85 +73,93 @@ with open('tilemap.txt', 'r') as f:
         TILEMAP.append(line)
 
 
-def raycast(rayangle):
-    #   Variables depending
-    #     on the rayangle
-    #            |
-    #      A = 0 | A = 1
-    # -pi  B = 0 | B = 0  -
-    #     -------|------- 0 rad
-    #  pi  A = 0 | A = 1  +
-    #      B = 1 | B = 1
-    #            |
+def raycast():
+    # Sending rays to calculate (and draw?) walls
 
-    if abs(rayangle) > pi / 2:
-        A = 0
-    else:
-        A = 1
-    if rayangle < 0:
-        B = 0
-    else:
-        B = 1
+    starting_angle = VIEWANGLE - FOV / 2
+    radians_step = FOV / RAYS  # The amount of radians one rayangle is different from another
+    for ray in range(RAYS):
 
-    ray_x = PLAYER_X
-    ray_y = PLAYER_Y
+        rayangle = fixed_angle(starting_angle + ray * radians_step)
 
-    while True:
-        # "if (x/y)_offset == (A/B)" only resets offset depending on the rayangle
-        # This will help to determine interception type correctly
-        # and it also prevents rays getting stuck on some angles
+        #   Variables depending
+        #     on the rayangle
+        #            |
+        #      A = 0 | A = 1
+        # -pi  B = 0 | B = 0  -
+        #     -------|------- 0 rad
+        #  pi  A = 0 | A = 1  +
+        #      B = 1 | B = 1
+        #            |
 
-        x_offset = ray_x - int(ray_x)
-        if x_offset == A:
-            x_offset = 1
-
-        y_offset = ray_y - int(ray_y)
-        if y_offset == B:
-            y_offset = 1
-
-        # Very simple system
-        # Every loop it blindly calculates vertical* gridline Interception_y and checks it's distance
-        # to determine the interception type and to calculate other varibles depending on that interception type
-        # Originally it remembered previous interception type to calculate the new one
-        # but doing it this way turns out to be slightly faster
-        #
-        # *It calculates vertical gridline interception by default bc in those calculations
-        # there are no divisions which could bring up ZeroDivisionError
-
-        Interception_y = (A - x_offset) * tan(rayangle)
-        if int(ray_y - y_offset) == int(ray_y + Interception_y):
-            # Hitting vertical gridline
-            Interception_x = A - x_offset
-
-            ray_x += Interception_x
-            ray_y += Interception_y
-            map_y = int(ray_y)
-            map_x = int(ray_x) + (A - 1)
-            side = 0
-
+        if abs(rayangle) > pi / 2:
+            A = 0
         else:
-            # Hitting horizontal gridline
-            Interception_x = (B - y_offset) / tan(rayangle)
-            Interception_y = B - y_offset
+            A = 1
+        if rayangle < 0:
+            B = 0
+        else:
+            B = 1
 
-            ray_x += Interception_x
-            ray_y += Interception_y
-            map_y = int(ray_y) + (B - 1)
-            map_x = int(ray_x)
-            side = 1
+        ray_x = PLAYER_X
+        ray_y = PLAYER_Y
 
-        grid_value = TILEMAP[map_y][map_x]
+        while True:
+            # "if (x/y)_offset == (A/B)" only resets offset depending on the rayangle
+            # This will help to determine interception type correctly
+            # and it also prevents rays getting stuck on some angles
 
-        if grid_value != 0:  # If anything other than 0 ; If hitting a wall/something
-            deltax = ray_x - PLAYER_X
-            deltay = ray_y - PLAYER_Y
+            x_offset = ray_x - int(ray_x)
+            if x_offset == A:
+                x_offset = 1
 
-            # Perpendicular distance needed to avoid fisheye
-            perpendicular_distance = deltax * cos(VIEWANGLE) + deltay * sin(VIEWANGLE)
+            y_offset = ray_y - int(ray_y)
+            if y_offset == B:
+                y_offset = 1
 
-            WALL_DATA.append((perpendicular_distance, grid_value, side))
+            # Very simple system
+            # Every loop it blindly calculates vertical* gridline Interception_y and checks it's distance
+            # to determine the interception type and to calculate other varibles depending on that interception type
+            # Originally it remembered previous interception type to calculate the new one
+            # but doing it this way turns out to be slightly faster
+            #
+            # *It calculates vertical gridline interception by default bc in those calculations
+            # there are no divisions which could bring up ZeroDivisionError
 
-            break
+            Interception_y = (A - x_offset) * tan(rayangle)
+            if int(ray_y - y_offset) == int(ray_y + Interception_y):
+                # Hitting vertical gridline
+                Interception_x = A - x_offset
+
+                ray_x += Interception_x
+                ray_y += Interception_y
+                map_y = int(ray_y)
+                map_x = int(ray_x) + (A - 1)
+                side = 1
+
+            else:
+                # Hitting horizontal gridline
+                Interception_x = (B - y_offset) / tan(rayangle)
+                Interception_y = B - y_offset
+
+                ray_x += Interception_x
+                ray_y += Interception_y
+                map_y = int(ray_y) + (B - 1)
+                map_x = int(ray_x)
+                side = 0
+
+            grid_value = TILEMAP[map_y][map_x]
+
+            if grid_value != 0:  # If anything other than 0 ; If hitting a wall/something
+                deltax = ray_x - PLAYER_X
+                deltay = ray_y - PLAYER_Y
+
+                # Perpendicular distance needed to avoid fisheye
+                perpendicular_distance = deltax * cos(VIEWANGLE) + deltay * sin(VIEWANGLE)
+
+                WALL_DATA.append((perpendicular_distance, grid_value, side))
+
+                break
 
 
 def draw_walls():
@@ -166,29 +174,22 @@ def draw_walls():
         grid_value = wall[1]
         side = wall[2]
 
-        color_multiplier = 1 - side / 2
-
         wall_height = constant / p
         if wall_height > D_H:
             wall_height = D_H
 
+        rect_color = TILEMAP_COLOURS[grid_value]
+        if shades:
+            # Multiplies color rgb elements by color_multiplier
+            color_multiplier = 1 - side / 2
+            rect_color = tuple(color_multiplier * x for x in rect_color)
+
         rect_start_pos = (i * wall_width, (D_H - wall_height) / 2)
         rect_size = (wall_width, wall_height)
 
-        # Takes the value stored in TILEMAP_COLOURS and multiplies each rgb value by color_multiplier
-        rect_color = tuple(color_multiplier*x for x in TILEMAP_COLOURS[grid_value])
-
         pygame.draw.rect(GAMEDISPLAY, rect_color, (rect_start_pos, rect_size))
+
     WALL_DATA = []
-
-
-def rays():
-    # Sending rays to calculate
-    starting_angle = VIEWANGLE - FOV / 2
-    rayangles_difference = FOV / RAYS
-    for i in range(RAYS):
-        rayangle = fixed_angle(starting_angle + i * rayangles_difference)
-        raycast(rayangle)
 
 
 def fixed_angle(angle):
@@ -325,11 +326,14 @@ def player_collision(movement_x):
 def events():
     global running
     global info_layer
+    global shades
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
             if event.key == K_F1:
                 info_layer = not info_layer  # Toggles the counter
+            if event.key == K_F2:
+                shades = not shades
             if event.key == K_ESCAPE:
                 running = False
 
@@ -366,7 +370,7 @@ def game_loop():
         mouse()
         movement()
 
-        rays()
+        raycast()
         draw_walls()
         top_layer_sprites()
 
