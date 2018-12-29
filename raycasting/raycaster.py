@@ -1,9 +1,8 @@
 # Main TODOs:
-# Finish tilemap bottom right side which is not completely done
-#
+# Doors
 # Simple wall texturing (for example black lines on the bottom of the wall)
-#
-# Perhaps PLAYER could be a class to clean code
+# Perhaps PLAYER could be a Class to clean code
+# Perhaps fixed_angle() is not needed everywhere
 
 # NOTES:
 # Somewhat laggy in big open areas
@@ -35,6 +34,7 @@ WALL_DATA = []
 
 # Naming colours
 WHITE = (255, 255, 255)
+BLACK = (100, 100, 100)
 RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
@@ -74,12 +74,12 @@ with open('tilemap.txt', 'r') as f:
 
 
 def raycast():
-    # Sending rays to calculate (and draw?) walls
+    # Sending rays to later draw walls
 
     starting_angle = VIEWANGLE - FOV / 2
     radians_step = FOV / RAYS  # The amount of radians one rayangle is different from another
-    for ray in range(RAYS):
 
+    for ray in range(RAYS):
         rayangle = fixed_angle(starting_angle + ray * radians_step)
 
         #   Variables depending
@@ -157,7 +157,9 @@ def raycast():
                 # Perpendicular distance needed to avoid fisheye
                 perpendicular_distance = deltax * cos(VIEWANGLE) + deltay * sin(VIEWANGLE)
 
-                WALL_DATA.append((perpendicular_distance, grid_value, side))
+                color = TILEMAP_COLOURS[grid_value]
+
+                WALL_DATA.append((perpendicular_distance, color, side))
 
                 break
 
@@ -171,14 +173,13 @@ def draw_walls():
     for i, wall in enumerate(WALL_DATA):
         # Naming the values stored in element
         p = wall[0]
-        grid_value = wall[1]
+        rect_color = wall[1]
         side = wall[2]
 
         wall_height = constant / p
         if wall_height > D_H:
             wall_height = D_H
 
-        rect_color = TILEMAP_COLOURS[grid_value]
         if shades:
             # Multiplies color rgb elements by color_multiplier
             color_multiplier = 1 - side / 2
