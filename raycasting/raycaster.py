@@ -1,13 +1,15 @@
 # Main TODOs:
 # Doors
-# Simple wall texturing (for example black lines on the bottom of the wall)
 # Perhaps PLAYER could be a Class to clean code
+# Perhaps wall should be class
 # Perhaps fixed_angle() is not needed everywhere
+# Fix collisions
+# Add shades to textures
 
 # NOTES:
 # Somewhat laggy in big open areas
 # Movement keys are handled in movement() and other keys in events()
-# Collisions are still not 100% working - needs testing
+# Still possible to glitch through walls
 # All angles are in radians
 
 from math import *
@@ -20,6 +22,15 @@ from pygame.locals import *
 
 D_W = 1920
 D_H = 1080
+
+# Pygame stuff
+pygame.init()
+pygame.display.set_caption('Raycaster')
+GAMEDISPLAY = pygame.display.set_mode((D_W, D_H))
+GAMECLOCK = pygame.time.Clock()
+pygame.mouse.set_visible(False)
+pygame.event.set_grab(True)
+
 FOV = 1.4  # 1.4 radians == about 80 degrees
 RAYS = 240  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS should always be int
 VIEWANGLE = 0
@@ -39,20 +50,15 @@ RED = (255, 0, 0)
 GREEN = (0, 255, 0)
 BLUE = (0, 0, 255)
 
+TEXTURE_SIZE = 16
+brick_wall = pygame.image.load('textures/brick_wall_16x16.png').convert_alpha()
+
 # Assigning colours to tilemap indexes
-TILEMAP_COLOURS = {
-    1: RED,
+TILEMAP_TEXTURES = {
+    1: brick_wall,
     2: GREEN,
     3: BLUE
 }
-
-# Pygame stuff
-pygame.init()
-pygame.display.set_caption('Raycaster')
-GAMEDISPLAY = pygame.display.set_mode((D_W, D_H))
-GAMECLOCK = pygame.time.Clock()
-pygame.mouse.set_visible(False)
-pygame.event.set_grab(True)
 
 # Font stuff
 pygame.font.init()
@@ -157,9 +163,14 @@ def raycast():
                 # Perpendicular distance needed to avoid fisheye
                 perpendicular_distance = deltax * cos(VIEWANGLE) + deltay * sin(VIEWANGLE)
 
-                color = TILEMAP_COLOURS[grid_value]
+                wall_texture = TILEMAP_TEXTURES[grid_value]
+                if side == 0:
+                    offset = ray_x - int(ray_x)
+                else:
+                    offset = ray_y - int(ray_y)
+                column = int(TEXTURE_SIZE * offset)
 
-                WALL_DATA.append((perpendicular_distance, color, side))
+                WALL_DATA.append((perpendicular_distance, wall_texture, column))
 
                 break
 
@@ -168,27 +179,29 @@ def draw_walls():
     global WALL_DATA
 
     constant = 0.8 * D_H
-    wall_width = D_W / RAYS
+    wall_width = int(D_W / RAYS)
 
     for i, wall in enumerate(WALL_DATA):
         # Naming the values stored in element
         p = wall[0]
-        rect_color = wall[1]
-        side = wall[2]
+        texture = wall[1]
+        column = wall[2]
 
-        wall_height = constant / p
-        if wall_height > D_H:
-            wall_height = D_H
+        wall_height = int(constant / p)
+        #if wall_height > D_H:
+        #    wall_height = D_H
 
-        if shades:
-            # Multiplies color rgb elements by color_multiplier
-            color_multiplier = 1 - side / 2
-            rect_color = tuple(color_multiplier * x for x in rect_color)
+        # Getting the part of texture that's gonna be scaled and blitted
+        image = texture.subsurface(column, 0, 1, TEXTURE_SIZE)
 
-        rect_start_pos = (i * wall_width, (D_H - wall_height) / 2)
-        rect_size = (wall_width, wall_height)
+        # Scaling the image
+        image = pygame.transform.scale(image, (wall_width, wall_height))
+        # Consider subsurfacing again if image height bigger than display height
 
-        pygame.draw.rect(GAMEDISPLAY, rect_color, (rect_start_pos, rect_size))
+        image_pos = (i * wall_width, (D_H - wall_height) / 2)
+
+        #pygame.draw.rect(GAMEDISPLAY, rect_color, (rect_start_pos, rect_size))
+        GAMEDISPLAY.blit(image, image_pos)
 
     WALL_DATA = []
 
