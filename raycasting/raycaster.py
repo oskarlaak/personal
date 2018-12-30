@@ -1,15 +1,13 @@
 # Main TODOs:
 # Doors
-# Perhaps PLAYER could be a Class to clean code
-# Perhaps wall should be class
+# Add Player class
+# Add Wall class
 # Perhaps fixed_angle() is not needed everywhere
 # Fix collisions
-# Add shades to textures
+# Add shades to textures - add two textures to every tilemap index
 
 # NOTES:
-# Somewhat laggy in big open areas
 # Movement keys are handled in movement() and other keys in events()
-# Still possible to glitch through walls
 # All angles are in radians
 
 from math import *
@@ -43,21 +41,14 @@ HITBOX_HALFSIZE = 0.2  # Player's hitbox halfsize
 
 WALL_DATA = []
 
-# Naming colours
-WHITE = (255, 255, 255)
-BLACK = (100, 100, 100)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-BLUE = (0, 0, 255)
-
 TEXTURE_SIZE = 16
 brick_wall = pygame.image.load('textures/brick_wall_16x16.png').convert_alpha()
 
-# Assigning colours to tilemap indexes
+# Assigning textures to tilemap indexes
 TILEMAP_TEXTURES = {
     1: brick_wall,
-    2: GREEN,
-    3: BLUE
+    2: None,
+    3: None
 }
 
 # Font stuff
@@ -87,6 +78,7 @@ def raycast():
 
     for ray in range(RAYS):
         rayangle = fixed_angle(starting_angle + ray * radians_step)
+        tan_rayangle = tan(rayangle)
 
         #   Variables depending
         #     on the rayangle
@@ -132,7 +124,7 @@ def raycast():
             # *It calculates vertical gridline interception by default bc in those calculations
             # there are no divisions which could bring up ZeroDivisionError
 
-            Interception_y = (A - x_offset) * tan(rayangle)
+            Interception_y = (A - x_offset) * tan_rayangle
             if int(ray_y - y_offset) == int(ray_y + Interception_y):
                 # Hitting vertical gridline
                 Interception_x = A - x_offset
@@ -145,7 +137,7 @@ def raycast():
 
             else:
                 # Hitting horizontal gridline
-                Interception_x = (B - y_offset) / tan(rayangle)
+                Interception_x = (B - y_offset) / tan_rayangle
                 Interception_y = B - y_offset
 
                 ray_x += Interception_x
@@ -168,6 +160,7 @@ def raycast():
                     offset = ray_x - int(ray_x)
                 else:
                     offset = ray_y - int(ray_y)
+                # Column that the draw_walls() is going to take from the texture
                 column = int(TEXTURE_SIZE * offset)
 
                 WALL_DATA.append((perpendicular_distance, wall_texture, column))
@@ -186,28 +179,45 @@ def draw_walls():
         p = wall[0]
         texture = wall[1]
         column = wall[2]
-
         wall_height = int(constant / p)
-        #if wall_height > D_H:
-        #    wall_height = D_H
 
-        # Getting the part of texture that's gonna be scaled and blitted
+        # Getting the part of texture that's going to be scaled and blitted
         image = texture.subsurface(column, 0, 1, TEXTURE_SIZE)
 
-        # Scaling the image
-        image = pygame.transform.scale(image, (wall_width, wall_height))
-        # Consider subsurfacing again if image height bigger than display height
+        # For optimization, walls that are bigger than D_H are going to be cropped
+        # Without it, framerates drop drastically when staring into a wall
+        if wall_height > D_H:
+            # Complicated system that will crop the image and then adjust wall_height accordingly
+            # Cropping before scaling bc it removes the need to scale to enormous sizes
 
+            # Percentage of image that's going to be seen
+            percentage = D_H / wall_height
+
+            # What would be the perfect cropping size
+            perfect_size = TEXTURE_SIZE * percentage
+
+            # Actual (cropping) size needs to be the closest even number rounding up perfect_size
+            # For example 10.23 will be turned to 12 and 11.78 will also be turned to 12
+            actual_size = ceil(perfect_size)
+            if actual_size % 2 != 0:  # If odd
+                actual_size += 1  # Make it even
+
+            image = image.subsurface(0, (TEXTURE_SIZE - actual_size) / 2, 1, actual_size)
+
+            # Adjusting wall_height so it later blits it in the right position
+            multiplier = actual_size / perfect_size
+            wall_height = int(D_H * multiplier)
+
+        image = pygame.transform.scale(image, (wall_width, wall_height))
         image_pos = (i * wall_width, (D_H - wall_height) / 2)
 
-        #pygame.draw.rect(GAMEDISPLAY, rect_color, (rect_start_pos, rect_size))
         GAMEDISPLAY.blit(image, image_pos)
 
     WALL_DATA = []
 
 
 def fixed_angle(angle):
-    # Function made for angles to never go over abs(pi)
+    # Function made for angles to never go over +-pi
     # For example 3.18 will be turned to -3.10, bc it's 0.04 over pi
 
     if angle > pi:  # 3.14+
@@ -352,20 +362,29 @@ def events():
                 running = False
 
 
-def top_layer_sprites():
+def bottom_layer():
+    # Ceiling
+    pygame.draw.rect(GAMEDISPLAY, (50, 50, 50), ((0, 0), (D_W, D_H / 2)))
+    # Floor
+    pygame.draw.rect(GAMEDISPLAY, (100, 100, 100), ((0, D_H / 2), (D_W, D_H / 2)))
+
+
+def top_layer():
     if info_layer:
+        text_color = (255, 255, 255)
         decimals = 3
+
         FPStext = 'FPS: {}'.format(int(GAMECLOCK.get_fps()))
-        FPSimage = myfont.render(FPStext, True, WHITE)
+        FPSimage = myfont.render(FPStext, True, text_color)
 
         PLAYER_Xtext = 'X: {}'.format(round(PLAYER_X, decimals))
-        PLAYER_Ximage = myfont.render(PLAYER_Xtext, True, WHITE)
+        PLAYER_Ximage = myfont.render(PLAYER_Xtext, True, text_color)
 
         PLAYER_Ytext = 'Y: {}'.format(round(PLAYER_Y, decimals))
-        PLAYER_Yimage = myfont.render(PLAYER_Ytext, True, WHITE)
+        PLAYER_Yimage = myfont.render(PLAYER_Ytext, True, text_color)
 
         VIEWANGLEtext = 'RAD: {}'.format(round(VIEWANGLE, decimals))
-        VIEWANGLEimage = myfont.render(VIEWANGLEtext, True, WHITE)
+        VIEWANGLEimage = myfont.render(VIEWANGLEtext, True, text_color)
 
         GAMEDISPLAY.blit(FPSimage, (4, 0))
         GAMEDISPLAY.blit(PLAYER_Ximage, (4, 20))
@@ -377,7 +396,7 @@ def game_loop():
     global running  # Making running global so it's accessible in keys() and events()
     running = True
     while running:
-        GAMEDISPLAY.fill((0, 0, 0))
+        bottom_layer()
 
         events()
 
@@ -386,7 +405,7 @@ def game_loop():
 
         raycast()
         draw_walls()
-        top_layer_sprites()
+        top_layer()
 
         pygame.display.flip()
         GAMECLOCK.tick(60)
