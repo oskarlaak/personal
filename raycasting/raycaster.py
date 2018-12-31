@@ -1,9 +1,7 @@
 # Main TODOs:
 # Doors
-# Add Player class
-# Add Wall class
-# Perhaps fixed_angle() is not needed everywhere
-# Fix collisions
+# Clean code
+# Enemies?
 # Try moving the camera behind the player like it was in Wolfenstein 3D
 
 # NOTES:
@@ -29,15 +27,9 @@ GAMECLOCK = pygame.time.Clock()
 pygame.mouse.set_visible(False)
 pygame.event.set_grab(True)
 
-FOV = 1.4  #pi / 2
+FOV = pi / 2
 RAYS = int(D_W / 6)  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS must always be int
-VIEWANGLE = 0
 SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved
-
-PLAYER_X = 30.5
-PLAYER_Y = 58.5
-PLAYER_SPEED = 0.1  # Must be <= HITBOX_HALFSIZE - not a problem with high tickrates
-HITBOX_HALFSIZE = 0.2  # Player's hitbox halfsize
 
 WALL_DATA = []
 
@@ -61,7 +53,6 @@ myfont = pygame.font.SysFont('franklingothicmedium', 20)
 
 # Game settings
 info_layer = False
-shades = True
 fullscreen = False
 
 # Getting tilemap from text file
@@ -75,10 +66,93 @@ with open('tilemap.txt', 'r') as f:
         TILEMAP.append(line)
 
 
+class Player:
+    speed = 0.1  # Must be <= halfHitbox
+
+    def __init__(self, x, y, angle):
+        self.x = x
+        self.y = y
+        self.viewangle = angle
+
+    def rotate(self, radians):
+        self.viewangle = fixed_angle(self.viewangle + radians)
+
+    def move(self, x, y):
+        self.x += x
+        self.y += y
+
+        # Hitbox sides
+        halfHitbox = 0.2
+        right = self.x + halfHitbox
+        left = self.x - halfHitbox
+        down = self.y + halfHitbox
+        up = self.y - halfHitbox
+
+        down_right = TILEMAP[int(down)][int(right)] != 0
+        down_left = TILEMAP[int(down)][int(left)] != 0
+        up_right = TILEMAP[int(up)][int(right)] != 0
+        up_left = TILEMAP[int(up)][int(left)] != 0
+
+        # If hitting something, find the collision type
+        if down_right or up_right or down_left or up_left:
+            x_collision = False
+            y_collision = False
+            # If diagonals touching
+            if down_right and up_left or down_left and up_right:
+                x_collision = True
+                y_collision = True
+            # If top or bottom touching
+            elif down_right and down_left or up_right and up_left:
+                y_collision = True
+            # If left or right touching
+            elif down_right and up_right or down_left and up_left:
+                x_collision = True
+            # If one corner touching
+            else:
+                if down_right:
+                    edge_x = right
+                    edge_y = down
+                elif down_left:
+                    edge_x = left
+                    edge_y = down
+                elif up_right:
+                    edge_x = right
+                    edge_y = up
+                else:
+                    edge_x = left
+                    edge_y = up
+
+                x_offset = edge_x - int(edge_x)
+                y_offset = edge_y - int(edge_y)
+
+                # Distance to closest round(x/y)
+                deltax = abs(round(x_offset) - x_offset)
+                deltay = abs(round(y_offset) - y_offset)
+                if deltax < deltay:
+                    x_collision = True
+                else:
+                    y_collision = True
+
+            if x_collision:
+                if self.x - int(self.x) < halfHitbox:
+                    self.x = int(self.x) + halfHitbox
+                else:
+                    self.x = ceil(self.x) - halfHitbox
+
+            if y_collision:
+                if self.y - int(self.y) < halfHitbox:
+                    self.y = int(self.y) + halfHitbox
+                else:
+                    self.y = ceil(self.y) - halfHitbox
+
+
+PLAYER = Player(29.5, 57.5, 0)
+
+
 def raycast():
     # Sending rays to later draw walls
 
-    starting_angle = VIEWANGLE - FOV / 2
+    starting_angle = PLAYER.viewangle - FOV / 2
     radians_step = FOV / RAYS  # The amount of radians one rayangle is different from another
 
     for ray in range(RAYS):
@@ -104,8 +178,8 @@ def raycast():
         else:
             B = 1
 
-        ray_x = PLAYER_X
-        ray_y = PLAYER_Y
+        ray_x = PLAYER.x
+        ray_y = PLAYER.y
 
         while True:
             # "if (x/y)_offset == (A/B)" only resets offset depending on the rayangle
@@ -129,24 +203,24 @@ def raycast():
             # *It calculates vertical gridline interception by default bc in those calculations
             # there are no divisions which could bring up ZeroDivisionError
 
-            Interception_y = (A - x_offset) * tan_rayangle
-            if int(ray_y - y_offset) == int(ray_y + Interception_y):
+            interception_y = (A - x_offset) * tan_rayangle
+            if int(ray_y - y_offset) == int(ray_y + interception_y):
                 # Hitting vertical gridline
-                Interception_x = A - x_offset
+                interception_x = A - x_offset
 
-                ray_x += Interception_x
-                ray_y += Interception_y
+                ray_x += interception_x
+                ray_y += interception_y
                 map_y = int(ray_y)
                 map_x = int(ray_x) + (A - 1)
                 side = 1
 
             else:
                 # Hitting horizontal gridline
-                Interception_x = (B - y_offset) / tan_rayangle
-                Interception_y = B - y_offset
+                interception_x = (B - y_offset) / tan_rayangle
+                interception_y = B - y_offset
 
-                ray_x += Interception_x
-                ray_y += Interception_y
+                ray_x += interception_x
+                ray_y += interception_y
                 map_y = int(ray_y) + (B - 1)
                 map_x = int(ray_x)
                 side = 0
@@ -154,11 +228,11 @@ def raycast():
             grid_value = TILEMAP[map_y][map_x]
 
             if grid_value != 0:  # If anything other than 0 ; If hitting a wall/something
-                deltax = ray_x - PLAYER_X
-                deltay = ray_y - PLAYER_Y
+                deltax = ray_x - PLAYER.x
+                deltay = ray_y - PLAYER.y
 
                 # Perpendicular distance needed to avoid fisheye
-                perpendicular_distance = deltax * cos(VIEWANGLE) + deltay * sin(VIEWANGLE)
+                perpendicular_distance = deltax * cos(PLAYER.viewangle) + deltay * sin(PLAYER.viewangle)
 
                 wall_texture = TILEMAP_TEXTURES[grid_value][side]
                 if side == 0:
@@ -235,127 +309,46 @@ def fixed_angle(angle):
 
 
 def mouse():
-    global VIEWANGLE
-
-    mouse_x_change = pygame.mouse.get_rel()[0]
-    VIEWANGLE += mouse_x_change * SENSITIVITY
-
-    # Reseting VIEWANGLE if it gets too big
-    VIEWANGLE = fixed_angle(VIEWANGLE)
+    radians = pygame.mouse.get_rel()[0] * SENSITIVITY
+    PLAYER.rotate(radians)
 
 
 def movement():
-    global PLAYER_X, PLAYER_Y
-
     keys = pygame.key.get_pressed()
 
     if keys[K_w] or keys[K_a] or keys[K_s] or keys[K_d]:
         movement_x = 0
         movement_y = 0
         if keys[K_w]:
-            movement_x += cos(VIEWANGLE)
-            movement_y += sin(VIEWANGLE)
+            movement_x += cos(PLAYER.viewangle)
+            movement_y += sin(PLAYER.viewangle)
 
         if keys[K_a]:
-            movement_x += cos(fixed_angle(VIEWANGLE - pi / 2))
-            movement_y += sin(fixed_angle(VIEWANGLE - pi / 2))
+            movement_x += cos(PLAYER.viewangle - pi / 2)
+            movement_y += sin(PLAYER.viewangle - pi / 2)
 
         if keys[K_s]:
-            movement_x += cos(fixed_angle(VIEWANGLE - pi))
-            movement_y += sin(fixed_angle(VIEWANGLE - pi))
+            movement_x += cos(PLAYER.viewangle - pi)
+            movement_y += sin(PLAYER.viewangle - pi)
 
         if keys[K_d]:
-            movement_x += cos(fixed_angle(VIEWANGLE + pi / 2))
-            movement_y += sin(fixed_angle(VIEWANGLE + pi / 2))
+            movement_x += cos(PLAYER.viewangle + pi / 2)
+            movement_y += sin(PLAYER.viewangle + pi / 2)
 
         # Needed for normalize() function
         movement_vector = np.asarray([[movement_x, movement_y]])
 
         # Normalized vector
         normalized_vector = normalize(movement_vector)[0]  # [0] because vector is inside of list with one element
-        movement_x = normalized_vector[0] * PLAYER_SPEED
-        movement_y = normalized_vector[1] * PLAYER_SPEED
+        movement_x = normalized_vector[0] * PLAYER.speed
+        movement_y = normalized_vector[1] * PLAYER.speed
 
-        PLAYER_X += movement_x
-        PLAYER_Y += movement_y
-        player_collision(movement_x)  # Corrects player position when needed
-
-
-def player_collision(movement_x):
-    # As long as HITBOX_HALFSIZE >= PLAYER_SPEED, collisions should work
-    # If not, player could clip inside a wall, making the program reset it's position incorrectly
-    # For example when hitbox right side would be colliding with a wall at 13.01,
-    # it would reset x to 14 - HITBOX_HALFSIZE instead of 13 - HITBOX_HALFSIZE
-    #
-    # Function requires movement_x bc in one point interceptions, old_x is needed
-
-    global PLAYER_X, PLAYER_Y
-
-    # Checking if hitbox edges collide with a object/wall
-    down_right = TILEMAP[int(PLAYER_Y + HITBOX_HALFSIZE)][int(PLAYER_X + HITBOX_HALFSIZE)] != 0
-    up_right = TILEMAP[int(PLAYER_Y - HITBOX_HALFSIZE)][int(PLAYER_X + HITBOX_HALFSIZE)] != 0
-    down_left = TILEMAP[int(PLAYER_Y + HITBOX_HALFSIZE)][int(PLAYER_X - HITBOX_HALFSIZE)] != 0
-    up_left = TILEMAP[int(PLAYER_Y - HITBOX_HALFSIZE)][int(PLAYER_X - HITBOX_HALFSIZE)] != 0
-    edges = (down_right, up_right, down_left, up_left)
-
-    # If touching anything to begin with
-    if any(edges):
-        x_collision = False
-        y_collision = False
-
-        # If diagonals touching
-        if down_right and up_left or down_left and up_right:
-            x_collision = True
-            y_collision = True
-
-        # If top or bottom touching
-        elif down_right and down_left or up_right and up_left:
-            y_collision = True
-
-        # If left or right touching
-        elif down_right and up_right or down_left and up_left:
-            x_collision = True
-
-        else:
-            # If it reaches here it has to be one point interception
-            for c, edge in enumerate(edges):  # Step through all the edges
-                if edge:  # If the interception edge found
-                    if c < 2:  # If down_right or up_right
-                        current_x = PLAYER_X + HITBOX_HALFSIZE
-
-                    else:  # If down_left or up_left
-                        current_x = PLAYER_X - HITBOX_HALFSIZE
-
-                    old_x = current_x - movement_x  # This is where movement_x is needed
-
-                    # If x was already reset on previous frame or if it has exited it's grid position
-                    if old_x == int(old_x) or int(old_x) != int(current_x):
-                        x_collision = True
-                    else:
-                        y_collision = True
-
-        if x_collision:
-            # Hitbox left side colliding
-            if PLAYER_X - int(PLAYER_X) < HITBOX_HALFSIZE:
-                PLAYER_X = int(PLAYER_X) + HITBOX_HALFSIZE
-
-            # Hitbox right side colliding
-            else:
-                PLAYER_X = ceil(PLAYER_X) - HITBOX_HALFSIZE
-
-        if y_collision:
-            # Hitbox upper side colliding
-            if PLAYER_Y - int(PLAYER_Y) < HITBOX_HALFSIZE:
-                PLAYER_Y = int(PLAYER_Y) + HITBOX_HALFSIZE
-            # Hitbox lower side colliding
-            else:
-                PLAYER_Y = ceil(PLAYER_Y) - HITBOX_HALFSIZE
+        PLAYER.move(movement_x, movement_y)
 
 
 def events():
     global running
     global info_layer
-    global shades
     global fullscreen
 
     for event in pygame.event.get():
@@ -365,9 +358,7 @@ def events():
 
             if event.key == K_F1:
                 info_layer = not info_layer
-            if event.key == K_F2:
-                shades = not shades
-            if event.key == K_F3:
+            if event.key == K_F11:
                 fullscreen = not fullscreen
                 if fullscreen:
                     pygame.display.set_mode((D_W, D_H), pygame.FULLSCREEN)
@@ -390,13 +381,13 @@ def top_layer():
         FPStext = 'FPS: {}'.format(int(GAMECLOCK.get_fps()))
         FPSimage = myfont.render(FPStext, True, text_color)
 
-        PLAYER_Xtext = 'X: {}'.format(round(PLAYER_X, decimals))
+        PLAYER_Xtext = 'X: {}'.format(round(PLAYER.x, decimals))
         PLAYER_Ximage = myfont.render(PLAYER_Xtext, True, text_color)
 
-        PLAYER_Ytext = 'Y: {}'.format(round(PLAYER_Y, decimals))
+        PLAYER_Ytext = 'Y: {}'.format(round(PLAYER.x, decimals))
         PLAYER_Yimage = myfont.render(PLAYER_Ytext, True, text_color)
 
-        VIEWANGLEtext = 'RAD: {}'.format(round(VIEWANGLE, decimals))
+        VIEWANGLEtext = 'RAD: {}'.format(round(PLAYER.viewangle, decimals))
         VIEWANGLEimage = myfont.render(VIEWANGLEtext, True, text_color)
 
         GAMEDISPLAY.blit(FPSimage, (4, 0))
