@@ -4,7 +4,7 @@
 # Add Wall class
 # Perhaps fixed_angle() is not needed everywhere
 # Fix collisions
-# Add shades to textures - add two textures to every tilemap index
+# Try moving the camera behind the player like it was in Wolfenstein 3D
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -18,8 +18,8 @@ from sklearn.preprocessing import normalize
 import pygame
 from pygame.locals import *
 
-D_W = 1920
-D_H = 1080
+D_W = 1280
+D_H = 720
 
 # Pygame stuff
 pygame.init()
@@ -29,8 +29,8 @@ GAMECLOCK = pygame.time.Clock()
 pygame.mouse.set_visible(False)
 pygame.event.set_grab(True)
 
-FOV = 1.4  # 1.4 radians == about 80 degrees
-RAYS = 240  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS should always be int
+FOV = 1.4  #pi / 2
+RAYS = int(D_W / 6)  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS must always be int
 VIEWANGLE = 0
 SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved
 
@@ -41,13 +41,17 @@ HITBOX_HALFSIZE = 0.2  # Player's hitbox halfsize
 
 WALL_DATA = []
 
-TEXTURE_SIZE = 16
-brick_wall = pygame.image.load('textures/brick_wall_16x16.png').convert_alpha()
+TEXTURE_SIZE = 64
+stone_wall_01 = pygame.image.load('textures/stone_wall_01_light.png').convert_alpha()
+stone_wall_01_dark = pygame.image.load('textures/stone_wall_01_dark.png').convert_alpha()
+
+stone_wall_01_naziflag = pygame.image.load('textures/stone_wall_01_naziflag_light.png').convert_alpha()
+stone_wall_01_naziflag_dark = pygame.image.load('textures/stone_wall_01_naziflag_dark.png').convert_alpha()
 
 # Assigning textures to tilemap indexes
 TILEMAP_TEXTURES = {
-    1: brick_wall,
-    2: None,
+    1: (stone_wall_01, stone_wall_01_dark),
+    2: (stone_wall_01_naziflag, stone_wall_01_naziflag_dark),
     3: None
 }
 
@@ -58,6 +62,7 @@ myfont = pygame.font.SysFont('franklingothicmedium', 20)
 # Game settings
 info_layer = False
 shades = True
+fullscreen = False
 
 # Getting tilemap from text file
 with open('tilemap.txt', 'r') as f:
@@ -155,7 +160,7 @@ def raycast():
                 # Perpendicular distance needed to avoid fisheye
                 perpendicular_distance = deltax * cos(VIEWANGLE) + deltay * sin(VIEWANGLE)
 
-                wall_texture = TILEMAP_TEXTURES[grid_value]
+                wall_texture = TILEMAP_TEXTURES[grid_value][side]
                 if side == 0:
                     offset = ray_x - int(ray_x)
                 else:
@@ -351,15 +356,23 @@ def events():
     global running
     global info_layer
     global shades
+    global fullscreen
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
-            if event.key == K_F1:
-                info_layer = not info_layer  # Toggles the counter
-            if event.key == K_F2:
-                shades = not shades
             if event.key == K_ESCAPE:
                 running = False
+
+            if event.key == K_F1:
+                info_layer = not info_layer
+            if event.key == K_F2:
+                shades = not shades
+            if event.key == K_F3:
+                fullscreen = not fullscreen
+                if fullscreen:
+                    pygame.display.set_mode((D_W, D_H), pygame.FULLSCREEN)
+                else:
+                    pygame.display.set_mode((D_W, D_H))
 
 
 def bottom_layer():
