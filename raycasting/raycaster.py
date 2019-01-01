@@ -1,8 +1,8 @@
 # Main TODOs:
 # Doors
-# Clean code
-# Enemies?
-# Try moving the camera behind the player like it was in Wolfenstein 3D
+# Fix fisheye dissortion
+# Enemies/other sprites when dissortion fixed
+# Rename variables so they are all in camelCase
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -27,7 +27,7 @@ GAMECLOCK = pygame.time.Clock()
 pygame.mouse.set_visible(False)
 pygame.event.set_grab(True)
 
-FOV = pi / 2
+FOV = pi / 2  # = 90 degrees
 RAYS = int(D_W / 6)  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS must always be int
 SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved
 
@@ -150,8 +150,11 @@ PLAYER = Player(29.5, 57.5, 0)
 
 
 def raycast():
-    # Sending rays to later draw walls
+    # Precalculating PLAYER's viewangle Dir(X/Y) to use it when collision found
+    viewangleDirX = cos(PLAYER.viewangle)
+    viewangleDirY = sin(PLAYER.viewangle)
 
+    # Sending rays to later draw walls
     starting_angle = PLAYER.viewangle - FOV / 2
     radians_step = FOV / RAYS  # The amount of radians one rayangle is different from another
 
@@ -232,13 +235,14 @@ def raycast():
                 deltay = ray_y - PLAYER.y
 
                 # Perpendicular distance needed to avoid fisheye
-                perpendicular_distance = deltax * cos(PLAYER.viewangle) + deltay * sin(PLAYER.viewangle)
+                perpendicular_distance = deltax * viewangleDirX + deltay * viewangleDirY
 
                 wall_texture = TILEMAP_TEXTURES[grid_value][side]
                 if side == 0:
                     offset = ray_x - int(ray_x)
                 else:
                     offset = ray_y - int(ray_y)
+
                 # Column that the draw_walls() is going to take from the texture
                 column = int(TEXTURE_SIZE * offset)
 
@@ -250,7 +254,7 @@ def raycast():
 def draw_walls():
     global WALL_DATA
 
-    constant = 0.8 * D_H
+    constant = 1.0 * D_H
     wall_width = int(D_W / RAYS)
 
     for i, wall in enumerate(WALL_DATA):
