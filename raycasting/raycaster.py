@@ -3,6 +3,7 @@
 # Enemies/other sprites
 # Rename variables so they are all in camelCase
 # Try putting texture loading into try/except to get rid of yellow boxes around load
+# Make it so the resolution is not unnessecarily big
 
 # NOTES:
 # Tilemap only supports 9 different wall types bc tilemap indexes are from 0 to 9
@@ -29,7 +30,7 @@ pygame.mouse.set_visible(False)
 pygame.event.set_grab(True)
 
 FOV = pi / 2  # = 90 degrees
-RAYS = int(D_W / 6)  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS must always be int
+RAYSAMOUNT = int(D_W / 4)  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS must always be int
 SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved
 
 WALL_DATA = []
@@ -155,17 +156,21 @@ def get_rayangles():
     # Returns a list of angles which raycast() is going to use to add to player's viewangle
     # Because these angles do not depend on player's viewangle, they are calculated even before the main loop starts
     #
-    # To calculate these angles, program is going to put a theoretical camera plane 1 unit away from player
-    # at an angle 0 radians - this is also why cameraPlaneX stays the same while cameraPlaneY changes
+    # Rather complicated system which is going to put a theoretical camera plane with a lenght of 1 unit,
+    # certain amount of x away from player, so that the camera plane matches up with the current FOV value
+    # Then it calculates the angles so that each angle's end position is on the camera plane,
+    # equal distance away from the previous one
+    #
+    # Could be made faster, but since it's calculated only once before main loop, readability is more important
     # Note that in 2D rendering, camera plane is actually a single line
+    # Also FOV has to be < pi (and not <= pi) for it to work properly
 
-    cameraPlaneLen = FOV / pi * 4
-
+    cameraPlaneLen = 1
     cameraPlaneStartY = -cameraPlaneLen / 2
-    yDifference = cameraPlaneLen / RAYS
+    yDifference = cameraPlaneLen / RAYSAMOUNT
 
-    cameraPlaneX = 1
-    for i in range(RAYS):
+    cameraPlaneX = (cameraPlaneLen / 2) / tan(FOV / 2)
+    for i in range(RAYSAMOUNT):
         cameraPlaneY = cameraPlaneStartY + i * yDifference
 
         angle = atan2(cameraPlaneY, cameraPlaneX)
@@ -275,7 +280,7 @@ def draw_walls():
     global WALL_DATA
 
     constant = 0.8 * D_H
-    wall_width = int(D_W / RAYS)
+    wall_width = int(D_W / RAYSAMOUNT)
 
     for i, wall in enumerate(WALL_DATA):
         # Naming the values stored in element
