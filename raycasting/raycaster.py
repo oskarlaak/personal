@@ -1,10 +1,15 @@
 # Main TODOs:
 # Doors
-# Fix fisheye dissortion
 # Enemies/other sprites when dissortion fixed
 # Rename variables so they are all in camelCase
+# Try putting texture loading into try/except to get rid of yellow boxes around load
+
+# IMPORTANT
+# Rayangles need to be equally spaced in camera plane rather than equally different by radians -
+# this is what is making aa slight dissortion especially on higher FOVs
 
 # NOTES:
+# Tilemap only supports 9 different wall types bc tilemap indexes are from 0 to 9
 # Movement keys are handled in movement() and other keys in events()
 # All angles are in radians
 
@@ -22,8 +27,8 @@ D_H = 720
 # Pygame stuff
 pygame.init()
 pygame.display.set_caption('Raycaster')
-GAMEDISPLAY = pygame.display.set_mode((D_W, D_H))
-GAMECLOCK = pygame.time.Clock()
+DISPLAY = pygame.display.set_mode((D_W, D_H))
+CLOCK = pygame.time.Clock()
 pygame.mouse.set_visible(False)
 pygame.event.set_grab(True)
 
@@ -59,7 +64,7 @@ fullscreen = False
 with open('tilemap.txt', 'r') as f:
     TILEMAP = []
     for line in f:
-        if len(line) == 1:  # If line empty / If tilemap has been scanned ; Allows comments in tilemap.txt
+        if len(line) == 1:  # If line only consists of '\n' / If line empty ; Allows comments in tilemap.txt
             break
         line = line.replace('\n', '')
         line = [int(i) for i in str(line)]  # Turns number to a list of digits
@@ -294,7 +299,7 @@ def draw_walls():
         image = pygame.transform.scale(image, (wall_width, wall_height))
         image_pos = (i * wall_width, (D_H - wall_height) / 2)
 
-        GAMEDISPLAY.blit(image, image_pos)
+        DISPLAY.blit(image, image_pos)
 
     WALL_DATA = []
 
@@ -371,10 +376,8 @@ def events():
 
 
 def bottom_layer():
-    # Ceiling
-    pygame.draw.rect(GAMEDISPLAY, (50, 50, 50), ((0, 0), (D_W, D_H / 2)))
-    # Floor
-    pygame.draw.rect(GAMEDISPLAY, (100, 100, 100), ((0, D_H / 2), (D_W, D_H / 2)))
+    pygame.draw.rect(DISPLAY, ( 50,  50,  50), ((0,       0), (D_W, D_H / 2)))  # Ceiling
+    pygame.draw.rect(DISPLAY, (100, 100, 100), ((0, D_H / 2), (D_W, D_H / 2)))  # Floor
 
 
 def top_layer():
@@ -382,7 +385,7 @@ def top_layer():
         text_color = (255, 255, 255)
         decimals = 3
 
-        FPStext = 'FPS: {}'.format(int(GAMECLOCK.get_fps()))
+        FPStext = 'FPS: {}'.format(int(CLOCK.get_fps()))
         FPSimage = myfont.render(FPStext, True, text_color)
 
         PLAYER_Xtext = 'X: {}'.format(round(PLAYER.x, decimals))
@@ -394,14 +397,14 @@ def top_layer():
         VIEWANGLEtext = 'RAD: {}'.format(round(PLAYER.viewangle, decimals))
         VIEWANGLEimage = myfont.render(VIEWANGLEtext, True, text_color)
 
-        GAMEDISPLAY.blit(FPSimage, (4, 0))
-        GAMEDISPLAY.blit(PLAYER_Ximage, (4, 20))
-        GAMEDISPLAY.blit(PLAYER_Yimage, (4, 40))
-        GAMEDISPLAY.blit(VIEWANGLEimage, (4, 60))
+        DISPLAY.blit(FPSimage, (4, 0))
+        DISPLAY.blit(PLAYER_Ximage, (4, 20))
+        DISPLAY.blit(PLAYER_Yimage, (4, 40))
+        DISPLAY.blit(VIEWANGLEimage, (4, 60))
 
 
 def game_loop():
-    global running  # Making running global so it's accessible in keys() and events()
+    global running  # Making running global so it's accessible in events()
     running = True
     while running:
         bottom_layer()
@@ -416,7 +419,7 @@ def game_loop():
         top_layer()
 
         pygame.display.flip()
-        GAMECLOCK.tick(60)
+        CLOCK.tick(60)
 
     pygame.quit()
 
