@@ -4,10 +4,6 @@
 # Rename variables so they are all in camelCase
 # Try putting texture loading into try/except to get rid of yellow boxes around load
 
-# IMPORTANT
-# Rayangles need to be equally spaced in camera plane rather than equally different by radians -
-# this is what is making aa slight dissortion especially on higher FOVs
-
 # NOTES:
 # Tilemap only supports 9 different wall types bc tilemap indexes are from 0 to 9
 # Movement keys are handled in movement() and other keys in events()
@@ -159,12 +155,17 @@ def raycast():
     viewangleDirX = cos(PLAYER.viewangle)
     viewangleDirY = sin(PLAYER.viewangle)
 
-    # Sending rays to later draw walls
-    starting_angle = PLAYER.viewangle - FOV / 2
-    radians_step = FOV / RAYS  # The amount of radians one rayangle is different from another
+    cameraPlaneLen = FOV / pi * 2  # half lenght of cameraPlane
+    cameraPlaneStartX = PLAYER.x + viewangleDirX + cos(PLAYER.viewangle - pi / 2) * cameraPlaneLen
+    cameraPlaneStartY = PLAYER.y + viewangleDirY + sin(PLAYER.viewangle - pi / 2) * cameraPlaneLen
+    cameraPlaneEndX   = PLAYER.x + viewangleDirX + cos(PLAYER.viewangle + pi / 2) * cameraPlaneLen
+    cameraPlaneEndY   = PLAYER.y + viewangleDirY + sin(PLAYER.viewangle + pi / 2) * cameraPlaneLen
+
+    xDifference = (cameraPlaneEndX - cameraPlaneStartX) / RAYS
+    yDifference = (cameraPlaneEndY - cameraPlaneStartY) / RAYS
 
     for ray in range(RAYS):
-        rayangle = fixed_angle(starting_angle + ray * radians_step)
+        rayangle = atan2(cameraPlaneStartY + yDifference * ray - PLAYER.y, cameraPlaneStartX + xDifference * ray - PLAYER.x)  # atan2 func here probs
         tan_rayangle = tan(rayangle)
 
         #   Variables depending
@@ -259,7 +260,7 @@ def raycast():
 def draw_walls():
     global WALL_DATA
 
-    constant = 1.0 * D_H
+    constant = 0.8 * D_H
     wall_width = int(D_W / RAYS)
 
     for i, wall in enumerate(WALL_DATA):
@@ -424,3 +425,4 @@ def game_loop():
     pygame.quit()
 
 game_loop()
+
