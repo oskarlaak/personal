@@ -1,6 +1,6 @@
 # Main TODOs:
 # Doors
-# Enemies/other sprites when dissortion fixed
+# Enemies/other sprites
 # Rename variables so they are all in camelCase
 # Try putting texture loading into try/except to get rid of yellow boxes around load
 
@@ -33,6 +33,7 @@ RAYS = int(D_W / 6)  # Drawing frequency across the screen / Rays casted each fr
 SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved
 
 WALL_DATA = []
+RAYANGLES = []
 
 TEXTURE_SIZE = 64
 stone_wall_01 = pygame.image.load('textures/stone_wall_01_light.png').convert_alpha()
@@ -150,22 +151,35 @@ class Player:
 PLAYER = Player(29.5, 57.5, 0)
 
 
+def get_rayangles():
+    # Returns a list of angles which raycast() is going to use to add to player's viewangle
+    # Because these angles do not depend on player's viewangle, they are calculated even before the main loop starts
+    #
+    # To calculate these angles, program is going to put a theoretical camera plane 1 unit away from player
+    # at an angle 0 radians - this is also why cameraPlaneX stays the same while cameraPlaneY changes
+    # Note that in 2D rendering, camera plane is actually a single line
+
+    cameraPlaneLen = FOV / pi * 4
+
+    cameraPlaneStartY = -cameraPlaneLen / 2
+    yDifference = cameraPlaneLen / RAYS
+
+    cameraPlaneX = 1
+    for i in range(RAYS):
+        cameraPlaneY = cameraPlaneStartY + i * yDifference
+
+        angle = atan2(cameraPlaneY, cameraPlaneX)
+        RAYANGLES.append(angle)
+
+
 def raycast():
     # Precalculating PLAYER's viewangle Dir(X/Y) to use it when collision found
     viewangleDirX = cos(PLAYER.viewangle)
     viewangleDirY = sin(PLAYER.viewangle)
 
-    cameraPlaneLen = FOV / pi * 2  # half lenght of cameraPlane
-    cameraPlaneStartX = PLAYER.x + viewangleDirX + cos(PLAYER.viewangle - pi / 2) * cameraPlaneLen
-    cameraPlaneStartY = PLAYER.y + viewangleDirY + sin(PLAYER.viewangle - pi / 2) * cameraPlaneLen
-    cameraPlaneEndX   = PLAYER.x + viewangleDirX + cos(PLAYER.viewangle + pi / 2) * cameraPlaneLen
-    cameraPlaneEndY   = PLAYER.y + viewangleDirY + sin(PLAYER.viewangle + pi / 2) * cameraPlaneLen
-
-    xDifference = (cameraPlaneEndX - cameraPlaneStartX) / RAYS
-    yDifference = (cameraPlaneEndY - cameraPlaneStartY) / RAYS
-
-    for ray in range(RAYS):
-        rayangle = atan2(cameraPlaneStartY + yDifference * ray - PLAYER.y, cameraPlaneStartX + xDifference * ray - PLAYER.x)  # atan2 func here probs
+    # Sending rays
+    for angle in RAYANGLES:
+        rayangle = fixed_angle(PLAYER.viewangle + angle)
         tan_rayangle = tan(rayangle)
 
         #   Variables depending
@@ -405,6 +419,8 @@ def top_layer():
 
 
 def game_loop():
+    get_rayangles()
+
     global running  # Making running global so it's accessible in events()
     running = True
     while running:
