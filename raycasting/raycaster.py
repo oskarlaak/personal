@@ -1,12 +1,9 @@
 # Main TODOs:
 # Doors
 # Enemies/other sprites
-# Rename variables so they are all in camelCase
-# Try putting texture loading into try/except to get rid of yellow boxes around load
-# Make it so the resolution is not unnessecarily big
+# Automated texture loading system from texturesheet - Spritesheet class
 
 # NOTES:
-# Tilemap only supports 9 different wall types bc tilemap indexes are from 0 to 9
 # Movement keys are handled in movement() and other keys in events()
 # All angles are in radians
 
@@ -18,8 +15,15 @@ from sklearn.preprocessing import normalize
 import pygame
 from pygame.locals import *
 
-D_W = 1280
-D_H = 720
+import sys
+
+# Game settings
+INFO_LAYER = False
+D_W = 1024
+D_H = 800
+FOV = pi / 2  # = 90 degrees
+RAYS_AMOUNT = int(D_W / 2)  # Drawing frequency across the screen / Rays casted each frame
+SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
 
 # Pygame stuff
 pygame.init()
@@ -29,48 +33,14 @@ CLOCK = pygame.time.Clock()
 pygame.mouse.set_visible(False)
 pygame.event.set_grab(True)
 
-FOV = pi / 2  # = 90 degrees
-RAYSAMOUNT = int(D_W / 4)  # Drawing frequency across the screen / Rays casted each frame ; D_W / RAYS must always be int
-SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved
-
-WALL_DATA = []
-RAYANGLES = []
-
-TEXTURE_SIZE = 64
-stone_wall_01 = pygame.image.load('textures/stone_wall_01_light.png').convert_alpha()
-stone_wall_01_dark = pygame.image.load('textures/stone_wall_01_dark.png').convert_alpha()
-
-stone_wall_01_naziflag = pygame.image.load('textures/stone_wall_01_naziflag_light.png').convert_alpha()
-stone_wall_01_naziflag_dark = pygame.image.load('textures/stone_wall_01_naziflag_dark.png').convert_alpha()
-
-# Assigning textures to tilemap indexes
-TILEMAP_TEXTURES = {
-    1: (stone_wall_01, stone_wall_01_dark),
-    2: (stone_wall_01_naziflag, stone_wall_01_naziflag_dark),
-    3: None
-}
-
 # Font stuff
 pygame.font.init()
 myfont = pygame.font.SysFont('franklingothicmedium', 20)
 
-# Game settings
-info_layer = False
-fullscreen = False
-
-# Getting tilemap from text file
-with open('tilemap.txt', 'r') as f:
-    TILEMAP = []
-    for line in f:
-        if len(line) == 1:  # If line only consists of '\n' / If line empty ; Allows comments in tilemap.txt
-            break
-        line = line.replace('\n', '')
-        line = [int(i) for i in str(line)]  # Turns number to a list of digits
-        TILEMAP.append(line)
-
 
 class Player:
-    speed = 0.1  # Must be <= halfHitbox
+    speed = 0.15  # Must be < half_hitbox
+    half_hitbox = 0.2
 
     def __init__(self, x, y, angle):
         self.x = x
@@ -80,16 +50,15 @@ class Player:
     def rotate(self, radians):
         self.viewangle = fixed_angle(self.viewangle + radians)
 
-    def move(self, x, y):
-        self.x += x
-        self.y += y
+    def move(self, x_move, y_move):
+        self.x += x_move
+        self.y += y_move
 
         # Hitbox sides
-        halfHitbox = 0.2
-        right = self.x + halfHitbox
-        left = self.x - halfHitbox
-        down = self.y + halfHitbox
-        up = self.y - halfHitbox
+        right = self.x + self.half_hitbox
+        left = self.x - self.half_hitbox
+        down = self.y + self.half_hitbox
+        up = self.y - self.half_hitbox
 
         down_right = TILEMAP[int(down)][int(right)] != 0
         down_left = TILEMAP[int(down)][int(left)] != 0
@@ -100,16 +69,20 @@ class Player:
         if down_right or up_right or down_left or up_left:
             x_collision = False
             y_collision = False
+
             # If diagonals touching
             if down_right and up_left or down_left and up_right:
                 x_collision = True
                 y_collision = True
+
             # If top or bottom touching
             elif down_right and down_left or up_right and up_left:
                 y_collision = True
+
             # If left or right touching
             elif down_right and up_right or down_left and up_left:
                 x_collision = True
+
             # If one corner touching
             else:
                 if down_right:
@@ -137,26 +110,61 @@ class Player:
                     y_collision = True
 
             if x_collision:
-                if self.x - int(self.x) < halfHitbox:
-                    self.x = int(self.x) + halfHitbox
+                if self.x - int(self.x) < self.half_hitbox:
+                    self.x = int(self.x) + self.half_hitbox
                 else:
-                    self.x = ceil(self.x) - halfHitbox
+                    self.x = ceil(self.x) - self.half_hitbox
 
             if y_collision:
-                if self.y - int(self.y) < halfHitbox:
-                    self.y = int(self.y) + halfHitbox
+                if self.y - int(self.y) < self.half_hitbox:
+                    self.y = int(self.y) + self.half_hitbox
                 else:
-                    self.y = ceil(self.y) - halfHitbox
+                    self.y = ceil(self.y) - self.half_hitbox
 
 
-PLAYER = Player(29.5, 57.5, 0)
+def read_tilemap():
+    # Getting tilemap from text file
+    global TILEMAP
+    TILEMAP = []
+    with open('tilemap.txt', 'r') as f:
+        for line in f:
+            if len(line) == 1:  # If line only consists of '\n' / If line empty ; Allows comments in tilemap.txt
+                break
+
+            row = line.replace('\n', '').split(',')  # Split the line to a list and get rid of newline (\n)
+            row = [int(i) for i in row]  # Turn all number strings to an int
+            TILEMAP.append(row)
+
+
+def load_textures():
+    global TEXTURE_SIZE
+    TEXTURE_SIZE = 64
+
+    try:
+        stone_wall_01 = pygame.image.load('textures/stone_wall_01_light.png').convert_alpha()
+        stone_wall_01_dark = pygame.image.load('textures/stone_wall_01_dark.png').convert_alpha()
+
+        stone_wall_01_naziflag = pygame.image.load('textures/stone_wall_01_naziflag_light.png').convert_alpha()
+        stone_wall_01_naziflag_dark = pygame.image.load('textures/stone_wall_01_naziflag_dark.png').convert_alpha()
+
+    except pygame.error as exception:
+        sys.exit(exception)
+
+    else:
+        # Assigning textures to tilemap indexes
+        global TILEMAP_TEXTURES
+        TILEMAP_TEXTURES = {
+            1: (stone_wall_01, stone_wall_01_dark),
+            2: (stone_wall_01_naziflag, stone_wall_01_naziflag_dark),
+            3: None
+        }
 
 
 def get_rayangles():
     # Returns a list of angles which raycast() is going to use to add to player's viewangle
     # Because these angles do not depend on player's viewangle, they are calculated even before the main loop starts
     #
-    # Rather complicated system which is going to put a theoretical camera plane with a lenght of 1 unit,
+    # Rather complicated system which is going to put a theoretical camera plane with a length of 1 unit,
     # certain amount of x away from player, so that the camera plane matches up with the current FOV value
     # Then it calculates the angles so that each angle's end position is on the camera plane,
     # equal distance away from the previous one
@@ -164,23 +172,28 @@ def get_rayangles():
     # Could be made faster, but since it's calculated only once before main loop, readability is more important
     # Note that in 2D rendering, camera plane is actually a single line
     # Also FOV has to be < pi (and not <= pi) for it to work properly
+    global RAYANGLES
+    RAYANGLES = []
 
-    cameraPlaneLen = 1
-    cameraPlaneStartY = -cameraPlaneLen / 2
-    yDifference = cameraPlaneLen / RAYSAMOUNT
+    camera_plane_len = 1
+    camera_plane_start_y = -camera_plane_len / 2
+    y_difference = camera_plane_len / RAYS_AMOUNT
 
-    cameraPlaneX = (cameraPlaneLen / 2) / tan(FOV / 2)
-    for i in range(RAYSAMOUNT):
-        cameraPlaneY = cameraPlaneStartY + i * yDifference
+    camera_plane_x = (camera_plane_len / 2) / tan(FOV / 2)
+    for i in range(RAYS_AMOUNT):
+        camera_plane_y = camera_plane_start_y + i * y_difference
 
-        angle = atan2(cameraPlaneY, cameraPlaneX)
+        angle = atan2(camera_plane_y, camera_plane_x)
         RAYANGLES.append(angle)
 
 
 def raycast():
-    # Precalculating PLAYER's viewangle Dir(X/Y) to use it when collision found
-    viewangleDirX = cos(PLAYER.viewangle)
-    viewangleDirY = sin(PLAYER.viewangle)
+    global WALL_DATA
+    WALL_DATA = []
+
+    # Precalculating PLAYER's viewangle dir(x/y) to use it when collision found
+    viewangle_dir_x = cos(PLAYER.viewangle)
+    viewangle_dir_y = sin(PLAYER.viewangle)
 
     # Sending rays
     for angle in RAYANGLES:
@@ -256,11 +269,11 @@ def raycast():
             grid_value = TILEMAP[map_y][map_x]
 
             if grid_value != 0:  # If anything other than 0 ; If hitting a wall/something
-                deltax = ray_x - PLAYER.x
-                deltay = ray_y - PLAYER.y
+                delta_x = ray_x - PLAYER.x
+                delta_y = ray_y - PLAYER.y
 
                 # Perpendicular distance needed to avoid fisheye
-                perpendicular_distance = deltax * viewangleDirX + deltay * viewangleDirY
+                perpendicular_distance = delta_x * viewangle_dir_x + delta_y * viewangle_dir_y
 
                 wall_texture = TILEMAP_TEXTURES[grid_value][side]
                 if side == 0:
@@ -277,17 +290,15 @@ def raycast():
 
 
 def draw_walls():
-    global WALL_DATA
-
-    constant = 0.8 * D_H
-    wall_width = int(D_W / RAYSAMOUNT)
+    constant = 0.6 * D_H
+    wall_width = int(D_W / RAYS_AMOUNT)
 
     for i, wall in enumerate(WALL_DATA):
         # Naming the values stored in element
-        p = wall[0]
+        perp_dist = wall[0]
         texture = wall[1]
         column = wall[2]
-        wall_height = int(constant / p)
+        wall_height = int(constant / perp_dist)
 
         # Getting the part of texture that's going to be scaled and blitted
         image = texture.subsurface(column, 0, 1, TEXTURE_SIZE)
@@ -320,8 +331,6 @@ def draw_walls():
         image_pos = (i * wall_width, (D_H - wall_height) / 2)
 
         DISPLAY.blit(image, image_pos)
-
-    WALL_DATA = []
 
 
 def fixed_angle(angle):
@@ -376,23 +385,16 @@ def movement():
 
 
 def events():
-    global running
-    global info_layer
-    global fullscreen
+    global RUNNING
+    global INFO_LAYER
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
             if event.key == K_ESCAPE:
-                running = False
+                RUNNING = False
 
             if event.key == K_F1:
-                info_layer = not info_layer
-            if event.key == K_F11:
-                fullscreen = not fullscreen
-                if fullscreen:
-                    pygame.display.set_mode((D_W, D_H), pygame.FULLSCREEN)
-                else:
-                    pygame.display.set_mode((D_W, D_H))
+                INFO_LAYER = not INFO_LAYER
 
 
 def bottom_layer():
@@ -401,49 +403,52 @@ def bottom_layer():
 
 
 def top_layer():
-    if info_layer:
+    if INFO_LAYER:
         text_color = (255, 255, 255)
         decimals = 3
 
-        FPStext = 'FPS: {}'.format(int(CLOCK.get_fps()))
-        FPSimage = myfont.render(FPStext, True, text_color)
+        FPS_text = 'FPS: {}'.format(int(CLOCK.get_fps()))
+        FPS_image = myfont.render(FPS_text, True, text_color)
 
-        PLAYER_Xtext = 'X: {}'.format(round(PLAYER.x, decimals))
-        PLAYER_Ximage = myfont.render(PLAYER_Xtext, True, text_color)
+        player_x_text = 'X: {}'.format(round(PLAYER.x, decimals))
+        player_x_image = myfont.render(player_x_text, True, text_color)
 
-        PLAYER_Ytext = 'Y: {}'.format(round(PLAYER.x, decimals))
-        PLAYER_Yimage = myfont.render(PLAYER_Ytext, True, text_color)
+        player_y_text = 'Y: {}'.format(round(PLAYER.y, decimals))
+        player_y_image = myfont.render(player_y_text, True, text_color)
 
-        VIEWANGLEtext = 'RAD: {}'.format(round(PLAYER.viewangle, decimals))
-        VIEWANGLEimage = myfont.render(VIEWANGLEtext, True, text_color)
+        viewangle_text = 'RAD: {}'.format(round(PLAYER.viewangle, decimals))
+        viewangle_image = myfont.render(viewangle_text, True, text_color)
 
-        DISPLAY.blit(FPSimage, (4, 0))
-        DISPLAY.blit(PLAYER_Ximage, (4, 20))
-        DISPLAY.blit(PLAYER_Yimage, (4, 40))
-        DISPLAY.blit(VIEWANGLEimage, (4, 60))
+        DISPLAY.blit(FPS_image, (4, 0))
+        DISPLAY.blit(player_x_image, (4, 20))
+        DISPLAY.blit(player_y_image, (4, 40))
+        DISPLAY.blit(viewangle_image, (4, 60))
 
 
 def game_loop():
     get_rayangles()
+    load_textures()
+    read_tilemap()
 
-    global running  # Making running global so it's accessible in events()
-    running = True
-    while running:
-        bottom_layer()
+    global PLAYER
+    PLAYER = Player(2.5, 29.5, 0)  # Creates player
 
+    global RUNNING
+    RUNNING = True
+
+    while RUNNING:
         events()
-
         mouse()
         movement()
 
+        bottom_layer()
         raycast()
         draw_walls()
         top_layer()
 
         pygame.display.flip()
-        CLOCK.tick(60)
+        CLOCK.tick(30)
 
     pygame.quit()
 
 game_loop()
-
