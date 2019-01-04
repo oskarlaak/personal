@@ -1,6 +1,9 @@
 # Main TODOs:
 # Doors
 # Enemies/other sprites - spritesheet class
+# Reminder to change WALLS to TO_DRAW bc later there will be other sprites as well
+# Consider doing object identifier class which will catch all the objects and by grid value determine the type of object -
+# like if a grid value would be 3 it would somehow say self = Wall() and will go on there
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -54,10 +57,10 @@ class Player:
         self.y += y_move
 
         # Hitbox sides
-        right = self.x + self.half_hitbox
-        left = self.x - self.half_hitbox
-        down = self.y + self.half_hitbox
-        up = self.y - self.half_hitbox
+        right = self.x + Player.half_hitbox
+        left = self.x - Player.half_hitbox
+        down = self.y + Player.half_hitbox
+        up = self.y - Player.half_hitbox
 
         down_right = TILEMAP[int(down)][int(right)] != 0
         down_left = TILEMAP[int(down)][int(left)] != 0
@@ -109,16 +112,63 @@ class Player:
                     y_collision = True
 
             if x_collision:
-                if self.x - int(self.x) < self.half_hitbox:
-                    self.x = int(self.x) + self.half_hitbox
+                if self.x - int(self.x) < Player.half_hitbox:
+                    self.x = int(self.x) + Player.half_hitbox
                 else:
-                    self.x = ceil(self.x) - self.half_hitbox
+                    self.x = ceil(self.x) - Player.half_hitbox
 
             if y_collision:
-                if self.y - int(self.y) < self.half_hitbox:
-                    self.y = int(self.y) + self.half_hitbox
+                if self.y - int(self.y) < Player.half_hitbox:
+                    self.y = int(self.y) + Player.half_hitbox
                 else:
-                    self.y = ceil(self.y) - self.half_hitbox
+                    self.y = ceil(self.y) - Player.half_hitbox
+
+
+class Wall:
+    constant = 0.6 * D_H
+    width = int(D_W / RAYS_AMOUNT)
+
+    def __init__(self, perp_dist, texture, column, count):
+        self.height = int(Wall.constant / perp_dist)
+        self.x = count * Wall.width
+
+        # Cropping 1 pixel wide column out of texture
+        self.image = texture.subsurface(column, 0, 1, TEXTURE_SIZE)
+
+        if self.height > D_H:
+            # Complicated system that will crop the image and then adjust wall_height accordingly
+            # Cropping before scaling bc this way the program doesn't have to scale to enormous sizes
+
+            # Percentage of image that's going to be seen
+            percentage = D_H / self.height
+
+            # What would be the perfect cropping size
+            perfect_size = TEXTURE_SIZE * percentage
+
+            # However actual cropping size needs to be the closest even number rounding up perfect_size
+            # For example 10.23 will be turned to 12 and 11.78 will also be turned to 12
+            cropping_size = ceil(perfect_size / 2) * 2
+
+            # Cropping the image smaller again
+            self.image = self.image.subsurface(0, (TEXTURE_SIZE - cropping_size) / 2, 1, cropping_size)
+
+            # Adjusting wall_height so it later blits it in the right position
+            multiplier = cropping_size / perfect_size
+            self.height = int(D_H * multiplier)
+
+        # Getting the blitting size and position
+        self.image = pygame.transform.scale(self.image, (Wall.width, self.height))
+        self.image_pos = (self.x, (D_H - self.height) / 2)
+
+    def draw(self):
+        DISPLAY.blit(self.image, self.image_pos)
+
+
+def draw_walls():
+    # Sorting objects by height so those further away are drawn first
+    WALLS.sort(key=lambda x: x.height)
+    for obj in WALLS:
+        obj.draw()
 
 
 def load_textures():
@@ -190,15 +240,15 @@ def get_rayangles():
 
 
 def raycast():
-    global WALL_DATA
-    WALL_DATA = []
+    global WALLS
+    WALLS = []
 
     # Precalculating PLAYER's viewangle dir(x/y) to use it when collision found
     viewangle_dir_x = cos(PLAYER.viewangle)
     viewangle_dir_y = sin(PLAYER.viewangle)
 
     # Sending rays
-    for angle in RAYANGLES:
+    for c, angle in enumerate(RAYANGLES):
         rayangle = fixed_angle(PLAYER.viewangle + angle)
         tan_rayangle = tan(rayangle)
 
@@ -238,10 +288,10 @@ def raycast():
                 y_offset = 1
 
             # Very simple system
-            # Every loop it blindly calculates vertical* gridline Interception_y and checks it's distance
+            # Every loop it blindly calculates vertical* gridline interception_y and checks it's distance
             # to determine the interception type and to calculate other varibles depending on that interception type
             # Originally it remembered previous interception type to calculate the new one
-            # but doing it this way turns out to be slightly faster
+            # but doing it this way turns out to be faster
             #
             # *It calculates vertical gridline interception by default bc in those calculations
             # there are no divisions which could bring up ZeroDivisionError
@@ -285,53 +335,9 @@ def raycast():
                     offset = ray_y - int(ray_y)
                     column = int(TEXTURE_SIZE * offset) + TEXTURE_SIZE
 
-                WALL_DATA.append((perpendicular_distance, wall_texture, column))
+                WALLS.append(Wall(perpendicular_distance, wall_texture, column, c))
 
                 break
-
-
-def draw_walls():
-    constant = 0.6 * D_H
-    wall_width = int(D_W / RAYS_AMOUNT)
-
-    for i, wall in enumerate(WALL_DATA):
-        # Naming the values stored in element
-        perp_dist = wall[0]
-        texture = wall[1]
-        column = wall[2]
-        wall_height = int(constant / perp_dist)
-
-        # Getting the part of texture that's going to be scaled and blitted
-        image = texture.subsurface(column, 0, 1, TEXTURE_SIZE)
-
-        # For optimization, walls that are bigger than D_H are going to be cropped
-        # Without it, framerates drop drastically when staring into a wall
-        if wall_height > D_H:
-            # Complicated system that will crop the image and then adjust wall_height accordingly
-            # Cropping before scaling bc it removes the need to scale to enormous sizes
-
-            # Percentage of image that's going to be seen
-            percentage = D_H / wall_height
-
-            # What would be the perfect cropping size
-            perfect_size = TEXTURE_SIZE * percentage
-
-            # Actual (cropping) size needs to be the closest even number rounding up perfect_size
-            # For example 10.23 will be turned to 12 and 11.78 will also be turned to 12
-            actual_size = ceil(perfect_size)
-            if actual_size % 2 != 0:  # If odd
-                actual_size += 1  # Make it even
-
-            image = image.subsurface(0, (TEXTURE_SIZE - actual_size) / 2, 1, actual_size)
-
-            # Adjusting wall_height so it later blits it in the right position
-            multiplier = actual_size / perfect_size
-            wall_height = int(D_H * multiplier)
-
-        image = pygame.transform.scale(image, (wall_width, wall_height))
-        image_pos = (i * wall_width, (D_H - wall_height) / 2)
-
-        DISPLAY.blit(image, image_pos)
 
 
 def fixed_angle(angle):
@@ -355,6 +361,7 @@ def mouse():
 def movement():
     keys = pygame.key.get_pressed()
 
+    # Vector based movement, bc otherwise player could move faster diagonally
     if keys[K_w] or keys[K_a] or keys[K_s] or keys[K_d]:
         movement_x = 0
         movement_y = 0
@@ -377,12 +384,16 @@ def movement():
         # Needed for normalize() function
         movement_vector = np.asarray([[movement_x, movement_y]])
 
-        # Normalized vector
-        normalized_vector = normalize(movement_vector)[0]  # [0] because vector is inside of list with one element
-        movement_x = normalized_vector[0] * PLAYER.speed
-        movement_y = normalized_vector[1] * PLAYER.speed
+        # Removes the errors where pressing both (or all) opposite movement keys, player would still move,
+        # bc the movement vector would not be a perfect (0, 0)
+        if abs(movement_vector[0][0]) + abs(movement_vector[0][1]) > 1:
 
-        PLAYER.move(movement_x, movement_y)
+            # Normalized vector
+            normalized_vector = normalize(movement_vector)[0]  # [0] because vector is inside of list with one element
+            movement_x = normalized_vector[0] * PLAYER.speed
+            movement_y = normalized_vector[1] * PLAYER.speed
+
+            PLAYER.move(movement_x, movement_y)
 
 
 def events():
@@ -451,5 +462,6 @@ def game_loop():
         CLOCK.tick(30)
 
     pygame.quit()
+
 
 game_loop()
