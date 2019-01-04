@@ -1,7 +1,6 @@
 # Main TODOs:
 # Doors
-# Enemies/other sprites
-# Automated texture loading system from texturesheet - Spritesheet class
+# Enemies/other sprites - spritesheet class
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -122,6 +121,33 @@ class Player:
                     self.y = ceil(self.y) - self.half_hitbox
 
 
+def load_textures():
+    global TILEMAP_TEXTURES
+    global TEXTURE_SIZE
+    TEXTURE_SIZE = 64
+
+    try:
+        wall_texture_sheet = pygame.image.load('textures/wall_texture_sheet.png').convert_alpha()
+
+    except pygame.error as exception:
+        sys.exit(exception)
+
+    else:
+        # Assigning textures to tilemap indexes
+        TILEMAP_TEXTURES = {}
+        image_w = wall_texture_sheet.get_width()
+        image_h = wall_texture_sheet.get_height()
+
+        cell_w = TEXTURE_SIZE * 2
+        cell_h = TEXTURE_SIZE
+        index = 0
+        for row in range(int(image_h / cell_h)):
+            for column in range(int(image_w / cell_w)):
+                index += 1
+                texture = wall_texture_sheet.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
+                TILEMAP_TEXTURES[index] = texture
+
+
 def read_tilemap():
     # Getting tilemap from text file
     global TILEMAP
@@ -134,30 +160,6 @@ def read_tilemap():
             row = line.replace('\n', '').split(',')  # Split the line to a list and get rid of newline (\n)
             row = [int(i) for i in row]  # Turn all number strings to an int
             TILEMAP.append(row)
-
-
-def load_textures():
-    global TEXTURE_SIZE
-    TEXTURE_SIZE = 64
-
-    try:
-        stone_wall_01 = pygame.image.load('textures/stone_wall_01_light.png').convert_alpha()
-        stone_wall_01_dark = pygame.image.load('textures/stone_wall_01_dark.png').convert_alpha()
-
-        stone_wall_01_naziflag = pygame.image.load('textures/stone_wall_01_naziflag_light.png').convert_alpha()
-        stone_wall_01_naziflag_dark = pygame.image.load('textures/stone_wall_01_naziflag_dark.png').convert_alpha()
-
-    except pygame.error as exception:
-        sys.exit(exception)
-
-    else:
-        # Assigning textures to tilemap indexes
-        global TILEMAP_TEXTURES
-        TILEMAP_TEXTURES = {
-            1: (stone_wall_01, stone_wall_01_dark),
-            2: (stone_wall_01_naziflag, stone_wall_01_naziflag_dark),
-            3: None
-        }
 
 
 def get_rayangles():
@@ -275,14 +277,13 @@ def raycast():
                 # Perpendicular distance needed to avoid fisheye
                 perpendicular_distance = delta_x * viewangle_dir_x + delta_y * viewangle_dir_y
 
-                wall_texture = TILEMAP_TEXTURES[grid_value][side]
+                wall_texture = TILEMAP_TEXTURES[grid_value]
                 if side == 0:
                     offset = ray_x - int(ray_x)
+                    column = int(TEXTURE_SIZE * offset)
                 else:
                     offset = ray_y - int(ray_y)
-
-                # Column that the draw_walls() is going to take from the texture
-                column = int(TEXTURE_SIZE * offset)
+                    column = int(TEXTURE_SIZE * offset) + TEXTURE_SIZE
 
                 WALL_DATA.append((perpendicular_distance, wall_texture, column))
 
