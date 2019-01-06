@@ -1,13 +1,21 @@
 # Main TODOs:
 # Doors
-# Enemies/other sprites - spritesheet class
-# Reminder to change WALLS to TO_DRAW bc later there will be other sprites as well
-# Consider doing object identifier class which will catch all the objects and by grid value determine the type of object -
-# like if a grid value would be 3 it would somehow say self = Wall() and will go on there
+# Enemies - spritesheet class
+# Add sprites spritesheet
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
 # All angles are in radians
+
+# to do tilemap system:
+# 0 - empty
+# 1 - door
+# collectable sprites - ammo/health on the ground
+# non-solid sprites - lamps, skulls etc
+# solid sprites - pillars statues etc
+# walls
+#
+# load_textures() will create variables which will tell other functions from which index object type changes
 
 from math import *
 
@@ -37,7 +45,8 @@ pygame.event.set_grab(True)
 
 # Font stuff
 pygame.font.init()
-myfont = pygame.font.SysFont('franklingothicmedium', 20)
+FONT_SIZE = 20
+myfont = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
 
 
 class Player:
@@ -62,10 +71,10 @@ class Player:
         down = self.y + Player.half_hitbox
         up = self.y - Player.half_hitbox
 
-        down_right = TILEMAP[int(down)][int(right)] != 0
-        down_left = TILEMAP[int(down)][int(left)] != 0
-        up_right = TILEMAP[int(up)][int(right)] != 0
-        up_left = TILEMAP[int(up)][int(left)] != 0
+        down_right = TILEMAP[int(down)][int(right)] > 1  # <-- Number of sprites you can walk through/over
+        down_left = TILEMAP[int(down)][int(left)] > 1
+        up_right = TILEMAP[int(up)][int(right)] > 1
+        up_left = TILEMAP[int(up)][int(left)] > 1
 
         # If hitting something, find the collision type
         if down_right or up_right or down_left or up_left:
@@ -124,51 +133,115 @@ class Player:
                     self.y = ceil(self.y) - Player.half_hitbox
 
 
-class Wall:
+class Object:
     constant = 0.6 * D_H
+
+    def adjust_image_height(self):
+        # Depending on self.height, (it being the unoptimized image drawing height) this system will crop out
+        # from given unscaled image as many pixel rows from top and bottom as possible,
+        # while ensuring that the player will not notice a difference, when the image is drawn later
+        # (that means it will not crop out pixel rows, that are going to be on the screen)
+        #
+        # It will then also adjust drawing height, so the program later knows, how big to scale the new cropped image
+        #
+        # Cropping is done before scaling to ensure that the program is not going to be scaling images to enormous sizes
+
+        # Percentage of image that's going to be seen
+        percentage = D_H / self.height
+
+        # What would be the perfect cropping size
+        perfect_size = TEXTURE_SIZE * percentage
+
+        # However actual cropping size needs to be the closest even* number rounding up perfect_size
+        # For example 10.23 will be turned to 12 and 11.78 will also be turned to 12
+        # *number needs to be even bc you can't crop at halfpixel
+        cropping_size = ceil(perfect_size / 2) * 2
+
+        # Cropping the image smaller - width stays the same
+        rect = pygame.Rect((0, (TEXTURE_SIZE - cropping_size) / 2), (self.image.get_width(), cropping_size))
+        self.image = self.image.subsurface(rect)
+
+        # Adjusting height accordingly
+        multiplier = cropping_size / perfect_size
+        self.height = int(D_H * multiplier)
+
+
+class Wall(Object):
     width = int(D_W / RAYS_AMOUNT)
 
     def __init__(self, perp_dist, texture, column, count):
-        self.height = int(Wall.constant / perp_dist)
-        self.x = count * Wall.width
+        self.perp_dist = perp_dist  # Needs saving to sort by it later
 
         # Cropping 1 pixel wide column out of texture
         self.image = texture.subsurface(column, 0, 1, TEXTURE_SIZE)
 
+        self.height = int(Object.constant / perp_dist)
         if self.height > D_H:
-            # Complicated system that will crop the image and then adjust wall_height accordingly
-            # Cropping before scaling bc this way the program doesn't have to scale to enormous sizes
+            Object.adjust_image_height(self)
 
-            # Percentage of image that's going to be seen
-            percentage = D_H / self.height
-
-            # What would be the perfect cropping size
-            perfect_size = TEXTURE_SIZE * percentage
-
-            # However actual cropping size needs to be the closest even number rounding up perfect_size
-            # For example 10.23 will be turned to 12 and 11.78 will also be turned to 12
-            cropping_size = ceil(perfect_size / 2) * 2
-
-            # Cropping the image smaller again
-            self.image = self.image.subsurface(0, (TEXTURE_SIZE - cropping_size) / 2, 1, cropping_size)
-
-            # Adjusting wall_height so it later blits it in the right position
-            multiplier = cropping_size / perfect_size
-            self.height = int(D_H * multiplier)
-
-        # Getting the blitting size and position
+        # Resizing the image and getting it's position
+        self.display_x = count * Wall.width
+        self.display_y = (D_H - self.height) / 2
         self.image = pygame.transform.scale(self.image, (Wall.width, self.height))
-        self.image_pos = (self.x, (D_H - self.height) / 2)
 
-    def draw(self):
-        DISPLAY.blit(self.image, self.image_pos)
+    def draw(self, surface):
+        surface.blit(self.image, (self.display_x, self.display_y))
+
+
+class Sprite(Object):
+    def __init__(self, perp_dist, sprite, x, y):
+        self.perp_dist = perp_dist
+        self.image = sprite  # Name needs to be self.image for it to work in adjust_image_height()
+        self.x = x
+        self.y = y
+
+        self.height = self.width = int(Object.constant / perp_dist)
+        if self.height > D_H:
+            Object.adjust_image_height(self)
+
+        # To find the sprite's display_x position, we need to know it's camera plane position
+        # NOTE:
+        # atan2(delta_y, delta_x) is the angle from player to sprite
+        delta_x = self.x - PLAYER.x
+        delta_y = self.y - PLAYER.y
+
+        angle_from_viewangle = atan2(delta_y, delta_x) - PLAYER.viewangle
+        camera_plane_pos = CAMERA_PLANE_LEN / 2 + tan(angle_from_viewangle) * CAMERA_PLANE_DIST
+
+        self.display_x = D_W * camera_plane_pos - self.width / 2
+        self.display_y = (D_H - self.height) / 2
+
+    def draw(self, surface):
+        if self.perp_dist > 0:
+            # Since sprite's out of bounds top and bottom parts are already cut out
+            # the program can now draw all sprite pixel columns, that are in display area
+
+            column_width = self.width / TEXTURE_SIZE
+            column_left_side = self.display_x
+            column_right_side = self.display_x + column_width
+
+            for column in range(TEXTURE_SIZE):
+                column_left_side += column_width
+                column_right_side += column_width
+
+                if column_left_side < D_W and column_right_side > 0:  # If row on screen
+
+                    # Getting sprite column out of image
+                    sprite_column = self.image.subsurface(column, 0, 1, self.image.get_height())
+
+                    # Scaling that column
+                    sprite_column = pygame.transform.scale(sprite_column, (ceil(column_width), self.height))
+
+                    # Blitting that column
+                    surface.blit(sprite_column, (column_left_side, self.display_y))
 
 
 def draw_walls():
-    # Sorting objects by height so those further away are drawn first
-    WALLS.sort(key=lambda x: x.height)
-    for obj in WALLS:
-        obj.draw()
+    # Sorting objects by perp_dist so those further away are drawn first
+    TO_DRAW = WALLS + SPRITES
+    TO_DRAW.sort(key=lambda x: x.perp_dist, reverse=True)
+    for obj in TO_DRAW:
+        obj.draw(DISPLAY)
 
 
 def load_textures():
@@ -177,7 +250,9 @@ def load_textures():
     TEXTURE_SIZE = 64
 
     try:
-        wall_texture_sheet = pygame.image.load('textures/wall_texture_sheet.png').convert_alpha()
+        wall_texture_sheet = pygame.image.load('textures/wall_texture_sheet.png').convert()
+        lamp = pygame.image.load('textures/lamp_transparent.png').convert_alpha()
+        pillar = pygame.image.load('textures/pillar_transparent.png').convert_alpha()
 
     except pygame.error as exception:
         sys.exit(exception)
@@ -190,7 +265,11 @@ def load_textures():
 
         cell_w = TEXTURE_SIZE * 2
         cell_h = TEXTURE_SIZE
-        index = 0
+
+        TILEMAP_TEXTURES[1] = lamp
+        TILEMAP_TEXTURES[2] = pillar
+
+        index = 2
         for row in range(int(image_h / cell_h)):
             for column in range(int(image_w / cell_w)):
                 index += 1
@@ -216,9 +295,7 @@ def get_rayangles():
     # Returns a list of angles which raycast() is going to use to add to player's viewangle
     # Because these angles do not depend on player's viewangle, they are calculated even before the main loop starts
     #
-    # Rather complicated system which is going to put a theoretical camera plane with a length of 1 unit,
-    # certain amount of x away from player, so that the camera plane matches up with the current FOV value
-    # Then it calculates the angles so that each angle's end position is on the camera plane,
+    # It calculates these angles so that each angle's end position is on the camera plane,
     # equal distance away from the previous one
     #
     # Could be made faster, but since it's calculated only once before main loop, readability is more important
@@ -227,21 +304,27 @@ def get_rayangles():
     global RAYANGLES
     RAYANGLES = []
 
-    camera_plane_len = 1
-    camera_plane_start_y = -camera_plane_len / 2
-    y_difference = camera_plane_len / RAYS_AMOUNT
+    # These global values are needed to calculate sprite display_x position
+    global CAMERA_PLANE_LEN
+    global CAMERA_PLANE_DIST
 
-    camera_plane_x = (camera_plane_len / 2) / tan(FOV / 2)
+    CAMERA_PLANE_LEN = 1
+    camera_plane_start = -CAMERA_PLANE_LEN / 2
+    camera_plane_step = CAMERA_PLANE_LEN / RAYS_AMOUNT
+
+    CAMERA_PLANE_DIST = (CAMERA_PLANE_LEN / 2) / tan(FOV / 2)
     for i in range(RAYS_AMOUNT):
-        camera_plane_y = camera_plane_start_y + i * y_difference
+        camera_plane_pos = camera_plane_start + i * camera_plane_step
 
-        angle = atan2(camera_plane_y, camera_plane_x)
+        angle = atan2(camera_plane_pos, CAMERA_PLANE_DIST)
         RAYANGLES.append(angle)
 
 
 def raycast():
     global WALLS
+    global SPRITES
     WALLS = []
+    SPRITES = []
 
     # Precalculating PLAYER's viewangle dir(x/y) to use it when collision found
     viewangle_dir_x = cos(PLAYER.viewangle)
@@ -321,21 +404,39 @@ def raycast():
             grid_value = TILEMAP[map_y][map_x]
 
             if grid_value != 0:  # If anything other than 0 ; If hitting a wall/something
+                texture = TILEMAP_TEXTURES[grid_value]
+
+                # Find out if object is sprite
+                if grid_value <= 2:  # <-- Total number of sprites
+                    sprite_x = map_x + 0.5
+                    sprite_y = map_y + 0.5
+                    for obj in SPRITES:
+                        if obj.x == sprite_x and obj.y == sprite_y:  # If sprite obj already made at same exact location
+                            break
+
+                    else:
+                        delta_x = sprite_x - PLAYER.x
+                        delta_y = sprite_y - PLAYER.y
+                        perp_dist = delta_x * viewangle_dir_x + delta_y * viewangle_dir_y
+
+                        SPRITES.append(Sprite(perp_dist, texture, sprite_x, sprite_y))
+
+                    continue
+
                 delta_x = ray_x - PLAYER.x
                 delta_y = ray_y - PLAYER.y
 
                 # Perpendicular distance needed to avoid fisheye
-                perpendicular_distance = delta_x * viewangle_dir_x + delta_y * viewangle_dir_y
+                perp_dist = delta_x * viewangle_dir_x + delta_y * viewangle_dir_y
 
-                wall_texture = TILEMAP_TEXTURES[grid_value]
                 if side == 0:
                     offset = ray_x - int(ray_x)
                     column = int(TEXTURE_SIZE * offset)
                 else:
                     offset = ray_y - int(ray_y)
-                    column = int(TEXTURE_SIZE * offset) + TEXTURE_SIZE
+                    column = int(TEXTURE_SIZE * offset) + TEXTURE_SIZE  # Makes block sides different
 
-                WALLS.append(Wall(perpendicular_distance, wall_texture, column, c))
+                WALLS.append(Wall(perp_dist, texture, column, c))
 
                 break
 
@@ -431,10 +532,10 @@ def top_layer():
         viewangle_text = 'RAD: {}'.format(round(PLAYER.viewangle, decimals))
         viewangle_image = myfont.render(viewangle_text, True, text_color)
 
-        DISPLAY.blit(FPS_image, (4, 0))
-        DISPLAY.blit(player_x_image, (4, 20))
-        DISPLAY.blit(player_y_image, (4, 40))
-        DISPLAY.blit(viewangle_image, (4, 60))
+        DISPLAY.blit(      FPS_image, (4, FONT_SIZE * 0))
+        DISPLAY.blit( player_x_image, (4, FONT_SIZE * 1))
+        DISPLAY.blit( player_y_image, (4, FONT_SIZE * 2))
+        DISPLAY.blit(viewangle_image, (4, FONT_SIZE * 3))
 
 
 def game_loop():
