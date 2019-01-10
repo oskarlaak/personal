@@ -1,21 +1,16 @@
 # Main TODOs:
-# Doors
-# Enemies - spritesheet class
-# Add sprites spritesheet
+# Add doors opening/closing system
+# Add enemies - spritesheet class
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
 # All angles are in radians
+# Sprites class is currently unused
 
-# to do tilemap system:
+# Current tilemap system:
 # 0 - empty
 # 1 - door
-# collectable sprites - ammo/health on the ground
-# non-solid sprites - lamps, skulls etc
-# solid sprites - pillars statues etc
-# walls
-#
-# load_textures() will create variables which will tell other functions from which index object type changes
+# 2 - ... walls
 
 from math import *
 
@@ -29,6 +24,7 @@ import sys
 
 # Game settings
 INFO_LAYER = False
+SHADES = True
 D_W = 1024
 D_H = 800
 FOV = pi / 2  # = 90 degrees
@@ -50,7 +46,7 @@ myfont = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
 
 
 class Player:
-    speed = 0.15  # Must be < half_hitbox
+    speed = 0.15  # Must be < half_hitbox, otherwise collisions will not work
     half_hitbox = 0.2
 
     def __init__(self, x, y, angle):
@@ -71,10 +67,10 @@ class Player:
         down = self.y + Player.half_hitbox
         up = self.y - Player.half_hitbox
 
-        down_right = TILEMAP[int(down)][int(right)] > 1  # <-- Number of sprites you can walk through/over
-        down_left = TILEMAP[int(down)][int(left)] > 1
-        up_right = TILEMAP[int(up)][int(right)] > 1
-        up_left = TILEMAP[int(up)][int(left)] > 1
+        down_right = TILEMAP[int(down)][int(right)] > 0  # <-- Number of sprites you can walk through/over
+        down_left = TILEMAP[int(down)][int(left)] > 0
+        up_right = TILEMAP[int(up)][int(right)] > 0
+        up_left = TILEMAP[int(up)][int(left)] > 0
 
         # If hitting something, find the collision type
         if down_right or up_right or down_left or up_left:
@@ -177,7 +173,7 @@ class Wall(Object):
 
         self.height = int(Object.constant / perp_dist)
         if self.height > D_H:
-            Object.adjust_image_height(self)
+            self.adjust_image_height()
 
         # Resizing the image and getting it's position
         self.display_x = count * Wall.width
@@ -197,7 +193,7 @@ class Sprite(Object):
 
         self.height = self.width = int(Object.constant / perp_dist)
         if self.height > D_H:
-            Object.adjust_image_height(self)
+            self.adjust_image_height()
 
         # To find the sprite's display_x position, we need to know it's camera plane position
         # NOTE:
@@ -236,9 +232,20 @@ class Sprite(Object):
                     surface.blit(sprite_column, (column_left_side, self.display_y))
 
 
+class Door:
+    def __init__(self, map_x, map_y):
+        self.x = map_x
+        self.y = map_y
+        self.opened_state = 0  # 1 is fully opened, 0 is fully closed
+
+    def __eq__(self, other):
+        # Two doors are "equal" if their position is the same, opened_state doesn't matter
+        return (self.x, self.y) == (other.x, other.y)
+
+
 def draw_walls():
     # Sorting objects by perp_dist so those further away are drawn first
-    TO_DRAW = WALLS + SPRITES
+    TO_DRAW = WALLS
     TO_DRAW.sort(key=lambda x: x.perp_dist, reverse=True)
     for obj in TO_DRAW:
         obj.draw(DISPLAY)
@@ -250,31 +257,31 @@ def load_textures():
     TEXTURE_SIZE = 64
 
     try:
-        wall_texture_sheet = pygame.image.load('textures/wall_texture_sheet.png').convert()
-        lamp = pygame.image.load('textures/lamp_transparent.png').convert_alpha()
-        pillar = pygame.image.load('textures/pillar_transparent.png').convert_alpha()
+        door_textures = pygame.image.load('textures/door.png').convert()
+        wall_textures = pygame.image.load('textures/wall_textures.png').convert()
 
     except pygame.error as exception:
         sys.exit(exception)
 
-    else:
-        # Assigning textures to tilemap indexes
+    else:  # If no error when loading textures
         TILEMAP_TEXTURES = {}
-        image_w = wall_texture_sheet.get_width()
-        image_h = wall_texture_sheet.get_height()
+        index = 1  # Starting at 1 bc 0 means empty
 
+        # Doors
+        TILEMAP_TEXTURES[index] = door_textures
+        index += 1
+
+        # Walls
+        # Because each texture "cell" contains two textures, cell width is going to be twice as big as cell height
         cell_w = TEXTURE_SIZE * 2
         cell_h = TEXTURE_SIZE
+        for row in range(int(wall_textures.get_height() / cell_h)):
 
-        TILEMAP_TEXTURES[1] = lamp
-        TILEMAP_TEXTURES[2] = pillar
+            for column in range(int(wall_textures.get_width() / cell_w)):
 
-        index = 2
-        for row in range(int(image_h / cell_h)):
-            for column in range(int(image_w / cell_w)):
-                index += 1
-                texture = wall_texture_sheet.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
+                texture = wall_textures.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
                 TILEMAP_TEXTURES[index] = texture
+                index += 1
 
 
 def read_tilemap():
@@ -320,125 +327,160 @@ def get_rayangles():
         RAYANGLES.append(angle)
 
 
-def raycast():
+def send_rays():
     global WALLS
-    global SPRITES
     WALLS = []
-    SPRITES = []
 
-    # Precalculating PLAYER's viewangle dir(x/y) to use it when collision found
+    for c, d in enumerate(DOORS):
+        if d.opened_state == 0:  # If door closed
+            del DOORS[c]
+
     viewangle_dir_x = cos(PLAYER.viewangle)
     viewangle_dir_y = sin(PLAYER.viewangle)
 
     # Sending rays
     for c, angle in enumerate(RAYANGLES):
+        # Get the rayangle that's going to be raycasted
         rayangle = fixed_angle(PLAYER.viewangle + angle)
-        tan_rayangle = tan(rayangle)
 
-        #   Variables depending
-        #     on the rayangle
-        #            |
-        #      A = 0 | A = 1
-        # -pi  B = 0 | B = 0  -
-        #     -------|------- 0 rad
-        #  pi  A = 0 | A = 1  +
-        #      B = 1 | B = 1
-        #            |
+        # Get values from raycast()
+        grid_value, delta_x, delta_y, column = raycast(rayangle)
 
-        if abs(rayangle) > pi / 2:
-            A = 0
+        # Calculate perpendicular distance (needed to avoid fisheye effect)
+        perp_dist = delta_x * viewangle_dir_x + delta_y * viewangle_dir_y
+
+        # Get wall texture from TILEMAP_TEXTURES
+        texture = TILEMAP_TEXTURES[grid_value]
+
+        # Create Wall object
+        WALLS.append(Wall(perp_dist, texture, column, c))
+
+
+def raycast(rayangle):
+    #   Variables depending
+    #     on the rayangle
+    #            |
+    #      A = 0 | A = 1
+    # -pi  B = 0 | B = 0  -
+    #     -------|------- 0 rad
+    #  pi  A = 0 | A = 1  +
+    #      B = 1 | B = 1
+    #            |
+
+    tan_rayangle = tan(rayangle)
+
+    if abs(rayangle) > pi / 2:
+        A = 0
+    else:
+        A = 1
+    if rayangle < 0:
+        B = 0
+    else:
+        B = 1
+
+    ray_x = PLAYER.x
+    ray_y = PLAYER.y
+
+    while True:
+        # "if (x/y)_offset == (A/B)" only resets offset depending on the rayangle
+        # This will help to determine interception type correctly
+        # and it also prevents rays getting stuck on some angles
+
+        x_offset = ray_x - int(ray_x)
+        if x_offset == A:
+            x_offset = 1
+
+        y_offset = ray_y - int(ray_y)
+        if y_offset == B:
+            y_offset = 1
+
+        # Very simple system
+        # Every loop it blindly calculates vertical* gridline interception_y and checks it's distance
+        # to determine the interception type and to calculate other varibles depending on that interception type
+        # Originally it remembered previous interception type to calculate the new one
+        # but doing it this way turns out to be faster
+        #
+        # *It calculates vertical gridline interception by default bc in those calculations
+        # there are no divisions which could bring up ZeroDivisionError
+
+        interception_y = (A - x_offset) * tan_rayangle
+        if int(ray_y - y_offset) == int(ray_y + interception_y):
+            # Hitting vertical gridline ( | )
+            interception_x = A - x_offset
+
+            ray_x += interception_x
+            ray_y += interception_y
+            map_y = int(ray_y)
+            map_x = int(ray_x) + (A - 1)
+            side = 0
+
         else:
-            A = 1
-        if rayangle < 0:
-            B = 0
-        else:
-            B = 1
+            # Hitting horizontal gridline ( -- )
+            interception_x = (B - y_offset) / tan_rayangle
+            interception_y = B - y_offset
 
-        ray_x = PLAYER.x
-        ray_y = PLAYER.y
+            ray_x += interception_x
+            ray_y += interception_y
+            map_y = int(ray_y) + (B - 1)
+            map_x = int(ray_x)
+            side = 1
 
-        while True:
-            # "if (x/y)_offset == (A/B)" only resets offset depending on the rayangle
-            # This will help to determine interception type correctly
-            # and it also prevents rays getting stuck on some angles
+        grid_value = TILEMAP[map_y][map_x]
+        if grid_value != 0:  # If ray touching something
 
-            x_offset = ray_x - int(ray_x)
-            if x_offset == A:
-                x_offset = 1
+            if grid_value == 1:  # If door
+                # Update (x/y)_offset values
+                x_offset = ray_x - int(ray_x)
+                if x_offset == A:
+                    x_offset = 1
 
-            y_offset = ray_y - int(ray_y)
-            if y_offset == B:
-                y_offset = 1
+                y_offset = ray_y - int(ray_y)
+                if y_offset == B:
+                    y_offset = 1
 
-            # Very simple system
-            # Every loop it blindly calculates vertical* gridline interception_y and checks it's distance
-            # to determine the interception type and to calculate other varibles depending on that interception type
-            # Originally it remembered previous interception type to calculate the new one
-            # but doing it this way turns out to be faster
-            #
-            # *It calculates vertical gridline interception by default bc in those calculations
-            # there are no divisions which could bring up ZeroDivisionError
-
-            interception_y = (A - x_offset) * tan_rayangle
-            if int(ray_y - y_offset) == int(ray_y + interception_y):
-                # Hitting vertical gridline
-                interception_x = A - x_offset
-
-                ray_x += interception_x
-                ray_y += interception_y
-                map_y = int(ray_y)
-                map_x = int(ray_x) + (A - 1)
-                side = 1
-
-            else:
-                # Hitting horizontal gridline
-                interception_x = (B - y_offset) / tan_rayangle
-                interception_y = B - y_offset
-
-                ray_x += interception_x
-                ray_y += interception_y
-                map_y = int(ray_y) + (B - 1)
-                map_x = int(ray_x)
-                side = 0
-
-            grid_value = TILEMAP[map_y][map_x]
-
-            if grid_value != 0:  # If anything other than 0 ; If hitting a wall/something
-                texture = TILEMAP_TEXTURES[grid_value]
-
-                # Find out if object is sprite
-                if grid_value <= 2:  # <-- Total number of sprites
-                    sprite_x = map_x + 0.5
-                    sprite_y = map_y + 0.5
-                    for obj in SPRITES:
-                        if obj.x == sprite_x and obj.y == sprite_y:  # If sprite obj already made at same exact location
-                            break
-
-                    else:
-                        delta_x = sprite_x - PLAYER.x
-                        delta_y = sprite_y - PLAYER.y
-                        perp_dist = delta_x * viewangle_dir_x + delta_y * viewangle_dir_y
-
-                        SPRITES.append(Sprite(perp_dist, texture, sprite_x, sprite_y))
-
-                    continue
-
-                delta_x = ray_x - PLAYER.x
-                delta_y = ray_y - PLAYER.y
-
-                # Perpendicular distance needed to avoid fisheye
-                perp_dist = delta_x * viewangle_dir_x + delta_y * viewangle_dir_y
-
-                if side == 0:
-                    offset = ray_x - int(ray_x)
-                    column = int(TEXTURE_SIZE * offset)
+                # Add door to DOORS if it's not in it already
+                door = Door(map_x, map_y)
+                for d in DOORS:
+                    if d == door:
+                        door = d
+                        break
                 else:
+                    DOORS.append(door)
+
+                if side == 0:  # If vertical ( | )
+                    interception_y = (-0.5 + A) * tan_rayangle
+                    offset = ray_y + interception_y - int(ray_y + interception_y)
+                    if int(ray_y - y_offset) == int(ray_y + interception_y) and offset > door.opened_state:
+                        ray_x += (-0.5 + A)
+                        ray_y += interception_y
+                        column = int(TEXTURE_SIZE * (offset - door.opened_state))
+                    else:
+                        continue
+
+                else:  # If horizontal ( -- )
+                    interception_x = (-0.5 + B) / tan_rayangle
+                    offset = ray_x + interception_x - int(ray_x + interception_x)
+                    if int(ray_x - x_offset) == int(ray_x + interception_x) and offset > door.opened_state:
+                        ray_x += interception_x
+                        ray_y += (-0.5 + B)
+                        column = int(TEXTURE_SIZE * (offset - door.opened_state))
+                    else:
+                        continue
+
+            else:  # If anything other but a door (door sides count here aswell)
+                if side == 0:
                     offset = ray_y - int(ray_y)
-                    column = int(TEXTURE_SIZE * offset) + TEXTURE_SIZE  # Makes block sides different
+                else:
+                    offset = ray_x - int(ray_x)
+                column = int(TEXTURE_SIZE * offset)
 
-                WALLS.append(Wall(perp_dist, texture, column, c))
+            if SHADES and side == 0:
+                column += TEXTURE_SIZE  # Makes block sides different
 
-                break
+            delta_x = ray_x - PLAYER.x
+            delta_y = ray_y - PLAYER.y
+
+            return grid_value, delta_x, delta_y, column
 
 
 def fixed_angle(angle):
@@ -487,7 +529,7 @@ def movement():
 
         # Removes the errors where pressing both (or all) opposite movement keys, player would still move,
         # bc the movement vector would not be a perfect (0, 0)
-        if abs(movement_vector[0][0]) + abs(movement_vector[0][1]) > 1:
+        if abs(movement_vector[0][0]) + abs(movement_vector[0][1]) > 0.1:
 
             # Normalized vector
             normalized_vector = normalize(movement_vector)[0]  # [0] because vector is inside of list with one element
@@ -500,6 +542,7 @@ def movement():
 def events():
     global RUNNING
     global INFO_LAYER
+    global SHADES
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
@@ -508,6 +551,9 @@ def events():
 
             if event.key == K_F1:
                 INFO_LAYER = not INFO_LAYER
+
+            if event.key == K_F2:
+                SHADES = not SHADES
 
 
 def bottom_layer():
@@ -543,8 +589,11 @@ def game_loop():
     load_textures()
     read_tilemap()
 
+    global DOORS
+    DOORS = []
+
     global PLAYER
-    PLAYER = Player(2.5, 29.5, 0)  # Creates player
+    PLAYER = Player(7.8, 3.5, 0)  # Creates player
 
     global RUNNING
     RUNNING = True
@@ -555,7 +604,7 @@ def game_loop():
         movement()
 
         bottom_layer()
-        raycast()
+        send_rays()
         draw_walls()
         top_layer()
 
