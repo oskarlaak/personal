@@ -1,5 +1,4 @@
 # Main TODOs:
-# Add doors opening/closing system
 # Add enemies - spritesheet class
 
 # NOTES:
@@ -233,31 +232,94 @@ class Sprite(Object):
 
 
 class Door:
+    speed = 0.04
+    open_ticks = 60
+
     def __init__(self, map_x, map_y):
         self.x = map_x
         self.y = map_y
+
+        self.ticks = 0
+        self.state = 0
         self.opened_state = 0  # 1 is fully opened, 0 is fully closed
 
     def __eq__(self, other):
-        # Two doors are "equal" if their position is the same, opened_state doesn't matter
+        # Two doors are "equal" if they are in the same position, everything else doesn't matter
         return (self.x, self.y) == (other.x, other.y)
+
+    def move(self):
+        if self.state > 0:
+            if self.state == 1:  # Opening
+                self.opened_state += Door.speed
+                if self.opened_state > 1:
+                    TILEMAP[self.y][self.x] = 0  # Make tile walkable
+                    self.opened_state = 1
+                    self.state += 1
+
+            if self.state == 2:  # Staying open
+                self.ticks += 1
+                if self.ticks >= Door.open_ticks:  # If time for door to close
+                    # Checking if player is not in door's way
+                    safe_dist = 0.5 + Player.half_hitbox
+                    if abs(self.x + 0.5 - PLAYER.x) > safe_dist or abs(self.y + 0.5 - PLAYER.y) > safe_dist:
+                        TILEMAP[self.y][self.x] = 1  # Make tile non-walkable
+                        self.ticks = 0
+                        self.state += 1
+
+            if self.state == 3:  # Closing
+                self.opened_state -= Door.speed
+                if self.opened_state < 0:
+                    self.opened_state = 0
+                    self.state = 0
+
+
+def events():
+    global RUNNING
+    global INFO_LAYER
+    global SHADES
+
+    for event in pygame.event.get():
+        if event.type == pygame.KEYDOWN:
+            if event.key == K_ESCAPE:
+                RUNNING = False
+
+            if event.key == K_F1:
+                INFO_LAYER = not INFO_LAYER
+
+            if event.key == K_F2:
+                SHADES = not SHADES
+
+            if event.key == K_e:
+                x = PLAYER.x + VIEWANGLE_DIR_X
+                y = PLAYER.y + VIEWANGLE_DIR_Y
+                for d in DOORS:
+                    # If the right door and if isn't in motion already
+                    if int(x) == d.x and int(y) == d.y and d.state == 0:
+                        d.state = 1
+
+
+def update_doors():
+    for d in DOORS:
+        d.move()
 
 
 def draw_walls():
     # Sorting objects by perp_dist so those further away are drawn first
-    TO_DRAW = WALLS
-    TO_DRAW.sort(key=lambda x: x.perp_dist, reverse=True)
-    for obj in TO_DRAW:
+    to_draw = WALLS
+    to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
+    for obj in to_draw:
         obj.draw(DISPLAY)
 
 
 def load_textures():
     global TILEMAP_TEXTURES
+    global DOOR_SIDE_TEXTURE
     global TEXTURE_SIZE
     TEXTURE_SIZE = 64
 
     try:
-        door_textures = pygame.image.load('textures/door.png').convert()
+        door_texture = pygame.image.load('textures/door.png').convert()
+        DOOR_SIDE_TEXTURE = pygame.image.load('textures/door_side.png').convert()
         wall_textures = pygame.image.load('textures/wall_textures.png').convert()
 
     except pygame.error as exception:
@@ -268,7 +330,7 @@ def load_textures():
         index = 1  # Starting at 1 bc 0 means empty
 
         # Doors
-        TILEMAP_TEXTURES[index] = door_textures
+        TILEMAP_TEXTURES[index] = door_texture
         index += 1
 
         # Walls
@@ -332,28 +394,35 @@ def send_rays():
     WALLS = []
 
     for c, d in enumerate(DOORS):
-        if d.opened_state == 0:  # If door closed
+        if d.state == 0:  # If door not in motion
             del DOORS[c]
 
-    viewangle_dir_x = cos(PLAYER.viewangle)
-    viewangle_dir_y = sin(PLAYER.viewangle)
-
     # Sending rays
-    for c, angle in enumerate(RAYANGLES):
+    for i in range(len(RAYANGLES)):
         # Get the rayangle that's going to be raycasted
-        rayangle = fixed_angle(PLAYER.viewangle + angle)
+        rayangle = fixed_angle(PLAYER.viewangle + RAYANGLES[i])
 
         # Get values from raycast()
-        grid_value, delta_x, delta_y, column = raycast(rayangle)
+        grid_value, ray_x, ray_y, column = raycast(rayangle)
+        delta_x = ray_x - PLAYER.x
+        delta_y = ray_y - PLAYER.y
 
         # Calculate perpendicular distance (needed to avoid fisheye effect)
-        perp_dist = delta_x * viewangle_dir_x + delta_y * viewangle_dir_y
+        perp_dist = delta_x * VIEWANGLE_DIR_X + delta_y * VIEWANGLE_DIR_Y
 
-        # Get wall texture from TILEMAP_TEXTURES
-        texture = TILEMAP_TEXTURES[grid_value]
+        # Get wall texture
+        for d in DOORS:
+            # Ray x and y abs(distances) to door center position
+            x_diff = abs(d.x + 0.5 - ray_x)
+            y_diff = abs(d.y + 0.5 - ray_y)
+            if (x_diff == 0.5 and y_diff <= 0.5) or (y_diff == 0.5 and x_diff <= 0.5):
+                texture = DOOR_SIDE_TEXTURE
+                break
+        else:
+            texture = TILEMAP_TEXTURES[grid_value]
 
         # Create Wall object
-        WALLS.append(Wall(perp_dist, texture, column, c))
+        WALLS.append(Wall(perp_dist, texture, column, i))
 
 
 def raycast(rayangle):
@@ -367,8 +436,6 @@ def raycast(rayangle):
     #      B = 1 | B = 1
     #            |
 
-    tan_rayangle = tan(rayangle)
-
     if abs(rayangle) > pi / 2:
         A = 0
     else:
@@ -380,6 +447,7 @@ def raycast(rayangle):
 
     ray_x = PLAYER.x
     ray_y = PLAYER.y
+    tan_rayangle = tan(rayangle)  # Calculating tay(rayangle) once to not calculate it over every step
 
     while True:
         # "if (x/y)_offset == (A/B)" only resets offset depending on the rayangle
@@ -477,10 +545,7 @@ def raycast(rayangle):
             if SHADES and side == 0:
                 column += TEXTURE_SIZE  # Makes block sides different
 
-            delta_x = ray_x - PLAYER.x
-            delta_y = ray_y - PLAYER.y
-
-            return grid_value, delta_x, delta_y, column
+            return grid_value, ray_x, ray_y, column
 
 
 def fixed_angle(angle):
@@ -502,27 +567,31 @@ def mouse():
 
 
 def movement():
-    keys = pygame.key.get_pressed()
+    global VIEWANGLE_DIR_X
+    global VIEWANGLE_DIR_Y
+    VIEWANGLE_DIR_X = cos(PLAYER.viewangle)
+    VIEWANGLE_DIR_Y = sin(PLAYER.viewangle)
 
+    keys = pygame.key.get_pressed()
     # Vector based movement, bc otherwise player could move faster diagonally
     if keys[K_w] or keys[K_a] or keys[K_s] or keys[K_d]:
         movement_x = 0
         movement_y = 0
         if keys[K_w]:
-            movement_x += cos(PLAYER.viewangle)
-            movement_y += sin(PLAYER.viewangle)
+            movement_x += VIEWANGLE_DIR_X
+            movement_y += VIEWANGLE_DIR_Y
 
         if keys[K_a]:
-            movement_x += cos(PLAYER.viewangle - pi / 2)
-            movement_y += sin(PLAYER.viewangle - pi / 2)
+            movement_x += VIEWANGLE_DIR_Y
+            movement_y += -VIEWANGLE_DIR_X
 
         if keys[K_s]:
-            movement_x += cos(PLAYER.viewangle - pi)
-            movement_y += sin(PLAYER.viewangle - pi)
+            movement_x += -VIEWANGLE_DIR_X
+            movement_y += -VIEWANGLE_DIR_Y
 
         if keys[K_d]:
-            movement_x += cos(PLAYER.viewangle + pi / 2)
-            movement_y += sin(PLAYER.viewangle + pi / 2)
+            movement_x += -VIEWANGLE_DIR_Y
+            movement_y += VIEWANGLE_DIR_X
 
         # Needed for normalize() function
         movement_vector = np.asarray([[movement_x, movement_y]])
@@ -537,23 +606,6 @@ def movement():
             movement_y = normalized_vector[1] * PLAYER.speed
 
             PLAYER.move(movement_x, movement_y)
-
-
-def events():
-    global RUNNING
-    global INFO_LAYER
-    global SHADES
-
-    for event in pygame.event.get():
-        if event.type == pygame.KEYDOWN:
-            if event.key == K_ESCAPE:
-                RUNNING = False
-
-            if event.key == K_F1:
-                INFO_LAYER = not INFO_LAYER
-
-            if event.key == K_F2:
-                SHADES = not SHADES
 
 
 def bottom_layer():
@@ -604,6 +656,7 @@ def game_loop():
         movement()
 
         bottom_layer()
+        update_doors()
         send_rays()
         draw_walls()
         top_layer()
