@@ -4,7 +4,7 @@
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
 # All angles are in radians
-# Sprites class is currently unused
+# Object class is currently unused
 
 # Current tilemap system:
 # 0 - empty
@@ -128,109 +128,6 @@ class Player:
                     self.y = ceil(self.y) - Player.half_hitbox
 
 
-class Object:
-    constant = 0.6 * D_H
-
-    def adjust_image_height(self):
-        # Depending on self.height, (it being the unoptimized image drawing height) this system will crop out
-        # from given unscaled image as many pixel rows from top and bottom as possible,
-        # while ensuring that the player will not notice a difference, when the image is drawn later
-        # (that means it will not crop out pixel rows, that are going to be on the screen)
-        #
-        # It will then also adjust drawing height, so the program later knows, how big to scale the new cropped image
-        #
-        # Cropping is done before scaling to ensure that the program is not going to be scaling images to enormous sizes
-
-        # Percentage of image that's going to be seen
-        percentage = D_H / self.height
-
-        # What would be the perfect cropping size
-        perfect_size = TEXTURE_SIZE * percentage
-
-        # However actual cropping size needs to be the closest even* number rounding up perfect_size
-        # For example 10.23 will be turned to 12 and 11.78 will also be turned to 12
-        # *number needs to be even bc you can't crop at halfpixel
-        cropping_size = ceil(perfect_size / 2) * 2
-
-        # Cropping the image smaller - width stays the same
-        rect = pygame.Rect((0, (TEXTURE_SIZE - cropping_size) / 2), (self.image.get_width(), cropping_size))
-        self.image = self.image.subsurface(rect)
-
-        # Adjusting height accordingly
-        multiplier = cropping_size / perfect_size
-        self.height = int(D_H * multiplier)
-
-
-class Wall(Object):
-    width = int(D_W / RAYS_AMOUNT)
-
-    def __init__(self, perp_dist, texture, column, count):
-        self.perp_dist = perp_dist  # Needs saving to sort by it later
-
-        # Cropping 1 pixel wide column out of texture
-        self.image = texture.subsurface(column, 0, 1, TEXTURE_SIZE)
-
-        self.height = int(Object.constant / perp_dist)
-        if self.height > D_H:
-            self.adjust_image_height()
-
-        # Resizing the image and getting it's position
-        self.display_x = count * Wall.width
-        self.display_y = (D_H - self.height) / 2
-        self.image = pygame.transform.scale(self.image, (Wall.width, self.height))
-
-    def draw(self, surface):
-        surface.blit(self.image, (self.display_x, self.display_y))
-
-
-class Sprite(Object):
-    def __init__(self, perp_dist, sprite, x, y):
-        self.perp_dist = perp_dist
-        self.image = sprite  # Name needs to be self.image for it to work in adjust_image_height()
-        self.x = x
-        self.y = y
-
-        self.height = self.width = int(Object.constant / perp_dist)
-        if self.height > D_H:
-            self.adjust_image_height()
-
-        # To find the sprite's display_x position, we need to know it's camera plane position
-        # NOTE:
-        # atan2(delta_y, delta_x) is the angle from player to sprite
-        delta_x = self.x - PLAYER.x
-        delta_y = self.y - PLAYER.y
-
-        angle_from_viewangle = atan2(delta_y, delta_x) - PLAYER.viewangle
-        camera_plane_pos = CAMERA_PLANE_LEN / 2 + tan(angle_from_viewangle) * CAMERA_PLANE_DIST
-
-        self.display_x = D_W * camera_plane_pos - self.width / 2
-        self.display_y = (D_H - self.height) / 2
-
-    def draw(self, surface):
-        if self.perp_dist > 0:
-            # Since sprite's out of bounds top and bottom parts are already cut out
-            # the program can now draw all sprite pixel columns, that are in display area
-
-            column_width = self.width / TEXTURE_SIZE
-            column_left_side = self.display_x
-            column_right_side = self.display_x + column_width
-
-            for column in range(TEXTURE_SIZE):
-                column_left_side += column_width
-                column_right_side += column_width
-
-                if column_left_side < D_W and column_right_side > 0:  # If row on screen
-
-                    # Getting sprite column out of image
-                    sprite_column = self.image.subsurface(column, 0, 1, self.image.get_height())
-
-                    # Scaling that column
-                    sprite_column = pygame.transform.scale(sprite_column, (ceil(column_width), self.height))
-
-                    # Blitting that column
-                    surface.blit(sprite_column, (column_left_side, self.display_y))
-
-
 class Door:
     speed = 0.04
     open_ticks = 60
@@ -273,6 +170,136 @@ class Door:
                     self.state = 0
 
 
+class Drawable:
+    constant = 0.6 * D_H
+
+    def adjust_image_height(self):
+        # Depending on self.height, (it being the unoptimized image drawing height) this system will crop out
+        # from given unscaled image as many pixel rows from top and bottom as possible,
+        # while ensuring that the player will not notice a difference, when the image is drawn later
+        # (that means it will not crop out pixel rows, that are going to be on the screen)
+        #
+        # It will then also adjust drawing height, so the program later knows, how big to scale the new cropped image
+        #
+        # Cropping is done before scaling to ensure that the program is not going to be scaling images to enormous sizes
+
+        # Percentage of image that's going to be seen
+        percentage = D_H / self.height
+
+        # What would be the perfect cropping size
+        perfect_size = TEXTURE_SIZE * percentage
+
+        # However actual cropping size needs to be the closest even* number rounding up perfect_size
+        # For example 10.23 will be turned to 12 and 11.78 will also be turned to 12
+        # *number needs to be even bc you can't crop at halfpixel
+        cropping_size = ceil(perfect_size / 2) * 2
+
+        # Cropping the image smaller - width stays the same
+        rect = pygame.Rect((0, (TEXTURE_SIZE - cropping_size) / 2), (self.image.get_width(), cropping_size))
+        self.image = self.image.subsurface(rect)
+
+        # Adjusting height accordingly
+        multiplier = cropping_size / perfect_size
+        self.height = int(D_H * multiplier)
+
+
+class Wall(Drawable):
+    width = int(D_W / RAYS_AMOUNT)
+
+    def __init__(self, perp_dist, texture, column, count):
+        self.perp_dist = perp_dist  # Needs saving to sort by it later
+
+        # Cropping 1 pixel wide column out of texture
+        self.image = texture.subsurface(column, 0, 1, TEXTURE_SIZE)
+
+        self.height = int(Drawable.constant / self.perp_dist)
+        if self.height > D_H:
+            self.adjust_image_height()
+
+        # Resizing the image and getting it's position
+        self.display_x = count * Wall.width
+        self.display_y = (D_H - self.height) / 2
+        self.image = pygame.transform.scale(self.image, (Wall.width, self.height))
+
+    def draw(self, surface):
+        surface.blit(self.image, (self.display_x, self.display_y))
+
+
+class Sprite:
+    def draw(self, surface):
+        # Optimized sprite drawing function made for Enemies and Objects
+
+        if self.perp_dist > 0:
+            # Since sprite's out of bounds top and bottom parts are already cut out
+            # the program can now draw all sprite pixel columns, that are in display area
+
+            column_width = self.width / TEXTURE_SIZE
+            column_left_side = self.display_x
+            column_right_side = self.display_x + column_width
+
+            for column in range(TEXTURE_SIZE):
+                column_left_side += column_width
+                column_right_side += column_width
+
+                if column_left_side < D_W and column_right_side > 0:  # If row on screen
+
+                    # Getting sprite column out of image
+                    sprite_column = self.image.subsurface(column, 0, 1, self.image.get_height())
+
+                    # Scaling that column
+                    sprite_column = pygame.transform.scale(sprite_column, (ceil(column_width), self.height))
+
+                    # Blitting that column
+                    surface.blit(sprite_column, (column_left_side, self.display_y))
+
+    def calc_display_xy(self, delta_x, delta_y):
+        # In order to calculate sprite's correct display x/y position, we need to calculate it's camera plane position
+        # NOTE: atan2(delta_y, delta_x) is the angle from player to sprite
+
+        angle_from_viewangle = atan2(delta_y, delta_x) - PLAYER.viewangle
+        camera_plane_pos = CAMERA_PLANE_LEN / 2 + tan(angle_from_viewangle) * CAMERA_PLANE_DIST
+
+        self.display_x = D_W * camera_plane_pos - self.width / 2
+        self.display_y = (D_H - self.height) / 2
+
+
+class Object(Drawable, Sprite):
+    def __init__(self, perp_dist, sprite, x, y):
+        self.perp_dist = perp_dist
+        self.image = sprite  # Name needs to be self.image for it to work in adjust_image_height()
+        self.x = x
+        self.y = y
+
+        self.height = self.width = int(Drawable.constant / self.perp_dist)
+        if self.height > D_H:
+            self.adjust_image_height()
+
+        delta_x = self.x - PLAYER.x
+        delta_y = self.y - PLAYER.y
+        self.calc_display_xy(delta_x, delta_y)
+
+
+class Enemy(Drawable, Sprite):
+    def __init__(self, spritesheet, x, y, angle):
+        self.x = x
+        self.y = y
+        self.angle = angle
+        self.sheet = spritesheet
+
+    def update(self):
+        delta_x = self.x - PLAYER.x
+        delta_y = self.y - PLAYER.y
+        self.perp_dist = delta_x * VIEWANGLE_DIR_X + delta_y * VIEWANGLE_DIR_Y
+
+        self.image = self.sheet.subsurface(0, 0, TEXTURE_SIZE, TEXTURE_SIZE)
+
+        self.height = self.width = int(Drawable.constant / self.perp_dist)
+        if self.height > D_H:
+            self.adjust_image_height()
+
+        self.calc_display_xy(delta_x, delta_y)
+
+
 def events():
     global RUNNING
     global INFO_LAYER
@@ -301,35 +328,52 @@ def events():
 def update_doors():
     for d in DOORS:
         d.move()
+    for e in ENEMIES:
+        e.update()
 
 
 def draw_walls():
     # Sorting objects by perp_dist so those further away are drawn first
-    to_draw = WALLS
+    to_draw = WALLS + ENEMIES
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
     for obj in to_draw:
         obj.draw(DISPLAY)
 
 
-def load_textures():
-    global TILEMAP_TEXTURES
-    global DOOR_SIDE_TEXTURE
-    global TEXTURE_SIZE
-    TEXTURE_SIZE = 64
-
+def load_enemies():
     try:
-        door_texture = pygame.image.load('textures/door.png').convert()
+        blue_soldier = pygame.image.load('textures/blue_enemy.png').convert_alpha()
+
+    except pygame.error as exception:
+        sys.exit(exception)
+
+    else:
+        global ENEMIES
+        ENEMIES = []
+        ENEMIES.append(Enemy(blue_soldier, 4.5, 5.5, 0))
+
+
+def assign_wall_textures():
+    try:
+        global DOOR_SIDE_TEXTURE  # Making var global to access it in send_rays()
         DOOR_SIDE_TEXTURE = pygame.image.load('textures/door_side.png').convert()
+        door_texture = pygame.image.load('textures/door.png').convert()
         wall_textures = pygame.image.load('textures/wall_textures.png').convert()
 
     except pygame.error as exception:
         sys.exit(exception)
 
     else:  # If no error when loading textures
+        global TEXTURE_SIZE
+        TEXTURE_SIZE = 64
+        global TILEMAP_TEXTURES
         TILEMAP_TEXTURES = {}
+
         index = 1  # Starting at 1 bc 0 means empty
 
         # Doors
+        global DOORS
+        DOORS = []
         TILEMAP_TEXTURES[index] = door_texture
         index += 1
 
@@ -638,11 +682,9 @@ def top_layer():
 
 def game_loop():
     get_rayangles()
-    load_textures()
+    assign_wall_textures()
     read_tilemap()
-
-    global DOORS
-    DOORS = []
+    load_enemies()
 
     global PLAYER
     PLAYER = Player(7.8, 3.5, 0)  # Creates player
