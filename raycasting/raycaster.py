@@ -1,5 +1,5 @@
 # Main TODOs:
-# Add enemies - spritesheet class
+# Add enemy "AI"
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -66,7 +66,7 @@ class Player:
         down = self.y + Player.half_hitbox
         up = self.y - Player.half_hitbox
 
-        down_right = TILEMAP[int(down)][int(right)] > 0  # <-- Number of sprites you can walk through/over
+        down_right = TILEMAP[int(down)][int(right)] > 0  # <-- Number of objects/sprites you can walk through/over
         down_left = TILEMAP[int(down)][int(left)] > 0
         up_right = TILEMAP[int(up)][int(right)] > 0
         up_left = TILEMAP[int(up)][int(left)] > 0
@@ -252,12 +252,11 @@ class Sprite:
                     # Blitting that column
                     surface.blit(sprite_column, (column_left_side, self.display_y))
 
-    def calc_display_xy(self, delta_x, delta_y):
+    def calc_display_xy(self, angle_from_player):
         # In order to calculate sprite's correct display x/y position, we need to calculate it's camera plane position
         # NOTE: atan2(delta_y, delta_x) is the angle from player to sprite
 
-        angle_from_viewangle = atan2(delta_y, delta_x) - PLAYER.viewangle
-        camera_plane_pos = CAMERA_PLANE_LEN / 2 + tan(angle_from_viewangle) * CAMERA_PLANE_DIST
+        camera_plane_pos = CAMERA_PLANE_LEN / 2 + tan(angle_from_player - PLAYER.viewangle) * CAMERA_PLANE_DIST
 
         self.display_x = D_W * camera_plane_pos - self.width / 2
         self.display_y = (D_H - self.height) / 2
@@ -276,28 +275,41 @@ class Object(Drawable, Sprite):
 
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
-        self.calc_display_xy(delta_x, delta_y)
+        angle_from_player = atan2(delta_y, delta_x)
+
+        self.calc_display_xy(angle_from_player)
 
 
 class Enemy(Drawable, Sprite):
-    def __init__(self, spritesheet, x, y, angle):
+    def __init__(self, spritesheet, x, y):
         self.x = x
         self.y = y
-        self.angle = angle
         self.sheet = spritesheet
+        self.angle = 0
+        self.state = 0
 
     def update(self):
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
+        angle_from_player = atan2(delta_y, delta_x)
+
         self.perp_dist = delta_x * VIEWANGLE_DIR_X + delta_y * VIEWANGLE_DIR_Y
 
-        self.image = self.sheet.subsurface(0, 0, TEXTURE_SIZE, TEXTURE_SIZE)
+        row = self.state
+        if row < 5:  # If walking or standing
+            #angle = fixed_angle(-PLAYER.viewangle - self.angle) + pi
+            angle = fixed_angle(-angle_from_player - self.angle) + pi  # +pi to get rid of negative values
+            column = round(angle / (pi / 4))
+            if column == 8:
+                column = 0
+
+        self.image = self.sheet.subsurface(column * TEXTURE_SIZE, row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
 
         self.height = self.width = int(Drawable.constant / self.perp_dist)
         if self.height > D_H:
             self.adjust_image_height()
 
-        self.calc_display_xy(delta_x, delta_y)
+        self.calc_display_xy(angle_from_player)
 
 
 def events():
@@ -350,7 +362,7 @@ def load_enemies():
     else:
         global ENEMIES
         ENEMIES = []
-        ENEMIES.append(Enemy(blue_soldier, 4.5, 5.5, 0))
+        ENEMIES.append(Enemy(blue_soldier, 4.5, 5.5))
 
 
 def assign_wall_textures():
