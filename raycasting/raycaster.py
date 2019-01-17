@@ -1,15 +1,22 @@
 # Main TODOs:
 # Add enemy "AI"
+# Add things to README
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
 # All angles are in radians
 # Object class is currently unused
+# Level files don't support empty lines
 
-# Current tilemap system:
+# tilemap.txt system:
+# ceiling color
+# floor color
 # 0 - empty
 # 1 - door
 # 2 - ... walls
+
+# enemies.txt system:
+# type, x, y
 
 from math import *
 
@@ -20,6 +27,7 @@ import pygame
 from pygame.locals import *
 
 import sys
+import os
 
 # Game settings
 INFO_LAYER = False
@@ -48,9 +56,9 @@ class Player:
     speed = 0.15  # Must be < half_hitbox, otherwise collisions will not work
     half_hitbox = 0.2
 
-    def __init__(self, x, y, angle):
-        self.x = x
-        self.y = y
+    def __init__(self, pos, angle):
+        self.x = pos[0]
+        self.y = pos[1]
         self.viewangle = angle
 
     def rotate(self, radians):
@@ -132,9 +140,9 @@ class Door:
     speed = 0.04
     open_ticks = 60
 
-    def __init__(self, map_x, map_y):
-        self.x = map_x
-        self.y = map_y
+    def __init__(self, map_pos):
+        self.x = map_pos[0]
+        self.y = map_pos[1]
 
         self.ticks = 0
         self.state = 0
@@ -263,11 +271,11 @@ class Sprite:
 
 
 class Object(Drawable, Sprite):
-    def __init__(self, perp_dist, sprite, x, y):
+    def __init__(self, perp_dist, sprite, pos):
         self.perp_dist = perp_dist
         self.image = sprite  # Name needs to be self.image for it to work in adjust_image_height()
-        self.x = x
-        self.y = y
+        self.x = pos[0]
+        self.y = pos[1]
 
         self.height = self.width = int(Drawable.constant / self.perp_dist)
         if self.height > D_H:
@@ -281,9 +289,9 @@ class Object(Drawable, Sprite):
 
 
 class Enemy(Drawable, Sprite):
-    def __init__(self, spritesheet, x, y):
-        self.x = x
-        self.y = y
+    def __init__(self, spritesheet, pos):
+        self.x = pos[0]
+        self.y = pos[1]
         self.sheet = spritesheet
         self.angle = 0
         self.state = 0
@@ -295,21 +303,22 @@ class Enemy(Drawable, Sprite):
 
         self.perp_dist = delta_x * VIEWANGLE_DIR_X + delta_y * VIEWANGLE_DIR_Y
 
-        row = self.state
-        if row < 5:  # If walking or standing
-            #angle = fixed_angle(-PLAYER.viewangle - self.angle) + pi
-            angle = fixed_angle(-angle_from_player - self.angle) + pi  # +pi to get rid of negative values
-            column = round(angle / (pi / 4))
-            if column == 8:
-                column = 0
+        if self.perp_dist > 0:
+            row = self.state
+            if row < 5:  # If walking or standing
+                #angle = fixed_angle(-PLAYER.viewangle - self.angle) + pi
+                angle = fixed_angle(-angle_from_player - self.angle) + pi  # +pi to get rid of negative values
+                column = round(angle / (pi / 4))
+                if column == 8:
+                    column = 0
 
-        self.image = self.sheet.subsurface(column * TEXTURE_SIZE, row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
+            self.image = self.sheet.subsurface(column * TEXTURE_SIZE, row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
 
-        self.height = self.width = int(Drawable.constant / self.perp_dist)
-        if self.height > D_H:
-            self.adjust_image_height()
+            self.height = self.width = int(Drawable.constant / self.perp_dist)
+            if self.height > D_H:
+                self.adjust_image_height()
 
-        self.calc_display_xy(angle_from_player)
+            self.calc_display_xy(angle_from_player)
 
 
 def events():
@@ -344,25 +353,12 @@ def update_doors():
         e.update()
 
 
-def draw_walls():
+def draw_frame():
     # Sorting objects by perp_dist so those further away are drawn first
     to_draw = WALLS + ENEMIES
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
     for obj in to_draw:
         obj.draw(DISPLAY)
-
-
-def load_enemies():
-    try:
-        blue_soldier = pygame.image.load('textures/blue_enemy.png').convert_alpha()
-
-    except pygame.error as exception:
-        sys.exit(exception)
-
-    else:
-        global ENEMIES
-        ENEMIES = []
-        ENEMIES.append(Enemy(blue_soldier, 4.5, 5.5))
 
 
 def assign_wall_textures():
@@ -402,18 +398,45 @@ def assign_wall_textures():
                 index += 1
 
 
-def read_tilemap():
+def load_level(level_nr):
     # Getting tilemap from text file
     global TILEMAP
     TILEMAP = []
-    with open('tilemap.txt', 'r') as f:
-        for line in f:
-            if len(line) == 1:  # If line only consists of '\n' / If line empty ; Allows comments in tilemap.txt
-                break
-
+    with open('levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
+        for c, line in enumerate(f):
             row = line.replace('\n', '').split(',')  # Split the line to a list and get rid of newline (\n)
             row = [int(i) for i in row]  # Turn all number strings to an int
-            TILEMAP.append(row)
+            if c == 0:
+                global CEIL_COLOR
+                CEIL_COLOR = tuple(row)
+
+            elif c == 1:
+                global FLOOR_COLOR
+                FLOOR_COLOR = tuple(row)
+
+            else:
+                TILEMAP.append(row)
+
+    # Loading enemies
+    try:
+        enemy_sprites = []
+        # Goes through enemies texture folder and adds all textures into enemy_sprites
+        # This way it doesn't have to name any of the textures
+        for spritesheet in os.listdir('textures/enemies'):
+            enemy_sprites.append(pygame.image.load('textures/enemies/{}'.format(spritesheet)).convert_alpha())
+
+    except pygame.error as exception:
+        sys.exit(exception)  # Catches image loading errors
+
+    else:
+        global ENEMIES
+        ENEMIES = []
+        with open('levels/{}/enemies.txt'.format(level_nr), 'r') as f:
+            for line in f:
+                row = line.replace('\n', '').split(',')
+                spritesheet = enemy_sprites[int(row[0])]
+                pos = (float(row[1]), float(row[2]))
+                ENEMIES.append(Enemy(spritesheet, pos))
 
 
 def get_rayangles():
@@ -563,7 +586,7 @@ def raycast(rayangle):
                     y_offset = 1
 
                 # Add door to DOORS if it's not in it already
-                door = Door(map_x, map_y)
+                door = Door((map_x, map_y))
                 for d in DOORS:
                     if d == door:
                         door = d
@@ -665,8 +688,8 @@ def movement():
 
 
 def bottom_layer():
-    pygame.draw.rect(DISPLAY, ( 50,  50,  50), ((0,       0), (D_W, D_H / 2)))  # Ceiling
-    pygame.draw.rect(DISPLAY, (100, 100, 100), ((0, D_H / 2), (D_W, D_H / 2)))  # Floor
+    pygame.draw.rect(DISPLAY,  CEIL_COLOR, ((0,       0), (D_W, D_H / 2)))  # Ceiling
+    pygame.draw.rect(DISPLAY, FLOOR_COLOR, ((0, D_H / 2), (D_W, D_H / 2)))  # Floor
 
 
 def top_layer():
@@ -695,11 +718,10 @@ def top_layer():
 def game_loop():
     get_rayangles()
     assign_wall_textures()
-    read_tilemap()
-    load_enemies()
+    load_level(1)
 
     global PLAYER
-    PLAYER = Player(7.8, 3.5, 0)  # Creates player
+    PLAYER = Player((6.5, 3.5), 0)  # Creates player
 
     global RUNNING
     RUNNING = True
@@ -712,7 +734,7 @@ def game_loop():
         bottom_layer()
         update_doors()
         send_rays()
-        draw_walls()
+        draw_frame()
         top_layer()
 
         pygame.display.flip()
