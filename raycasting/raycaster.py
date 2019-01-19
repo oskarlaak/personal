@@ -1,22 +1,32 @@
 # Main TODOs:
 # Add enemy "AI"
 # Add things to README
+# Clean up assign_tilemap_textures()
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
 # All angles are in radians
-# Object class is currently unused
 # Level files don't support empty lines
+# Objects are in OBJECTS list only if that object's cell is visible to player
+# Enemies are in ENEMIES list at all times
 
+# Level file system:
+# Everything static + floor and ceiling colour are stored inside tilemap.txt
+# Enemies that move are stored in enemies.txt
+#
 # tilemap.txt system:
-# ceiling color
-# floor color
-# 0 - empty
-# 1 - door
-# 2 - ... walls
-
+# -14 to -3 = non-solid obj
+#        -2 = health
+#        -1 = ammo
+#         0 = empty
+#   1 to 20 = solid obj
+#        21 = door
+#  22 to 60 = wall
+# Note that these will change,
+# if the amount of wall or objects textures changes
+#
 # enemies.txt system:
-# type, x, y
+# type, x, y, hp
 
 from math import *
 
@@ -60,11 +70,14 @@ class Player:
         self.x = pos[0]
         self.y = pos[1]
         self.viewangle = angle
+        self.hp = 100
+        self.ammo = 10
 
     def rotate(self, radians):
         self.viewangle = fixed_angle(self.viewangle + radians)
 
     def move(self, x_move, y_move):
+        # Moving player to check collision
         self.x += x_move
         self.y += y_move
 
@@ -74,7 +87,9 @@ class Player:
         down = self.y + Player.half_hitbox
         up = self.y - Player.half_hitbox
 
-        down_right = TILEMAP[int(down)][int(right)] > 0  # <-- Number of objects/sprites you can walk through/over
+        # Everything that player can walk on is less than 0 on tilemap
+        # So these will return True if there is a collision
+        down_right = TILEMAP[int(down)][int(right)] > 0
         down_left = TILEMAP[int(down)][int(left)] > 0
         up_right = TILEMAP[int(up)][int(right)] > 0
         up_left = TILEMAP[int(up)][int(left)] > 0
@@ -167,7 +182,7 @@ class Door:
                     # Checking if player is not in door's way
                     safe_dist = 0.5 + Player.half_hitbox
                     if abs(self.x + 0.5 - PLAYER.x) > safe_dist or abs(self.y + 0.5 - PLAYER.y) > safe_dist:
-                        TILEMAP[self.y][self.x] = 1  # Make tile non-walkable
+                        TILEMAP[self.y][self.x] = DOOR_INDEX  # Make tile non-walkable
                         self.ticks = 0
                         self.state += 1
 
@@ -271,28 +286,35 @@ class Sprite:
 
 
 class Object(Drawable, Sprite):
-    def __init__(self, perp_dist, sprite, pos):
-        self.perp_dist = perp_dist
-        self.image = sprite  # Name needs to be self.image for it to work in adjust_image_height()
-        self.x = pos[0]
-        self.y = pos[1]
-
-        self.height = self.width = int(Drawable.constant / self.perp_dist)
-        if self.height > D_H:
-            self.adjust_image_height()
+    def __init__(self, map_pos, gridvalue):
+        self.x = map_pos[0] + 0.5
+        self.y = map_pos[1] + 0.5
 
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
-        angle_from_player = atan2(delta_y, delta_x)
+        self.perp_dist = delta_x * VIEWANGLE_DIR_X + delta_y * VIEWANGLE_DIR_Y
 
-        self.calc_display_xy(angle_from_player)
+        if self.perp_dist > 0:
+            self.image = TILEMAP_TEXTURES[gridvalue]  # Name needs to be self.image for it to work in adjust_image_height()
+
+            self.height = self.width = int(Drawable.constant / self.perp_dist)
+            if self.height > D_H:
+                self.adjust_image_height()
+
+            angle_from_player = atan2(delta_y, delta_x)
+
+            self.calc_display_xy(angle_from_player)
+
+    def __eq__(self, other):
+        return (self.x, self.y) == (other.x, other.y)
 
 
 class Enemy(Drawable, Sprite):
-    def __init__(self, spritesheet, pos):
+    def __init__(self, spritesheet, pos, hp):
         self.x = pos[0]
         self.y = pos[1]
         self.sheet = spritesheet
+        self.hp = hp
         self.angle = 0
         self.state = 0
 
@@ -355,18 +377,25 @@ def update_doors():
 
 def draw_frame():
     # Sorting objects by perp_dist so those further away are drawn first
-    to_draw = WALLS + ENEMIES
+    to_draw = WALLS + ENEMIES + OBJECTS
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
     for obj in to_draw:
         obj.draw(DISPLAY)
 
 
-def assign_wall_textures():
+def assign_tilemap_textures():
     try:
+        # Wall textures
         global DOOR_SIDE_TEXTURE  # Making var global to access it in send_rays()
-        DOOR_SIDE_TEXTURE = pygame.image.load('textures/door_side.png').convert()
-        door_texture = pygame.image.load('textures/door.png').convert()
-        wall_textures = pygame.image.load('textures/wall_textures.png').convert()
+        DOOR_SIDE_TEXTURE = pygame.image.load('textures/walls/door_side.png').convert()
+        door_texture = pygame.image.load('textures/walls/door.png').convert()
+        wall_textures = pygame.image.load('textures/walls/other.png').convert()
+
+        # Object sprites
+        ammo_sprite = pygame.image.load('textures/objects/ammo.png').convert_alpha()
+        health_sprite = pygame.image.load('textures/objects/health.png').convert_alpha()
+        nonsolid_sprites = pygame.image.load('textures/objects/nonsolids.png').convert_alpha()
+        solid_sprites = pygame.image.load('textures/objects/solids.png').convert_alpha()
 
     except pygame.error as exception:
         sys.exit(exception)
@@ -377,22 +406,46 @@ def assign_wall_textures():
         global TILEMAP_TEXTURES
         TILEMAP_TEXTURES = {}
 
-        index = 1  # Starting at 1 bc 0 means empty
+        # Non-solid objects
+        index = -3
+        cell_w = cell_h = TEXTURE_SIZE
+        for row in range(int(nonsolid_sprites.get_height() / cell_h)):
+
+            for column in range(int(nonsolid_sprites.get_width() / cell_w)):
+                texture = nonsolid_sprites.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
+                TILEMAP_TEXTURES[index] = texture
+                index += -1
+
+        # Ammo, health
+        TILEMAP_TEXTURES[-2] = health_sprite
+        TILEMAP_TEXTURES[-1] = ammo_sprite
+
+        # Solid objects
+        index = 1
+        cell_w = cell_h = TEXTURE_SIZE
+        for row in range(int(solid_sprites.get_height() / cell_h)):
+
+            for column in range(int(solid_sprites.get_width() / cell_w)):
+                texture = solid_sprites.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
+                TILEMAP_TEXTURES[index] = texture
+                index += 1
 
         # Doors
         global DOORS
         DOORS = []
-        TILEMAP_TEXTURES[index] = door_texture
+        global DOOR_INDEX
+        DOOR_INDEX = index
+        TILEMAP_TEXTURES[DOOR_INDEX] = door_texture
         index += 1
 
         # Walls
-        # Because each texture "cell" contains two textures, cell width is going to be twice as big as cell height
+        # Because each wall texture "cell" contains two textures,
+        # cell width is going to be twice as big as cell height
         cell_w = TEXTURE_SIZE * 2
         cell_h = TEXTURE_SIZE
         for row in range(int(wall_textures.get_height() / cell_h)):
 
             for column in range(int(wall_textures.get_width() / cell_w)):
-
                 texture = wall_textures.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
                 TILEMAP_TEXTURES[index] = texture
                 index += 1
@@ -436,7 +489,8 @@ def load_level(level_nr):
                 row = line.replace('\n', '').split(',')
                 spritesheet = enemy_sprites[int(row[0])]
                 pos = (float(row[1]), float(row[2]))
-                ENEMIES.append(Enemy(spritesheet, pos))
+                hp = int(row[3])
+                ENEMIES.append(Enemy(spritesheet, pos, hp))
 
 
 def get_rayangles():
@@ -475,6 +529,23 @@ def send_rays():
     for c, d in enumerate(DOORS):
         if d.state == 0:  # If door not in motion
             del DOORS[c]
+
+    global OBJECTS
+    OBJECTS = []
+
+    # Checking tile your standing on bc it will miss it in raycast()
+    grid_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
+    if grid_value < 0:  # If anything under player
+        if grid_value == -1:  # If ammo
+            PLAYER.ammo += 6
+            TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0  # "Deletes" object
+        elif grid_value == -2:  # If health
+            if PLAYER.hp != 100:  # If player hp not full
+                PLAYER.hp += 20  # Increase hp
+                if PLAYER.hp > 100:  # If over 100
+                    PLAYER.hp = 100  # return to 100
+                TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0  # "Deletes" object
+        OBJECTS.append(Object((int(PLAYER.x), int(PLAYER.y)), grid_value))
 
     # Sending rays
     for i in range(len(RAYANGLES)):
@@ -575,7 +646,16 @@ def raycast(rayangle):
         grid_value = TILEMAP[map_y][map_x]
         if grid_value != 0:  # If ray touching something
 
-            if grid_value == 1:  # If door
+            if grid_value < DOOR_INDEX:  # If any object (solids, non-solids, ammo, health)
+                obj = Object((map_x, map_y), grid_value)
+                for o in OBJECTS:
+                    if o == obj:
+                        break
+                else:
+                    OBJECTS.append(obj)
+                continue
+
+            if grid_value == DOOR_INDEX:  # If door
                 # Update (x/y)_offset values
                 x_offset = ray_x - int(ray_x)
                 if x_offset == A:
@@ -717,11 +797,11 @@ def top_layer():
 
 def game_loop():
     get_rayangles()
-    assign_wall_textures()
+    assign_tilemap_textures()
     load_level(1)
 
     global PLAYER
-    PLAYER = Player((6.5, 3.5), 0)  # Creates player
+    PLAYER = Player((1.5, 1.5), 0)  # Creates player
 
     global RUNNING
     RUNNING = True
