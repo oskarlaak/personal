@@ -2,6 +2,10 @@
 # Add enemy "AI"
 # Add things to README
 # Clean up assign_tilemap_textures()
+# Level editor
+# Add more enemy types
+# Exit elevator
+# Add weapons + shooting
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -9,6 +13,8 @@
 # Level files don't support empty lines
 # Objects are in OBJECTS list only if that object's cell is visible to player
 # Enemies are in ENEMIES list at all times
+# Wall texture files require two textures side by side (even if they are going to be the same)
+# bc raycast() is going to pick one based on the side of interception
 
 # Level file system:
 # Everything static + floor and ceiling colour are stored inside tilemap.txt
@@ -21,9 +27,13 @@
 #         0 = empty
 #   1 to 20 = solid obj
 #        21 = door
-#  22 to 60 = wall
+#        22 = elevator door
+#        23 = fake elevator door
+#  24 to 62 = wall
 # Note that these will change,
 # if the amount of wall or objects textures changes
+# But if the level has been made after these changes in level editor (not made yet),
+# program should be able to run it without problems
 #
 # enemies.txt system:
 # type, x, y, hp
@@ -41,7 +51,6 @@ import os
 
 # Game settings
 INFO_LAYER = False
-SHADES = True
 D_W = 1024
 D_H = 800
 FOV = pi / 2  # = 90 degrees
@@ -155,16 +164,15 @@ class Door:
     speed = 0.04
     open_ticks = 60
 
-    def __init__(self, map_pos):
+    def __init__(self, map_pos, grid_value):
         self.x = map_pos[0]
         self.y = map_pos[1]
-
+        self.grid_value = grid_value
         self.ticks = 0
         self.state = 0
         self.opened_state = 0  # 1 is fully opened, 0 is fully closed
 
     def __eq__(self, other):
-        # Two doors are "equal" if they are in the same position, everything else doesn't matter
         return (self.x, self.y) == (other.x, other.y)
 
     def move(self):
@@ -182,7 +190,7 @@ class Door:
                     # Checking if player is not in door's way
                     safe_dist = 0.5 + Player.half_hitbox
                     if abs(self.x + 0.5 - PLAYER.x) > safe_dist or abs(self.y + 0.5 - PLAYER.y) > safe_dist:
-                        TILEMAP[self.y][self.x] = DOOR_INDEX  # Make tile non-walkable
+                        TILEMAP[self.y][self.x] = self.grid_value  # Make tile non-walkable
                         self.ticks = 0
                         self.state += 1
 
@@ -328,7 +336,6 @@ class Enemy(Drawable, Sprite):
         if self.perp_dist > 0:
             row = self.state
             if row < 5:  # If walking or standing
-                #angle = fixed_angle(-PLAYER.viewangle - self.angle) + pi
                 angle = fixed_angle(-angle_from_player - self.angle) + pi  # +pi to get rid of negative values
                 column = round(angle / (pi / 4))
                 if column == 8:
@@ -346,7 +353,6 @@ class Enemy(Drawable, Sprite):
 def events():
     global RUNNING
     global INFO_LAYER
-    global SHADES
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
@@ -356,16 +362,15 @@ def events():
             if event.key == K_F1:
                 INFO_LAYER = not INFO_LAYER
 
-            if event.key == K_F2:
-                SHADES = not SHADES
-
             if event.key == K_e:
                 x = PLAYER.x + VIEWANGLE_DIR_X
                 y = PLAYER.y + VIEWANGLE_DIR_Y
                 for d in DOORS:
-                    # If the right door and if isn't in motion already
-                    if int(x) == d.x and int(y) == d.y and d.state == 0:
-                        d.state = 1
+                    # If found the right door
+                    if int(x) == d.x and int(y) == d.y:
+                        # If door not in motion already and it's not fake elevator door that can't be moved
+                        if d.state == 0 and d.grid_value != DARK_ELEVATOR_INDEX:
+                            d.state = 1
 
 
 def update_doors():
@@ -388,7 +393,7 @@ def assign_tilemap_textures():
         # Wall textures
         global DOOR_SIDE_TEXTURE  # Making var global to access it in send_rays()
         DOOR_SIDE_TEXTURE = pygame.image.load('textures/walls/door_side.png').convert()
-        door_texture = pygame.image.load('textures/walls/door.png').convert()
+        door_textures = pygame.image.load('textures/walls/doors.png').convert()
         wall_textures = pygame.image.load('textures/walls/other.png').convert()
 
         # Object sprites
@@ -406,6 +411,7 @@ def assign_tilemap_textures():
         global TILEMAP_TEXTURES
         TILEMAP_TEXTURES = {}
 
+        # ---OBJECTS---
         # Non-solid objects
         index = -3
         cell_w = cell_h = TEXTURE_SIZE
@@ -430,19 +436,36 @@ def assign_tilemap_textures():
                 TILEMAP_TEXTURES[index] = texture
                 index += 1
 
-        # Doors
-        global DOORS
-        DOORS = []
-        global DOOR_INDEX
-        DOOR_INDEX = index
-        TILEMAP_TEXTURES[DOOR_INDEX] = door_texture
-        index += 1
-
-        # Walls
+        # ----WALLS----
         # Because each wall texture "cell" contains two textures,
         # cell width is going to be twice as big as cell height
         cell_w = TEXTURE_SIZE * 2
         cell_h = TEXTURE_SIZE
+
+        # Doors
+        global DOOR_INDEX  # Regular door
+        DOOR_INDEX = index
+        texture = door_textures.subsurface(0, cell_h * 0, cell_w, cell_h)
+        TILEMAP_TEXTURES[DOOR_INDEX] = texture
+        index += 1
+
+        global ELEVATOR_INDEX  # Elevator door
+        ELEVATOR_INDEX = index
+        texture = door_textures.subsurface(0, cell_h * 1, cell_w, cell_h)
+        TILEMAP_TEXTURES[ELEVATOR_INDEX] = texture
+        index += 1
+
+        global DARK_ELEVATOR_INDEX  # "Fake" elevator door that can't be moved
+        DARK_ELEVATOR_INDEX = index
+        texture = door_textures.subsurface(0, cell_h * 2, cell_w, cell_h)
+        TILEMAP_TEXTURES[DARK_ELEVATOR_INDEX] = texture
+        index += 1
+
+        # Elevator lever
+
+        # Elevator sides
+
+        # Other walls
         for row in range(int(wall_textures.get_height() / cell_h)):
 
             for column in range(int(wall_textures.get_width() / cell_w)):
@@ -452,6 +475,9 @@ def assign_tilemap_textures():
 
 
 def load_level(level_nr):
+    global DOORS
+    DOORS = []
+
     # Getting tilemap from text file
     global TILEMAP
     TILEMAP = []
@@ -533,7 +559,7 @@ def send_rays():
     global OBJECTS
     OBJECTS = []
 
-    # Checking tile your standing on bc it will miss it in raycast()
+    # Checking if player is standing on an object
     grid_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
     if grid_value < 0:  # If anything under player
         if grid_value == -1:  # If ammo
@@ -655,7 +681,8 @@ def raycast(rayangle):
                     OBJECTS.append(obj)
                 continue
 
-            if grid_value == DOOR_INDEX:  # If door
+            # If regular door or elevator door or fake elevator door you can't open
+            if grid_value == DOOR_INDEX or grid_value == ELEVATOR_INDEX or grid_value == DARK_ELEVATOR_INDEX:
                 # Update (x/y)_offset values
                 x_offset = ray_x - int(ray_x)
                 if x_offset == A:
@@ -666,7 +693,7 @@ def raycast(rayangle):
                     y_offset = 1
 
                 # Add door to DOORS if it's not in it already
-                door = Door((map_x, map_y))
+                door = Door((map_x, map_y), grid_value)
                 for d in DOORS:
                     if d == door:
                         door = d
@@ -701,7 +728,7 @@ def raycast(rayangle):
                     offset = ray_x - int(ray_x)
                 column = int(TEXTURE_SIZE * offset)
 
-            if SHADES and side == 0:
+            if side == 0:
                 column += TEXTURE_SIZE  # Makes block sides different
 
             return grid_value, ray_x, ray_y, column
