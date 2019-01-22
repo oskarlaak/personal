@@ -1,11 +1,12 @@
 # Main TODOs:
-# Rework assign_tilemap_textures() in tilemap_values.py
+# Player position and starting angle to tilemap.txt
 # Level editor
+# Try to rework player collision once again
+# Revisit and fix comments
 
 # Later:
 # Add enemy "AI"
 # Add things to README
-# Add more enemy types
 # Add weapons + shooting
 
 # NOTES:
@@ -17,22 +18,11 @@
 # Wall texture files require two textures side by side (even if they are going to be the same)
 # bc raycast() is going to pick one based on the side of interception
 
-# tilemap.txt system with current texture files:
-# -14 to -3 = non-solid obj
-#        -2 = health
-#        -1 = ammo
-#         0 = empty
-#   1 to 20 = solid obj
-#        21 = door
-#        22 = elevator door
-#        23 = fake elevator door
-#  24 to 65 = wall
-#        66 = lever down
-#        67 = lever up
-# Note that these will change,
-# if the amount of wall or objects textures changes
-# But if the level has been made after these changes in level editor (not made yet),
-# program should be able to run it without problems
+# tilemap.txt:
+# Player x, y, angle <-- to do
+# Ceiling colour
+# Floor colour
+# Tilemap
 
 from math import *
 
@@ -42,8 +32,7 @@ from sklearn.preprocessing import normalize
 import pygame
 from pygame.locals import *
 
-import sys
-#import raycasting.tilemap_values
+import raycasting.tilevaluesinfo as tilevaluesinfo
 
 # Game settings
 INFO_LAYER = False
@@ -290,7 +279,7 @@ class Sprite:
 
 
 class Object(Drawable, Sprite):
-    def __init__(self, map_pos, gridvalue):
+    def __init__(self, map_pos, tilevalue):
         self.x = map_pos[0] + 0.5
         self.y = map_pos[1] + 0.5
 
@@ -299,7 +288,7 @@ class Object(Drawable, Sprite):
         self.perp_dist = delta_x * VIEWANGLE_DIR_X + delta_y * VIEWANGLE_DIR_Y
 
         if self.perp_dist > 0:
-            self.image = TILEMAP_TEXTURES[gridvalue]  # Name needs to be self.image for it to work in adjust_image_height()
+            self.image = TILE_VALUES_INFO[tilevalue][1]  # Name needs to be self.image for it to work in adjust_image_height()
 
             self.height = self.width = int(Drawable.constant / self.perp_dist)
             if self.height > D_H:
@@ -314,10 +303,13 @@ class Object(Drawable, Sprite):
 
 
 class Enemy(Drawable, Sprite):
-    def __init__(self, type, pos):
+    def __init__(self, spritesheet, pos):
         self.x = pos[0]
         self.y = pos[1]
-        self.sheet, self.hp = ENEMY_INFO[type]
+        self.sheet = spritesheet
+        # Take attributes from ENEMY_INFO based on spritesheet
+        self.hp = ENEMY_INFO[self.sheet]
+
         self.angle = 0
         self.state = 0
 
@@ -358,19 +350,18 @@ def events():
                 INFO_LAYER = not INFO_LAYER
 
             if event.key == K_e:
-                x = PLAYER.x + VIEWANGLE_DIR_X
-                y = PLAYER.y + VIEWANGLE_DIR_Y
-                for d in DOORS:
-                    # If found the right door
-                    if int(x) == d.x and int(y) == d.y:
-                        # If door not in motion already and it's not fake elevator door that can't be moved
-                        if d.state == 0 and d.tile_value != DARK_ELEVATOR_INDEX:
+                x = int(PLAYER.x + VIEWANGLE_DIR_X)
+                y = int(PLAYER.y + VIEWANGLE_DIR_Y)
+                tile_id = TILE_VALUES_INFO[TILEMAP[y][x]][0]
+                if tile_id[0] == 'door' and tile_id[1] == 'dynamic':
+                    for d in DOORS:
+                        # If found the right door and it's not in motion already
+                        if x == d.x and y == d.y and d.state == 0:
                             d.state = 1
-                        break
-                else:
-                    if TILEMAP[int(y)][int(x)] == ELEVATOR_LEVER_INDEX:
-                        TILEMAP[int(y)][int(x)] += 1  # Change lever texture
-                        #level_end()
+                            break
+                elif tile_id[0] == 'wall' and tile_id[1] == 'end-trigger':
+                    TILEMAP[y][x] += 1  # Change triggerblock texture
+                    #level_end()
 
 
 def update_doors():
@@ -388,125 +379,27 @@ def draw_frame():
         obj.draw(DISPLAY)
 
 
-def assign_tilemap_textures():
-    # Assigns textures to tilemap values
-    # Loaded before anything else
-    # Creates a bunch of global variables to use throughout the game loop
-    try:
-        # Wall textures
-        global DOOR_SIDE_TEXTURE  # Making var global to access it in send_rays()
-        DOOR_SIDE_TEXTURE = pygame.image.load('textures/walls/door_side.png').convert()
-        door_textures = pygame.image.load('textures/walls/doors.png').convert()
-        wall_textures = pygame.image.load('textures/walls/other.png').convert()
-        elevator_levers = pygame.image.load('textures/walls/elevator.png').convert()
+def load_textures():
+    global TEXTURE_SIZE
+    TEXTURE_SIZE = 64
 
-        # Object sprites
-        ammo_sprite = pygame.image.load('textures/objects/ammo.png').convert_alpha()
-        health_sprite = pygame.image.load('textures/objects/health.png').convert_alpha()
-        nonsolid_sprites = pygame.image.load('textures/objects/nonsolids.png').convert_alpha()
-        solid_sprites = pygame.image.load('textures/objects/solids.png').convert_alpha()
-
-        # Enemy sprites
-        # Using names found from https://www.spriters-resource.com/pc_computer/wolfenstein3d/
-        guard = pygame.image.load('textures/enemies/Guard.png').convert_alpha()
-        ss = pygame.image.load('textures/enemies/SS.png').convert_alpha()
-
-    except pygame.error as exception:
-        sys.exit(exception)
-
-    else:  # If no error when loading textures
-        global ENEMY_INFO
-        ENEMY_INFO = {
-            # n: (spritesheet, hp)
-            0: (guard, 3),
-            1: (ss, 5)
-        }
-
-        global TEXTURE_SIZE
-        TEXTURE_SIZE = 64
-        global TILEMAP_TEXTURES
-        TILEMAP_TEXTURES = {}
-
-        # ---OBJECTS---
-        # Non-solid objects
-        index = -3
-        cell_w = cell_h = TEXTURE_SIZE
-        for row in range(int(nonsolid_sprites.get_height() / cell_h)):
-
-            for column in range(int(nonsolid_sprites.get_width() / cell_w)):
-                texture = nonsolid_sprites.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
-                TILEMAP_TEXTURES[index] = texture
-                index += -1
-
-        # Ammo, health
-        TILEMAP_TEXTURES[-2] = health_sprite
-        TILEMAP_TEXTURES[-1] = ammo_sprite
-
-        # Solid objects
-        index = 1
-        cell_w = cell_h = TEXTURE_SIZE
-        for row in range(int(solid_sprites.get_height() / cell_h)):
-
-            for column in range(int(solid_sprites.get_width() / cell_w)):
-                texture = solid_sprites.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
-                TILEMAP_TEXTURES[index] = texture
-                index += 1
-
-        # ----WALLS----
-        # Because each wall texture "cell" contains two textures,
-        # cell width is going to be twice as big as cell height
-        cell_w = TEXTURE_SIZE * 2
-        cell_h = TEXTURE_SIZE
-
-        # Doors
-        global DOOR_INDEX  # Regular door
-        DOOR_INDEX = index
-        texture = door_textures.subsurface(0, cell_h * 0, cell_w, cell_h)
-        TILEMAP_TEXTURES[DOOR_INDEX] = texture
-        index += 1
-
-        global ELEVATOR_INDEX  # Elevator door
-        ELEVATOR_INDEX = index
-        texture = door_textures.subsurface(0, cell_h * 1, cell_w, cell_h)
-        TILEMAP_TEXTURES[ELEVATOR_INDEX] = texture
-        index += 1
-
-        global DARK_ELEVATOR_INDEX  # "Fake" elevator door that can't be moved
-        DARK_ELEVATOR_INDEX = index
-        texture = door_textures.subsurface(0, cell_h * 2, cell_w, cell_h)
-        TILEMAP_TEXTURES[DARK_ELEVATOR_INDEX] = texture
-        index += 1
-
-        # Other walls
-        for row in range(int(wall_textures.get_height() / cell_h)):
-
-            for column in range(int(wall_textures.get_width() / cell_w)):
-                texture = wall_textures.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
-                TILEMAP_TEXTURES[index] = texture
-                index += 1
-
-        # Last two textures are always elevator lever textures
-        global ELEVATOR_LEVER_INDEX
-        ELEVATOR_LEVER_INDEX = index
-        texture = elevator_levers.subsurface(0, cell_h * 0, cell_w, cell_h)
-        TILEMAP_TEXTURES[index] = texture
-        index += 1
-        texture = elevator_levers.subsurface(0, cell_h * 1, cell_w, cell_h)
-        TILEMAP_TEXTURES[index] = texture
-        index += 1
-
-        global ENEMY_START_INDEX
-        ENEMY_START_INDEX = index  # index where enemies start to be from
+    global TILE_VALUES_INFO
+    global ENEMY_INFO
+    global DOOR_SIDE_TEXTURE
+    TILE_VALUES_INFO, ENEMY_INFO, DOOR_SIDE_TEXTURE = tilevaluesinfo.get(TEXTURE_SIZE)
 
 
 def load_level(level_nr):
     global DOORS
     DOORS = []
 
-    # Getting tilemap from text file
-    global TILEMAP
-    TILEMAP = []
+    # Decoding tilemap
     with open('levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
+        global PLAYER
+        row = f.readline().replace('\n', '').split(',')
+        row = [float(i) for i in row]
+        PLAYER = Player((row[0], row[1]), row[2])  # Creates player
+
         global BACKGROUND_COLOURS
         BACKGROUND_COLOURS = []
         for _ in range(2):
@@ -514,22 +407,24 @@ def load_level(level_nr):
             row = [int(i) for i in row]  # Turn all number strings to an int
             BACKGROUND_COLOURS.append(tuple(row))
 
+        global TILEMAP
+        TILEMAP = []
         for line in f:
             row = line.replace('\n', '').split(',')  # Split the line to a list and get rid of newline (\n)
             row = [int(i) for i in row]  # Turn all number strings to an int
             TILEMAP.append(row)
 
     # Scan through all of tilemap
-    # Create a enemy if tile value is correct
+    # Create a enemy if tile id is correct
     global ENEMIES
     ENEMIES = []
     for row in range(len(TILEMAP)):
         for column in range(len(TILEMAP[row])):
-            tile_value = TILEMAP[row][column]
-            if tile_value >= ENEMY_START_INDEX:
-                type = tile_value - ENEMY_START_INDEX
+            tile_id = TILE_VALUES_INFO[TILEMAP[row][column]][0]
+            if tile_id[0] == 'enemy':
+                spritesheet = TILE_VALUES_INFO[TILEMAP[row][column]][1]
                 pos = (column + 0.5, row + 0.5)
-                ENEMIES.append(Enemy(type, pos))
+                ENEMIES.append(Enemy(spritesheet, pos))
                 TILEMAP[row][column] = 0  # Clears tile
 
 
@@ -566,24 +461,28 @@ def send_rays():
     global WALLS
     WALLS = []
 
+    global OBJECTS
+    OBJECTS = []
+
     for c, d in enumerate(DOORS):
         if d.state == 0:  # If door not in motion
             del DOORS[c]
 
-    global OBJECTS
-    OBJECTS = []
-
     # Checking if player is standing on an object
     tile_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
     if tile_value < 0:  # If anything under player
-        if tile_value == -1:  # If ammo
-            PLAYER.ammo += 6
-            TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0  # "Deletes" object
-        elif tile_value == -2:  # If health
-            if PLAYER.hp != 100:  # If player hp not full
-                PLAYER.hp += 20  # Increase hp
-                if PLAYER.hp > 100:  # If over 100
-                    PLAYER.hp = 100  # return to 100
+        tile_id = TILE_VALUES_INFO[tile_value][0]
+        if tile_id[1] == 'ammo':
+            if PLAYER.ammo < 99:
+                PLAYER.ammo += 6
+                if PLAYER.ammo > 99:
+                    PLAYER.ammo = 99
+                TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0  # "Deletes" object
+        elif tile_id[1] == 'health':
+            if PLAYER.hp < 100:
+                PLAYER.hp += 20
+                if PLAYER.hp > 100:
+                    PLAYER.hp = 100
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0  # "Deletes" object
         OBJECTS.append(Object((int(PLAYER.x), int(PLAYER.y)), tile_value))
 
@@ -609,7 +508,7 @@ def send_rays():
                 texture = DOOR_SIDE_TEXTURE
                 break
         else:
-            texture = TILEMAP_TEXTURES[tile_value]
+            texture = TILE_VALUES_INFO[tile_value][1]
 
         # Create Wall object
         WALLS.append(Wall(perp_dist, texture, column, i))
@@ -686,7 +585,9 @@ def raycast(rayangle):
         tile_value = TILEMAP[map_y][map_x]
         if tile_value != 0:  # If ray touching something
 
-            if tile_value < DOOR_INDEX:  # If any object (solids, non-solids, ammo, health)
+            tile_id = TILE_VALUES_INFO[tile_value][0]
+
+            if tile_id[0] == 'object':
                 obj = Object((map_x, map_y), tile_value)
                 for o in OBJECTS:
                     if o == obj:
@@ -695,8 +596,7 @@ def raycast(rayangle):
                     OBJECTS.append(obj)
                 continue
 
-            # If regular door or elevator door or fake elevator door you can't open
-            if tile_value == DOOR_INDEX or tile_value == ELEVATOR_INDEX or tile_value == DARK_ELEVATOR_INDEX:
+            if tile_id[0] == 'door':
                 # Update (x/y)_offset values
                 x_offset = ray_x - int(ray_x)
                 if x_offset == A:
@@ -838,15 +738,11 @@ def top_layer():
 
 def game_loop():
     get_rayangles()
-    assign_tilemap_textures()
+    load_textures()
     load_level(1)
-
-    global PLAYER
-    PLAYER = Player((1.5, 1.5), 0)  # Creates player
 
     global RUNNING
     RUNNING = True
-
     while RUNNING:
         events()
         mouse()
