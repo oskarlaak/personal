@@ -13,9 +13,6 @@ def get(texture_size):
     import pygame
 
     try:
-        # Load empty texture to use in leveleditor
-        empty_texture = pygame.image.load('textures/empty.png').convert()
-
         # Wall textures
         wall_textures = pygame.image.load('textures/walls/other.png').convert()
         end_trigger_textures = pygame.image.load('textures/walls/endtrigger.png').convert()
@@ -54,7 +51,7 @@ def get(texture_size):
         index = -3
         assign_texture_sheet(texture_size, texture_size, nonsolid_sprites, -1, ('object', 'non-solid'))
 
-        TILE_VALUES_INFO[0] = 'empty', empty_texture
+        TILE_VALUES_INFO[0] = 'empty'
 
         # Positive values
         # Solid objects
