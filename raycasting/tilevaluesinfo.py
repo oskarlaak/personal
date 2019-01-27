@@ -42,31 +42,31 @@ def get(texture_size):
 
         # Negative values
         # Ammo
-        TILE_VALUES_INFO[-1] = ('object', 'ammo'), ammo_sprite
+        TILE_VALUES_INFO[-1] = ('Object', 'Ammo'), ammo_sprite
 
         # Health
-        TILE_VALUES_INFO[-2] = ('object', 'health'), health_sprite
+        TILE_VALUES_INFO[-2] = ('Object', 'Health'), health_sprite
 
         # Other non-solid objects
         index = -3
-        assign_texture_sheet(texture_size, texture_size, nonsolid_sprites, -1, ('object', 'non-solid'))
+        assign_texture_sheet(texture_size, texture_size, nonsolid_sprites, -1, ('Object', 'Non-solid'))
 
-        TILE_VALUES_INFO[0] = 'empty'
+        TILE_VALUES_INFO[0] = ('Empty', None), None
 
         # Positive values
         # Solid objects
         index = 1
-        assign_texture_sheet(texture_size, texture_size, solid_sprites, 1, ('object', 'solid'))
+        assign_texture_sheet(texture_size, texture_size, solid_sprites, 1, ('Object', 'Solid'))
 
         # Doors
-        assign_texture_sheet(texture_size * 2, texture_size, dynamic_door_textures, 1, ('door', 'dynamic'))
-        assign_texture_sheet(texture_size * 2, texture_size, static_door_textures, 1, ('door', 'static'))
+        assign_texture_sheet(texture_size * 2, texture_size, dynamic_door_textures, 1, ('Door', 'Dynamic'))
+        assign_texture_sheet(texture_size * 2, texture_size, static_door_textures, 1, ('Door', 'Static'))
 
         # Other walls
-        assign_texture_sheet(texture_size * 2, texture_size, wall_textures, 1, ('wall', 'normal'))
+        assign_texture_sheet(texture_size * 2, texture_size, wall_textures, 1, ('Wall', 'Normal'))
 
         # End trigger
-        assign_texture_sheet(texture_size * 2, texture_size, end_trigger_textures, 1, ('wall', 'end-trigger'))
+        assign_texture_sheet(texture_size * 2, texture_size, end_trigger_textures, 1, ('Wall', 'End-trigger'))
 
         # Enemies
         ENEMY_INFO = {
@@ -76,7 +76,7 @@ def get(texture_size):
             ss: (5)
         }
         for c, spritesheet in enumerate(ENEMY_INFO):  # For every enemy type in ENEMY_INFO, add value to TILE_VALUES_INFO
-            TILE_VALUES_INFO[index + c] = ('enemy', 'basic'), spritesheet
+            TILE_VALUES_INFO[index + c] = ('Enemy', 'Basic'), spritesheet
 
         return TILE_VALUES_INFO, ENEMY_INFO, DOOR_SIDE_TEXTURE
 

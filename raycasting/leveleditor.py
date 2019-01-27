@@ -9,6 +9,7 @@ import pygame
 
 def draw_tilemap():
     # Draw grid
+    pygame.draw.rect(DISPLAY, (255, 255, 255), (0, 0, 1024, 1024))
     lines = int(1024 / TILE_SIZE) + 1
     for x in range(lines):
         pygame.draw.line(DISPLAY, (128, 128, 128), (x * TILE_SIZE, 0), (x * TILE_SIZE, 1024))
@@ -32,12 +33,18 @@ def apply_texture(mouse_x, mouse_y):
 
 
 def draw_sidebar():
-    pygame.draw.rect(DISPLAY, (0, 0, 0), (1024, 0, 1024 + SIDEBAR_W, 1024))
-
     # Draw active texture
     if ACTIVE_VALUE != 0:
+        # Active value texture
         active_texture = TILE_VALUES_INFO[ACTIVE_VALUE][1]
-        DISPLAY.blit(active_texture, (1024, 0))
+        DISPLAY.blit(pygame.transform.scale2x(active_texture), (1024, 0))
+
+        # Active value description
+        item_type = myfont.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), True, (255, 255, 255))
+        item_description = myfont.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], True, (255, 255, 255))
+
+        DISPLAY.blit(       item_type, (1152,  0))
+        DISPLAY.blit(item_description, (1152, 20))
 
 
 def get_tilevaluesinfo():
@@ -58,63 +65,76 @@ def zoom(in_):
 
     # Calculate the tile the mouse is in when zoomed
     mouse_x, mouse_y = pygame.mouse.get_pos()
-    tile_x = int(mouse_x / TILE_SIZE) + TILEMAP_OFFSET[0]
-    tile_y = int(mouse_y / TILE_SIZE) + TILEMAP_OFFSET[1]
+    if TILEMAP_RECT.collidepoint(mouse_x, mouse_y):
+        tile_x = int(mouse_x / TILE_SIZE) + TILEMAP_OFFSET[0]
+        tile_y = int(mouse_y / TILE_SIZE) + TILEMAP_OFFSET[1]
 
-    can_zoom = False
-    if in_:
-        if TILE_SIZE < 128:
-            TILE_SIZE *= 2
-            can_zoom = True
-    else:
-        if TILE_SIZE > 16:
-            TILE_SIZE /= 2
-            can_zoom = True
+        can_zoom = False
+        if in_:
+            if TILE_SIZE < 128:
+                TILE_SIZE *= 2
+                can_zoom = True
+        else:
+            if TILE_SIZE > 16:
+                TILE_SIZE /= 2
+                can_zoom = True
 
-    if can_zoom:
-        TILE_SIZE = int(TILE_SIZE)
-        TILEMAP_SIZE = int(1024 / TILE_SIZE)
-        TILEMAP_OFFSET = [int(tile_x - TILEMAP_SIZE / 2),
-                          int(tile_y - TILEMAP_SIZE / 2)]
+        if can_zoom:
+            TILE_SIZE = int(TILE_SIZE)
+            TILEMAP_SIZE = int(1024 / TILE_SIZE)
+            TILEMAP_OFFSET = [int(tile_x - TILEMAP_SIZE / 2),
+                              int(tile_y - TILEMAP_SIZE / 2)]
 
-        # Reset x offset if needed
-        if TILEMAP_OFFSET[0] < 0:
-            TILEMAP_OFFSET[0] = 0
-        elif TILEMAP_OFFSET[0] + TILEMAP_SIZE > 64:
-            TILEMAP_OFFSET[0] = 64 - TILEMAP_SIZE
+            # Reset x offset if needed
+            if TILEMAP_OFFSET[0] < 0:
+                TILEMAP_OFFSET[0] = 0
+            elif TILEMAP_OFFSET[0] + TILEMAP_SIZE > 64:
+                TILEMAP_OFFSET[0] = 64 - TILEMAP_SIZE
 
-        # Reset y offset if needed
-        if TILEMAP_OFFSET[1] < 0:
-            TILEMAP_OFFSET[1] = 0
-        elif TILEMAP_OFFSET[1] + TILEMAP_SIZE > 64:
-            TILEMAP_OFFSET[1] = 64 - TILEMAP_SIZE
+            # Reset y offset if needed
+            if TILEMAP_OFFSET[1] < 0:
+                TILEMAP_OFFSET[1] = 0
+            elif TILEMAP_OFFSET[1] + TILEMAP_SIZE > 64:
+                TILEMAP_OFFSET[1] = 64 - TILEMAP_SIZE
+
+
+def new_tilemap():
+    # Create an empty 64x64 tilemap
+    global TILEMAP
+    TILEMAP = []
+    for _ in range(64):
+        row = []
+        for _ in range(64):
+            row.append(0)
+        TILEMAP.append(row)
+
+    global TILEMAP_SIZE
+    TILEMAP_SIZE = 64  # How many tiles can be seen on screen
+    global TILEMAP_OFFSET
+    TILEMAP_OFFSET = [0, 0]  # Position of top left tile when zoomed in or not
+    global TILE_SIZE
+    TILE_SIZE = 16  # Tile size on screen (pixels)
+    global ACTIVE_VALUE
+    ACTIVE_VALUE = 0
 
 
 pygame.init()
 
-SIDEBAR_W = 64
-DISPLAY = pygame.display.set_mode((1024 + SIDEBAR_W, 1024))
+TILEMAP_RECT = pygame.Rect(0, 0, 1024, 1024)
+DISPLAY = pygame.display.set_mode((1524, 1024))
 CLOCK = pygame.time.Clock()
 
-# Create an empty 64x64 tilemap
-TILEMAP = []
-for _ in range(64):
-    row = []
-    for _ in range(64):
-        row.append(0)
-    TILEMAP.append(row)
+# Font stuff
+pygame.font.init()
+FONT_SIZE = 20
+myfont = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
 
-TILEMAP_SIZE = 64  # How many tiles can be seen on screen
-TILEMAP_OFFSET = [0, 0]  # Position of top left tile when zoomed in or not
-TILE_SIZE = 16  # Tile size on screen (pixels)
-ACTIVE_VALUE = 0
-
+new_tilemap()
 get_tilevaluesinfo()
 
 done = False
 while not done:
-    DISPLAY.fill((255, 255, 255))
-
+    DISPLAY.fill((0, 0, 0))
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             done = True
@@ -137,7 +157,7 @@ while not done:
     # If mouse left button pressed down and mouse inside tilemap area
     if pygame.mouse.get_pressed()[0] == True:
         mouse_x, mouse_y = pygame.mouse.get_pos()
-        if mouse_x < 1024:
+        if TILEMAP_RECT.collidepoint(mouse_x, mouse_y):
             apply_texture(mouse_x, mouse_y)
 
     draw_tilemap()

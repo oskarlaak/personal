@@ -17,6 +17,8 @@
 # Enemies are in ENEMIES list at all times
 # Wall texture files require two textures side by side (even if they are going to be the same)
 # bc raycast() is going to pick one based on the side of interception
+# All timed events are tick based,
+# meaning that changing fps will change timer time
 
 # tilemap.txt:
 # Player x, y, angle <-- to do
@@ -353,13 +355,13 @@ def events():
                 x = int(PLAYER.x + VIEWANGLE_DIR_X)
                 y = int(PLAYER.y + VIEWANGLE_DIR_Y)
                 tile_id = TILE_VALUES_INFO[TILEMAP[y][x]][0]
-                if tile_id[0] == 'door' and tile_id[1] == 'dynamic':
+                if tile_id[0] == 'Door' and tile_id[1] == 'Dynamic':
                     for d in DOORS:
                         # If found the right door and it's not in motion already
                         if x == d.x and y == d.y and d.state == 0:
                             d.state = 1
                             break
-                elif tile_id[0] == 'wall' and tile_id[1] == 'end-trigger':
+                elif tile_id[0] == 'Wall' and tile_id[1] == 'End-trigger':
                     TILEMAP[y][x] += 1  # Change triggerblock texture
                     #level_end()
 
@@ -421,7 +423,7 @@ def load_level(level_nr):
     for row in range(len(TILEMAP)):
         for column in range(len(TILEMAP[row])):
             tile_id = TILE_VALUES_INFO[TILEMAP[row][column]][0]
-            if tile_id[0] == 'enemy':
+            if tile_id[0] == 'Enemy':
                 spritesheet = TILE_VALUES_INFO[TILEMAP[row][column]][1]
                 pos = (column + 0.5, row + 0.5)
                 ENEMIES.append(Enemy(spritesheet, pos))
@@ -472,13 +474,13 @@ def send_rays():
     tile_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
     if tile_value < 0:  # If anything under player
         tile_id = TILE_VALUES_INFO[tile_value][0]
-        if tile_id[1] == 'ammo':
+        if tile_id[1] == 'Ammo':
             if PLAYER.ammo < 99:
                 PLAYER.ammo += 6
                 if PLAYER.ammo > 99:
                     PLAYER.ammo = 99
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0  # "Deletes" object
-        elif tile_id[1] == 'health':
+        elif tile_id[1] == 'Health':
             if PLAYER.hp < 100:
                 PLAYER.hp += 20
                 if PLAYER.hp > 100:
@@ -587,7 +589,7 @@ def raycast(rayangle):
 
             tile_id = TILE_VALUES_INFO[tile_value][0]
 
-            if tile_id[0] == 'object':
+            if tile_id[0] == 'Object':
                 obj = Object((map_x, map_y), tile_value)
                 for o in OBJECTS:
                     if o == obj:
@@ -596,7 +598,7 @@ def raycast(rayangle):
                     OBJECTS.append(obj)
                 continue
 
-            if tile_id[0] == 'door':
+            if tile_id[0] == 'Door':
                 # Update (x/y)_offset values
                 x_offset = ray_x - int(ray_x)
                 if x_offset == A:
