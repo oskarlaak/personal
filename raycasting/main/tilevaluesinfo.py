@@ -1,4 +1,4 @@
-def get(texture_size, level_editor=False):
+def get(texture_size):
     def assign_texture_sheet(cell_w, cell_h, sheet, step, type):
         global index
         for row in range(int(sheet.get_height() / cell_h)):
@@ -14,29 +14,24 @@ def get(texture_size, level_editor=False):
 
     try:
         # Wall textures
-        wall_textures = pygame.image.load('textures/walls/other.png').convert()
-        end_trigger_textures = pygame.image.load('textures/walls/endtrigger.png').convert()
+        wall_textures = pygame.image.load('../textures/walls/other.png').convert()
+        end_trigger_textures = pygame.image.load('../textures/walls/endtrigger.png').convert()
 
         # Door textures
-        DOOR_SIDE_TEXTURE = pygame.image.load('textures/doors/side.png').convert()
-        dynamic_door_textures = pygame.image.load('textures/doors/dynamic.png').convert()
-        static_door_textures = pygame.image.load('textures/doors/static.png').convert()
+        DOOR_SIDE_TEXTURE = pygame.image.load('../textures/doors/side.png').convert()
+        dynamic_door_textures = pygame.image.load('../textures/doors/dynamic.png').convert()
+        static_door_textures = pygame.image.load('../textures/doors/static.png').convert()
 
         # Object sprites
-        ammo_sprite = pygame.image.load('textures/objects/ammo.png').convert_alpha()
-        health_sprite = pygame.image.load('textures/objects/health.png').convert_alpha()
-        nonsolid_sprites = pygame.image.load('textures/objects/nonsolids.png').convert_alpha()
-        solid_sprites = pygame.image.load('textures/objects/solids.png').convert_alpha()
+        ammo_sprite = pygame.image.load('../textures/objects/ammo.png').convert_alpha()
+        health_sprite = pygame.image.load('../textures/objects/health.png').convert_alpha()
+        nonsolid_sprites = pygame.image.load('../textures/objects/nonsolids.png').convert_alpha()
+        solid_sprites = pygame.image.load('../textures/objects/solids.png').convert_alpha()
 
         # Enemy sprites
         # Using enemy names found from https://www.spriters-resource.com/pc_computer/wolfenstein3d/
-        guard = pygame.image.load('textures/enemies/Guard.png').convert_alpha()
-        ss = pygame.image.load('textures/enemies/SS.png').convert_alpha()
-
-        # Level editor textures
-        eraser = pygame.image.load('textures/leveleditor/eraser.png').convert()
-        start = pygame.image.load('textures/leveleditor/start.png').convert()
-        end = pygame.image.load('textures/leveleditor/end.png').convert()
+        guard = pygame.image.load('../textures/enemies/Guard.png').convert_alpha()
+        ss = pygame.image.load('../textures/enemies/SS.png').convert_alpha()
 
     except pygame.error as exception:
         sys.exit(exception)
@@ -70,16 +65,8 @@ def get(texture_size, level_editor=False):
         # Other walls
         assign_texture_sheet(texture_size * 2, texture_size, wall_textures, 1, ('Wall', 'Normal'))
 
-        if level_editor:  # Level editor gets some different textures
-            TILE_VALUES_INFO[0] = ('Special', 'Eraser'), eraser
-
-            TILE_VALUES_INFO[index] = ('Special', 'End-trigger'), end
-            index += 1
-            TILE_VALUES_INFO[index] = ('Special', 'Start'), start
-            index += 1
-
-        else:  # End trigger
-            assign_texture_sheet(texture_size * 2, texture_size, end_trigger_textures, 1, ('Wall', 'End-trigger'))
+        # End trigger
+        assign_texture_sheet(texture_size * 2, texture_size, end_trigger_textures, 1, ('Wall', 'End-trigger'))
 
         # Enemies
         ENEMY_INFO = {

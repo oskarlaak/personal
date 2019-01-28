@@ -34,7 +34,7 @@ from sklearn.preprocessing import normalize
 import pygame
 from pygame.locals import *
 
-import raycasting.tilevaluesinfo as tilevaluesinfo
+import raycasting.main.tilevaluesinfo as tilevaluesinfo
 
 # Game settings
 INFO_LAYER = False
@@ -393,7 +393,7 @@ def load_level(level_nr):
     DOORS = []
 
     # Decoding tilemap
-    with open('levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
+    with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
         global PLAYER
         row = f.readline().replace('\n', '').split(',')
         row = [float(i) for i in row]

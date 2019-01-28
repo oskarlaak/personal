@@ -1,26 +1,32 @@
 # TO DO
+# Floor and ceiling colours
 # Save, load, new buttons
 # Divide normal walls into different themed groups
 
-import raycasting.tilevaluesinfo as tilevaluesinfo
+import raycasting.main.tilevaluesinfo as tilevaluesinfo
 import pygame
+import sys
 
 
 class Texturegroup:
     def __init__(self, pos, value):
-        self.pos = pos
+        self.x, self.y = pos
         self.active = False
-        self.rect = pygame.Rect(self.pos, (64, 64))
+        self.rect = pygame.Rect((self.x, self.y), (64, 64))
         self.value = value
         self.values = [value]
 
     def draw(self, surface):
         texture = TILE_VALUES_INFO[self.value][1]
-        surface.blit(texture, self.pos)
+        surface.blit(texture, (self.x, self.y))
 
         # If active, draw the rectangle around block red
         if self.active:
             color = (255, 0, 0)
+            if self.value + 1 in self.values:
+                DISPLAY.blit(ARROW_UP, (self.x + 16, self.y - 24))
+            if self.value - 1 in self.values:
+                DISPLAY.blit(ARROW_DOWN, (self.x + 16, self.y + 72))
         else:
             color = (255, 255, 255)
         pygame.draw.rect(DISPLAY, color, self.rect, 1)
@@ -162,14 +168,39 @@ def mouse_input():
 
 
 def get_tilevaluesinfo():
-    # Get TILE_VALUES_INFO from tilevaluesinfo.py
-    # and replace all textures in it with 64x64 pixel textures
-    tile_values_info = tilevaluesinfo.get(64, True)[0]
-    for value in tile_values_info:
-        if value != 0:
-            texture = tile_values_info[value][1]
-            tile_values_info[value] = tile_values_info[value][0], texture.subsurface(0, 0, 64, 64)
-    return tile_values_info
+    try:
+        global ARROW_UP
+        global ARROW_DOWN
+        ARROW_UP = pygame.image.load('arrow.png').convert()
+        ARROW_DOWN = pygame.transform.flip(ARROW_UP, False, True)
+        eraser = pygame.image.load('eraser.png').convert()
+        start = pygame.image.load('start.png').convert()
+        end = pygame.image.load('end.png').convert()
+
+    except pygame.error as exception:
+        sys.exit(exception)
+
+    else:
+        # Get TILE_VALUES_INFO from tilevaluesinfo.py
+        tile_values_info = tilevaluesinfo.get(64)[0]
+
+        # Replace all textures in it with 64x64 pixel textures
+        for value in tile_values_info:
+            if value != 0:
+                texture = tile_values_info[value][1]
+                tile_values_info[value] = tile_values_info[value][0], texture.subsurface(0, 0, 64, 64)
+
+        # Replace two end-trigger textures with start and end texture
+        for value, (info, _) in tile_values_info.items():
+            if info == ('Wall', 'End-trigger'):
+                tile_values_info[value] = ('Special', 'End-trigger'), end
+                tile_values_info[value + 1] = ('Special', 'Start'), start
+                break
+
+        # Add eraser texture to value 0
+        tile_values_info[0] = ('Special', 'Eraser'), eraser
+
+        return tile_values_info
 
 
 def new_tilemap():
