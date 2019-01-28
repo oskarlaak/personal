@@ -1,10 +1,29 @@
 # TO DO
-# Make sidebar where you can choose textures with mouse
-# Replace endtrigger textures with just one end trigger block
-# Add player start block and a place to put starting angle in
+# Save, load, new buttons
+# Divide normal walls into different themed groups
 
 import raycasting.tilevaluesinfo as tilevaluesinfo
 import pygame
+
+
+class Texturegroup:
+    def __init__(self, pos, value):
+        self.pos = pos
+        self.active = False
+        self.rect = pygame.Rect(self.pos, (64, 64))
+        self.value = value
+        self.values = [value]
+
+    def draw(self, surface):
+        texture = TILE_VALUES_INFO[self.value][1]
+        surface.blit(texture, self.pos)
+
+        # If active, draw the rectangle around block red
+        if self.active:
+            color = (255, 0, 0)
+        else:
+            color = (255, 255, 255)
+        pygame.draw.rect(DISPLAY, color, self.rect, 1)
 
 
 def draw_tilemap():
@@ -26,36 +45,27 @@ def draw_tilemap():
                 DISPLAY.blit(texture, (x * TILE_SIZE, y * TILE_SIZE))
 
 
-def apply_texture(mouse_x, mouse_y):
-    tile_x = int(mouse_x / TILE_SIZE) + TILEMAP_OFFSET[0]
-    tile_y = int(mouse_y / TILE_SIZE) + TILEMAP_OFFSET[1]
+def apply_texture():
+    tile_x = int(MOUSE_X / TILE_SIZE) + TILEMAP_OFFSET[0]
+    tile_y = int(MOUSE_Y / TILE_SIZE) + TILEMAP_OFFSET[1]
     TILEMAP[tile_y][tile_x] = ACTIVE_VALUE
 
 
 def draw_sidebar():
-    # Draw active texture
-    if ACTIVE_VALUE != 0:
-        # Active value texture
-        active_texture = TILE_VALUES_INFO[ACTIVE_VALUE][1]
-        DISPLAY.blit(pygame.transform.scale2x(active_texture), (1024, 0))
+    # Active value texture
+    active_texture = TILE_VALUES_INFO[ACTIVE_VALUE][1]
+    DISPLAY.blit(pygame.transform.scale2x(active_texture), (1024, 0))
 
-        # Active value description
-        item_type = myfont.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), True, (255, 255, 255))
-        item_description = myfont.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], True, (255, 255, 255))
+    # Active value description
+    item_type = myfont.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), True, (255, 255, 255))
+    item_description = myfont.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], True, (255, 255, 255))
 
-        DISPLAY.blit(       item_type, (1152,  0))
-        DISPLAY.blit(item_description, (1152, 20))
+    DISPLAY.blit(       item_type, (1152,  0))
+    DISPLAY.blit(item_description, (1152, 20))
 
-
-def get_tilevaluesinfo():
-    # Get TILE_VALUES_INFO from tilevaluesinfo.py
-    # and replace all textures in it with 64x64 pixel textures
-    global TILE_VALUES_INFO
-    TILE_VALUES_INFO = tilevaluesinfo.get(64)[0]
-    for value in TILE_VALUES_INFO:
-        if value != 0:
-            texture = TILE_VALUES_INFO[value][1]
-            TILE_VALUES_INFO[value] = TILE_VALUES_INFO[value][0], texture.subsurface(0, 0, 64, 64)
+    # Draw texturegroups
+    for tg in TEXTUREGROUPS:
+        tg.draw(DISPLAY)
 
 
 def zoom(in_):
@@ -64,10 +74,9 @@ def zoom(in_):
     global TILEMAP_OFFSET
 
     # Calculate the tile the mouse is in when zoomed
-    mouse_x, mouse_y = pygame.mouse.get_pos()
-    if TILEMAP_RECT.collidepoint(mouse_x, mouse_y):
-        tile_x = int(mouse_x / TILE_SIZE) + TILEMAP_OFFSET[0]
-        tile_y = int(mouse_y / TILE_SIZE) + TILEMAP_OFFSET[1]
+    if MOUSE_X < 1024:
+        tile_x = int(MOUSE_X / TILE_SIZE) + TILEMAP_OFFSET[0]
+        tile_y = int(MOUSE_Y / TILE_SIZE) + TILEMAP_OFFSET[1]
 
         can_zoom = False
         if in_:
@@ -98,68 +107,139 @@ def zoom(in_):
                 TILEMAP_OFFSET[1] = 64 - TILEMAP_SIZE
 
 
+def mouse_input():
+    global DONE
+    global ACTIVE_VALUE
+
+    # Event handling that mainly checks for mouse inputs
+    # Also checks pygame quit event
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            DONE = True
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:  # Left click
+                if MOUSE_X > 1024:
+                    for tg in TEXTUREGROUPS:
+                        if tg.rect.collidepoint(MOUSE_X, MOUSE_Y):
+                            tg.active = True
+                            ACTIVE_VALUE = tg.value
+                        else:
+                            tg.active = False
+
+            if event.button == 4:  # Scroll wheel up
+                # If control pressed down
+                if pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    zoom(True)
+
+                # If control not pressed down
+                else:
+                    for tg in TEXTUREGROUPS:
+                        if tg.rect.collidepoint(MOUSE_X, MOUSE_Y):
+                            if tg.active and ACTIVE_VALUE + 1 in tg.values:
+                                tg.value += 1
+                                ACTIVE_VALUE += 1
+                            break
+
+            elif event.button == 5:  # Scroll wheel down
+                # If control pressed down
+                if pygame.key.get_mods() & pygame.KMOD_CTRL:
+                    zoom(False)
+
+                # If control not pressed down
+                else:
+                    for tg in TEXTUREGROUPS:
+                        if tg.rect.collidepoint(MOUSE_X, MOUSE_Y):
+                            if tg.active and ACTIVE_VALUE - 1 in tg.values:
+                                tg.value -= 1
+                                ACTIVE_VALUE -= 1
+                            break
+
+    # If mouse left button pressed down and mouse inside tilemap area
+    if pygame.mouse.get_pressed()[0] == True:
+        if MOUSE_X < 1024:
+            apply_texture()
+
+
+def get_tilevaluesinfo():
+    # Get TILE_VALUES_INFO from tilevaluesinfo.py
+    # and replace all textures in it with 64x64 pixel textures
+    tile_values_info = tilevaluesinfo.get(64, True)[0]
+    for value in tile_values_info:
+        if value != 0:
+            texture = tile_values_info[value][1]
+            tile_values_info[value] = tile_values_info[value][0], texture.subsurface(0, 0, 64, 64)
+    return tile_values_info
+
+
 def new_tilemap():
     # Create an empty 64x64 tilemap
-    global TILEMAP
-    TILEMAP = []
+    tilemap = []
     for _ in range(64):
         row = []
         for _ in range(64):
             row.append(0)
-        TILEMAP.append(row)
+        tilemap.append(row)
 
-    global TILEMAP_SIZE
-    TILEMAP_SIZE = 64  # How many tiles can be seen on screen
-    global TILEMAP_OFFSET
-    TILEMAP_OFFSET = [0, 0]  # Position of top left tile when zoomed in or not
-    global TILE_SIZE
-    TILE_SIZE = 16  # Tile size on screen (pixels)
-    global ACTIVE_VALUE
-    ACTIVE_VALUE = 0
+    tilemap_size = 64  # How many tiles can be seen on screen
+    tilemap_offset = [0, 0]  # Position of top left tile when zoomed in or not
+    tile_size = 16  # Tile size on screen (pixels)
+    active_value = 0
+    return tilemap, tilemap_size, tilemap_offset, tile_size, active_value
+
+
+def get_texturegroups():
+    heights = {
+        'Enemy': 192,
+        'Object': 288,
+        'Door': 384,
+        'Wall': 480,
+        'Special': 576
+    }
+
+    texturegroups = []
+    infos = []
+    start_x = 1024 + 32
+
+    for value, (info, _) in TILE_VALUES_INFO.items():
+        if info not in infos:  # If the need to create a new texturegroup
+            x = start_x
+            for i in infos:  # For every texturegroup with same tpye, add 80 to x
+                if i[0] == info[0]:
+                    x += 80
+            texturegroups.append(Texturegroup((x, heights[info[0]]), value))
+            infos.append(info)
+        else:
+            texturegroups[-1].values.append(value)
+
+    return texturegroups
 
 
 pygame.init()
 
-TILEMAP_RECT = pygame.Rect(0, 0, 1024, 1024)
-DISPLAY = pygame.display.set_mode((1524, 1024))
+DISPLAY = pygame.display.set_mode((1024 + 528, 1024))  # 528 is the sidebar width
 CLOCK = pygame.time.Clock()
 
-# Font stuff
 pygame.font.init()
 FONT_SIZE = 20
 myfont = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
 
-new_tilemap()
-get_tilevaluesinfo()
+TILEMAP,\
+TILEMAP_SIZE,\
+TILEMAP_OFFSET,\
+TILE_SIZE,\
+ACTIVE_VALUE = new_tilemap()
 
-done = False
-while not done:
+TILE_VALUES_INFO = get_tilevaluesinfo()
+
+TEXTUREGROUPS = get_texturegroups()
+
+DONE = False
+while not DONE:
     DISPLAY.fill((0, 0, 0))
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            done = True
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 4:  # Scroll wheel up
-                if pygame.key.get_mods() & pygame.KMOD_CTRL:  # If control pressed down
-                    zoom(True)
-                else:
-                    ACTIVE_VALUE += 1
-                    if ACTIVE_VALUE not in TILE_VALUES_INFO:
-                        ACTIVE_VALUE -= 1
-            elif event.button == 5:  # Scroll wheel down
-                if pygame.key.get_mods() & pygame.KMOD_CTRL:  # If control pressed down
-                    zoom(False)
-                else:
-                    ACTIVE_VALUE += -1
-                    if ACTIVE_VALUE not in TILE_VALUES_INFO:
-                        ACTIVE_VALUE -= -1
+    MOUSE_X, MOUSE_Y = pygame.mouse.get_pos()
 
-    # If mouse left button pressed down and mouse inside tilemap area
-    if pygame.mouse.get_pressed()[0] == True:
-        mouse_x, mouse_y = pygame.mouse.get_pos()
-        if TILEMAP_RECT.collidepoint(mouse_x, mouse_y):
-            apply_texture(mouse_x, mouse_y)
-
+    mouse_input()
     draw_tilemap()
     draw_sidebar()
 

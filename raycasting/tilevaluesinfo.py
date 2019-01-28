@@ -1,4 +1,4 @@
-def get(texture_size):
+def get(texture_size, level_editor=False):
     def assign_texture_sheet(cell_w, cell_h, sheet, step, type):
         global index
         for row in range(int(sheet.get_height() / cell_h)):
@@ -33,6 +33,11 @@ def get(texture_size):
         guard = pygame.image.load('textures/enemies/Guard.png').convert_alpha()
         ss = pygame.image.load('textures/enemies/SS.png').convert_alpha()
 
+        # Level editor textures
+        eraser = pygame.image.load('textures/leveleditor/eraser.png').convert()
+        start = pygame.image.load('textures/leveleditor/start.png').convert()
+        end = pygame.image.load('textures/leveleditor/end.png').convert()
+
     except pygame.error as exception:
         sys.exit(exception)
 
@@ -51,7 +56,7 @@ def get(texture_size):
         index = -3
         assign_texture_sheet(texture_size, texture_size, nonsolid_sprites, -1, ('Object', 'Non-solid'))
 
-        TILE_VALUES_INFO[0] = ('Empty', None), None
+        TILE_VALUES_INFO[0] = 'Empty', None
 
         # Positive values
         # Solid objects
@@ -65,8 +70,16 @@ def get(texture_size):
         # Other walls
         assign_texture_sheet(texture_size * 2, texture_size, wall_textures, 1, ('Wall', 'Normal'))
 
-        # End trigger
-        assign_texture_sheet(texture_size * 2, texture_size, end_trigger_textures, 1, ('Wall', 'End-trigger'))
+        if level_editor:  # Level editor gets some different textures
+            TILE_VALUES_INFO[0] = ('Special', 'Eraser'), eraser
+
+            TILE_VALUES_INFO[index] = ('Special', 'End-trigger'), end
+            index += 1
+            TILE_VALUES_INFO[index] = ('Special', 'Start'), start
+            index += 1
+
+        else:  # End trigger
+            assign_texture_sheet(texture_size * 2, texture_size, end_trigger_textures, 1, ('Wall', 'End-trigger'))
 
         # Enemies
         ENEMY_INFO = {

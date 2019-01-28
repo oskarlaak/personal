@@ -63,8 +63,7 @@ class Player:
     half_hitbox = 0.2
 
     def __init__(self, pos, angle):
-        self.x = pos[0]
-        self.y = pos[1]
+        self.x, self.y = pos
         self.viewangle = angle
         self.hp = 100
         self.ammo = 10
@@ -152,8 +151,7 @@ class Door:
     open_ticks = 60
 
     def __init__(self, map_pos, tile_value):
-        self.x = map_pos[0]
-        self.y = map_pos[1]
+        self.x, self.y = map_pos
         self.tile_value = tile_value
         self.ticks = 0
         self.state = 0
@@ -306,8 +304,7 @@ class Object(Drawable, Sprite):
 
 class Enemy(Drawable, Sprite):
     def __init__(self, spritesheet, pos):
-        self.x = pos[0]
-        self.y = pos[1]
+        self.x, self.y = pos
         self.sheet = spritesheet
         # Take attributes from ENEMY_INFO based on spritesheet
         self.hp = ENEMY_INFO[self.sheet]
