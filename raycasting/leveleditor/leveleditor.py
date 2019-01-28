@@ -1,7 +1,7 @@
 # TO DO
 # Floor and ceiling colours
 # Save, load, new buttons
-# Divide normal walls into different themed groups
+# New start/end textures
 
 import raycasting.main.tilevaluesinfo as tilevaluesinfo
 import pygame
@@ -23,9 +23,9 @@ class Texturegroup:
         # If active, draw the rectangle around block red
         if self.active:
             color = (255, 0, 0)
-            if self.value + 1 in self.values:
-                DISPLAY.blit(ARROW_UP, (self.x + 16, self.y - 24))
             if self.value - 1 in self.values:
+                DISPLAY.blit(ARROW_UP, (self.x + 16, self.y - 24))
+            if self.value + 1 in self.values:
                 DISPLAY.blit(ARROW_DOWN, (self.x + 16, self.y + 72))
         else:
             color = (255, 255, 255)
@@ -141,10 +141,10 @@ def mouse_input():
                 # If control not pressed down
                 else:
                     for tg in TEXTUREGROUPS:
-                        if tg.rect.collidepoint(MOUSE_X, MOUSE_Y):
-                            if tg.active and ACTIVE_VALUE + 1 in tg.values:
-                                tg.value += 1
-                                ACTIVE_VALUE += 1
+                        if tg.active:
+                            if ACTIVE_VALUE - 1 in tg.values:
+                                tg.value -= 1
+                                ACTIVE_VALUE = tg.value
                             break
 
             elif event.button == 5:  # Scroll wheel down
@@ -155,10 +155,10 @@ def mouse_input():
                 # If control not pressed down
                 else:
                     for tg in TEXTUREGROUPS:
-                        if tg.rect.collidepoint(MOUSE_X, MOUSE_Y):
-                            if tg.active and ACTIVE_VALUE - 1 in tg.values:
-                                tg.value -= 1
-                                ACTIVE_VALUE -= 1
+                        if tg.active:
+                            if ACTIVE_VALUE + 1 in tg.values:
+                                tg.value += 1
+                                ACTIVE_VALUE = tg.value
                             break
 
     # If mouse left button pressed down and mouse inside tilemap area
@@ -242,6 +242,8 @@ def get_texturegroups():
             infos.append(info)
         else:
             texturegroups[-1].values.append(value)
+            if value < 0:
+                texturegroups[-1].value = value
 
     return texturegroups
 

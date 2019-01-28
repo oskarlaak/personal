@@ -14,7 +14,12 @@ def get(texture_size):
 
     try:
         # Wall textures
-        wall_textures = pygame.image.load('../textures/walls/other.png').convert()
+        bloodycave_textures = pygame.image.load('../textures/walls/bloodycave.png').convert()
+        bluecellar_textures = pygame.image.load('../textures/walls/bluecellar.png').convert()
+        elevator_textures = pygame.image.load('../textures/walls/elevator.png').convert()
+        redbrick_textures = pygame.image.load('../textures/walls/redbrick.png').convert()
+        stone_textures = pygame.image.load('../textures/walls/stone.png').convert()
+        wood_textures = pygame.image.load('../textures/walls/wood.png').convert()
         end_trigger_textures = pygame.image.load('../textures/walls/endtrigger.png').convert()
 
         # Door textures
@@ -62,8 +67,13 @@ def get(texture_size):
         assign_texture_sheet(texture_size * 2, texture_size, dynamic_door_textures, 1, ('Door', 'Dynamic'))
         assign_texture_sheet(texture_size * 2, texture_size, static_door_textures, 1, ('Door', 'Static'))
 
-        # Other walls
-        assign_texture_sheet(texture_size * 2, texture_size, wall_textures, 1, ('Wall', 'Normal'))
+        # Walls
+        assign_texture_sheet(texture_size * 2, texture_size, bloodycave_textures, 1, ('Wall', 'Bloodycave'))
+        assign_texture_sheet(texture_size * 2, texture_size, bluecellar_textures, 1, ('Wall', 'Bluecellar'))
+        assign_texture_sheet(texture_size * 2, texture_size, elevator_textures, 1, ('Wall', 'Elevator'))
+        assign_texture_sheet(texture_size * 2, texture_size, redbrick_textures, 1, ('Wall', 'Redbrick'))
+        assign_texture_sheet(texture_size * 2, texture_size, stone_textures, 1, ('Wall', 'Stone'))
+        assign_texture_sheet(texture_size * 2, texture_size, wood_textures, 1, ('Wall', 'Wood'))
 
         # End trigger
         assign_texture_sheet(texture_size * 2, texture_size, end_trigger_textures, 1, ('Wall', 'End-trigger'))
