@@ -1,11 +1,18 @@
 # TO DO
-# Floor and ceiling colours
-# Save, load, new buttons
+# SAVE, NEW, LOAD
 # New start/end textures
 
 import raycasting.main.tilevaluesinfo as tilevaluesinfo
 import pygame
 import sys
+
+# Colours
+BLACK = (0, 0, 0)
+GREY = (128, 128, 128)
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+
+NUMBERS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 
 
 class Texturegroup:
@@ -32,14 +39,44 @@ class Texturegroup:
         pygame.draw.rect(DISPLAY, color, self.rect, 1)
 
 
+class Inputbox:
+    text_color = BLACK
+
+    def __init__(self, rect, caption):
+        self.caption = myfont.render(caption, True, WHITE)
+        self.active = False
+        self.rect = pygame.Rect(rect)
+        self.text = ''
+        self.text_surface = myfont.render(self.text, True, Inputbox.text_color)
+
+    def draw(self, surface):
+        # Draw inputbox background
+        if self.text == '' or int(self.text) <= 255:
+            if self.active:
+                background_color = WHITE
+            else:
+                background_color = GREY
+        else:  # if self.text > 255:
+            background_color = RED
+        pygame.draw.rect(surface, background_color, self.rect)
+
+        # Draw inputbox text
+        text_offset = ((self.rect.w - self.text_surface.get_width())  / 2,
+                       (self.rect.h - self.text_surface.get_height()) / 2)
+        surface.blit(self.text_surface, (self.rect.x + text_offset[0], self.rect.y + text_offset[1]))
+
+        # Draw caption text
+        surface.blit(self.caption, (self.rect.x - self.caption.get_width(), self.rect.y + text_offset[1]))
+
+
 def draw_tilemap():
     # Draw grid
-    pygame.draw.rect(DISPLAY, (255, 255, 255), (0, 0, 1024, 1024))
+    pygame.draw.rect(DISPLAY, WHITE, (0, 0, 1024, 1024))
     lines = int(1024 / TILE_SIZE) + 1
     for x in range(lines):
-        pygame.draw.line(DISPLAY, (128, 128, 128), (x * TILE_SIZE, 0), (x * TILE_SIZE, 1024))
+        pygame.draw.line(DISPLAY, GREY, (x * TILE_SIZE, 0), (x * TILE_SIZE, 1024))
     for y in range(lines):
-        pygame.draw.line(DISPLAY, (128, 128, 128), (0, y * TILE_SIZE), (1024, y * TILE_SIZE))
+        pygame.draw.line(DISPLAY, GREY, (0, y * TILE_SIZE), (1024, y * TILE_SIZE))
 
     # Draw textures
     for y, row in enumerate(range(TILEMAP_OFFSET[1], TILEMAP_OFFSET[1] + TILEMAP_SIZE)):
@@ -63,15 +100,23 @@ def draw_sidebar():
     DISPLAY.blit(pygame.transform.scale2x(active_texture), (1024, 0))
 
     # Active value description
-    item_type = myfont.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), True, (255, 255, 255))
-    item_description = myfont.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], True, (255, 255, 255))
+    item_type = myfont.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), True, WHITE)
+    item_description = myfont.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], True, WHITE)
 
-    DISPLAY.blit(       item_type, (1152,  0))
+    DISPLAY.blit(item_type, (1152,  0))
     DISPLAY.blit(item_description, (1152, 20))
 
     # Draw texturegroups
     for tg in TEXTUREGROUPS:
         tg.draw(DISPLAY)
+
+    # Draw inputboxes
+    ceiling_text = myfont.render('CEILING COLOUR', True, WHITE)
+    floor_text = myfont.render('FLOOR COLOUR', True, WHITE)
+    DISPLAY.blit(ceiling_text, (INPUTBOXES[0].rect.x, INPUTBOXES[0].rect.y - FONT_SIZE))
+    DISPLAY.blit(  floor_text, (INPUTBOXES[3].rect.x, INPUTBOXES[3].rect.y - FONT_SIZE))
+    for ib in INPUTBOXES:
+        ib.draw(DISPLAY)
 
 
 def zoom(in_):
@@ -113,7 +158,7 @@ def zoom(in_):
                 TILEMAP_OFFSET[1] = 64 - TILEMAP_SIZE
 
 
-def mouse_input():
+def events():
     global DONE
     global ACTIVE_VALUE
 
@@ -126,12 +171,20 @@ def mouse_input():
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
                 if MOUSE_X > 1024:
+                    # Activate/deactivate texturegroups
                     for tg in TEXTUREGROUPS:
                         if tg.rect.collidepoint(MOUSE_X, MOUSE_Y):
                             tg.active = True
                             ACTIVE_VALUE = tg.value
                         else:
                             tg.active = False
+
+                    # Activate/deactivate inputboxes
+                    for ib in INPUTBOXES:
+                        if ib.rect.collidepoint(MOUSE_X, MOUSE_Y):
+                            ib.active = True
+                        else:
+                            ib.active = False
 
             if event.button == 4:  # Scroll wheel up
                 # If control pressed down
@@ -161,10 +214,33 @@ def mouse_input():
                                 ACTIVE_VALUE = tg.value
                             break
 
+        if event.type == pygame.KEYDOWN:
+            for ib in INPUTBOXES:
+                if ib.active:
+                    if event.key == pygame.K_BACKSPACE:
+                        ib.text = ib.text[:-1]
+                    elif pygame.key.name(event.key).isdigit() and len(ib.text) < 3:  # rgb values cannot be < 3 digits
+                        ib.text += event.unicode
+                    # Re-render the text
+                    ib.text_surface = myfont.render(ib.text, True, Inputbox.text_color)
+                    break
+
     # If mouse left button pressed down and mouse inside tilemap area
     if pygame.mouse.get_pressed()[0] == True:
         if MOUSE_X < 1024:
             apply_texture()
+
+
+def get_inputboxes():
+    inputboxes = []
+    inputboxes.append(Inputbox((1024 +  64, 1024 - 256, 40, FONT_SIZE), 'R:'))
+    inputboxes.append(Inputbox((1024 + 128, 1024 - 256, 40, FONT_SIZE), 'G:'))
+    inputboxes.append(Inputbox((1024 + 192, 1024 - 256, 40, FONT_SIZE), 'B:'))
+
+    inputboxes.append(Inputbox((1024 +  64, 1024 - 192, 40, FONT_SIZE), 'R:'))
+    inputboxes.append(Inputbox((1024 + 128, 1024 - 192, 40, FONT_SIZE), 'G:'))
+    inputboxes.append(Inputbox((1024 + 192, 1024 - 192, 40, FONT_SIZE), 'B:'))
+    return inputboxes
 
 
 def get_tilevaluesinfo():
@@ -266,13 +342,14 @@ ACTIVE_VALUE = new_tilemap()
 TILE_VALUES_INFO = get_tilevaluesinfo()
 
 TEXTUREGROUPS = get_texturegroups()
+INPUTBOXES = get_inputboxes()
 
 DONE = False
 while not DONE:
-    DISPLAY.fill((0, 0, 0))
+    DISPLAY.fill(BLACK)
     MOUSE_X, MOUSE_Y = pygame.mouse.get_pos()
 
-    mouse_input()
+    events()
     draw_tilemap()
     draw_sidebar()
 
