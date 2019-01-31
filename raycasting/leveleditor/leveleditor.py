@@ -1,6 +1,5 @@
 # TO DO
 # SAVE, NEW, LOAD
-# New start/end textures
 
 import raycasting.main.tilevaluesinfo as tilevaluesinfo
 import pygame
@@ -11,6 +10,7 @@ BLACK = (0, 0, 0)
 GREY = (128, 128, 128)
 WHITE = (255, 255, 255)
 RED = (255, 0, 0)
+GREEN = (0, 255, 0)
 
 NUMBERS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 
@@ -31,12 +31,12 @@ class Texturegroup:
         if self.active:
             color = (255, 0, 0)
             if self.value - 1 in self.values:
-                DISPLAY.blit(ARROW_UP, (self.x + 16, self.y - 24))
+                surface.blit(ARROW_UP, (self.x + 16, self.y - 24))
             if self.value + 1 in self.values:
-                DISPLAY.blit(ARROW_DOWN, (self.x + 16, self.y + 72))
+                surface.blit(ARROW_DOWN, (self.x + 16, self.y + 72))
         else:
             color = (255, 255, 255)
-        pygame.draw.rect(DISPLAY, color, self.rect, 1)
+        pygame.draw.rect(surface, color, self.rect, 1)
 
 
 class Inputbox:
@@ -69,6 +69,23 @@ class Inputbox:
         surface.blit(self.caption, (self.rect.x - self.caption.get_width(), self.rect.y + text_offset[1]))
 
 
+class Startinganglebox:
+    def __init__(self, rect, image):
+        self.rect = pygame.Rect(rect)
+        self.angle = 0
+        self.image = image
+
+    def rotate(self, degrees):
+        self.angle += degrees
+        if self.angle < 0:
+            self.angle += 360
+        print(self.angle)
+
+    def draw(self, surface):
+        pygame.draw.rect(surface, GREEN, self.rect)
+        surface.blit(pygame.transform.rotate(self.image, self.angle), (self.rect.x, self.rect.y))
+
+
 def draw_tilemap():
     # Draw grid
     pygame.draw.rect(DISPLAY, WHITE, (0, 0, 1024, 1024))
@@ -97,14 +114,16 @@ def apply_texture():
 def draw_sidebar():
     # Active value texture
     active_texture = TILE_VALUES_INFO[ACTIVE_VALUE][1]
-    DISPLAY.blit(pygame.transform.scale2x(active_texture), (1024, 0))
+    DISPLAY.blit(pygame.transform.scale(active_texture, (128, 128)), (1024 + 32, 0 + 16))
 
     # Active value description
+    activeitem_text = myfont.render('ACTIVE ITEM:', True, WHITE)
     item_type = myfont.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), True, WHITE)
     item_description = myfont.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], True, WHITE)
 
-    DISPLAY.blit(item_type, (1152,  0))
-    DISPLAY.blit(item_description, (1152, 20))
+    DISPLAY.blit(activeitem_text, (1152 + 32, 0 + 16))
+    DISPLAY.blit(item_type, (1152 + 32,  20 + 16))
+    DISPLAY.blit(item_description, (1152 + 32, 40 + 16))
 
     # Draw texturegroups
     for tg in TEXTUREGROUPS:
@@ -117,6 +136,11 @@ def draw_sidebar():
     DISPLAY.blit(  floor_text, (INPUTBOXES[3].rect.x, INPUTBOXES[3].rect.y - FONT_SIZE))
     for ib in INPUTBOXES:
         ib.draw(DISPLAY)
+
+    # Draw starting angle box
+    starting_angle_text = myfont.render('STARTING ANGLE:', True, WHITE)
+    DISPLAY.blit(starting_angle_text, (STARTING_ANGLE_BOX.rect.x, STARTING_ANGLE_BOX.rect.y - FONT_SIZE))
+    STARTING_ANGLE_BOX.draw(DISPLAY)
 
 
 def zoom(in_):
@@ -186,6 +210,9 @@ def events():
                         else:
                             ib.active = False
 
+                    if STARTING_ANGLE_BOX.rect.collidepoint(MOUSE_X, MOUSE_Y):
+                        STARTING_ANGLE_BOX.rotate(-90)
+
             if event.button == 4:  # Scroll wheel up
                 # If control pressed down
                 if pygame.key.get_mods() & pygame.KMOD_CTRL:
@@ -244,19 +271,24 @@ def get_inputboxes():
 
 
 def get_tilevaluesinfo():
+    # Also returns starting angle box
     try:
         global ARROW_UP
         global ARROW_DOWN
         ARROW_UP = pygame.image.load('arrow.png').convert()
         ARROW_DOWN = pygame.transform.flip(ARROW_UP, False, True)
+        red_arrow = pygame.image.load('redarrow.png').convert_alpha()
         eraser = pygame.image.load('eraser.png').convert()
-        start = pygame.image.load('start.png').convert()
-        end = pygame.image.load('end.png').convert()
+        start = pygame.transform.scale(pygame.image.load('start.png').convert(), (64, 64))
+        end = pygame.transform.scale(pygame.image.load('end.png').convert(), (64, 64))
 
     except pygame.error as exception:
         sys.exit(exception)
 
     else:
+        # Create starting angle "box"
+        starting_angle_box = Startinganglebox((1024 + 288, 1024 - 256, 32, 32), red_arrow)
+
         # Get TILE_VALUES_INFO from tilevaluesinfo.py
         tile_values_info = tilevaluesinfo.get(64)[0]
 
@@ -276,7 +308,7 @@ def get_tilevaluesinfo():
         # Add eraser texture to value 0
         tile_values_info[0] = ('Special', 'Eraser'), eraser
 
-        return tile_values_info
+        return tile_values_info, starting_angle_box
 
 
 def new_tilemap():
@@ -339,7 +371,7 @@ TILEMAP_OFFSET,\
 TILE_SIZE,\
 ACTIVE_VALUE = new_tilemap()
 
-TILE_VALUES_INFO = get_tilevaluesinfo()
+TILE_VALUES_INFO, STARTING_ANGLE_BOX = get_tilevaluesinfo()
 
 TEXTUREGROUPS = get_texturegroups()
 INPUTBOXES = get_inputboxes()
