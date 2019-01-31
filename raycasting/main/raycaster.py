@@ -1,6 +1,4 @@
 # Main TODOs:
-# Player position and starting angle to tilemap.txt
-# Level editor
 # Try to rework player collision once again
 # Revisit and fix comments
 
@@ -12,19 +10,12 @@
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
 # All angles are in radians
-# Level files don't support empty lines
 # Objects are in OBJECTS list only if that object's cell is visible to player
 # Enemies are in ENEMIES list at all times
-# Wall texture files require two textures side by side (even if they are going to be the same)
+# Wall texture files require two textures side by side (even if they are going to be the same),
 # bc raycast() is going to pick one based on the side of interception
 # All timed events are tick based,
-# meaning that changing fps will change timer time
-
-# tilemap.txt:
-# Player x, y, angle <-- to do
-# Ceiling colour
-# Floor colour
-# Tilemap
+# meaning that changing fps will change timer time - might want to change
 
 from math import *
 
@@ -64,7 +55,7 @@ class Player:
 
     def __init__(self, pos, angle):
         self.x, self.y = pos
-        self.viewangle = angle
+        self.viewangle = angle + 0.0000001
         self.hp = 100
         self.ammo = 10
 
@@ -409,7 +400,9 @@ def load_level(level_nr):
         global TILEMAP
         TILEMAP = []
         for line in f:
-            row = line.replace('\n', '').split(',')  # Split the line to a list and get rid of newline (\n)
+            row = line.replace('\n', '')  # Get rid of newline (\n)
+            row = row[1:-1]  # Get rid of '[' and ']'
+            row = row.split(',')  # Split line into list
             row = [int(i) for i in row]  # Turn all number strings to an int
             TILEMAP.append(row)
 
