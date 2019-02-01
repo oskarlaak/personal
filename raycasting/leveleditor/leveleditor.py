@@ -1,6 +1,5 @@
 # TO DO
 # Level load function
-# Level saved indicator
 
 import math
 import raycasting.main.tilevaluesinfo as tilevaluesinfo
@@ -92,6 +91,7 @@ class Anglebox:
 
 class Tilemap:
     def __init__(self):
+        # Create new empty 64x64 tilemap
         self.list = []
         for _ in range(64):
             row = []
@@ -103,14 +103,17 @@ class Tilemap:
         self.offset = [0, 0]  # Position of top left tile when zoomed in or not
         self.tile_size = 16  # Tile size on screen (pixels)
         self.starting_angle = 0  # This value will be in radians
+        self.saved = None  # None bc False means that there was an error saving
 
     def new(self):
         self.__init__()
 
     def save(self):
+        # Tries to save tilemap and puts self.saved to either True or False depending on if it's possible or not
+
         def get_player_pos():
             # Scan and find player start pos
-            # Getting player pos in function to break out from double for loop with return
+            # This is done inside a function to break out from double "for loop" with return
             for row in range(len(self.list)):
                 for column in range(len(self.list[row])):
                     if TILE_VALUES_INFO[self.list[row][column]][0] == ('Special', 'Start'):
@@ -119,24 +122,50 @@ class Tilemap:
 
                         # +0.5 centers player position in tile
                         return column + 0.5, row + 0.5
+            return None, None
+
+        self.ticks = 60
+        self.saved = False
 
         start_x, start_y = get_player_pos()
+        if start_x and start_y:  # If start item placed
 
-        filepath = '../levels/{}/tilemap.txt'.format(LEVEL_NR.text)
-        os.makedirs(os.path.dirname(filepath), exist_ok=True)  # Creates filepath directory if it's not there already
-        # Start writing the file
-        with open(filepath, 'w') as f:
-            f.write('{}, {}, {}\n'.format(start_x, start_y, self.starting_angle))  # Player x, y, starting angle
-            f.write('{}, {}, {}\n'.format(RGBS[0].text, RGBS[1].text, RGBS[2].text))  # Ceiling colour
-            f.write('{}, {}, {}\n'.format(RGBS[3].text, RGBS[4].text, RGBS[5].text))  # Floor colour
-            for row in self.list:
-                f.write('{}\n'.format(row))  # Tilemap rows
+            for rgb in RGBS:  # Check if rgb values are ok
+                if rgb.text == '' or int(rgb.text) > rgb.limit:
+                    break
 
-        # Add player start item back to editor
-        for value, (type, _) in TILE_VALUES_INFO.items():
-            if type == ('Special', 'Start'):
-                self.list[int(start_y)][int(start_x)] = value
-                break
+            else:  # If rgb-s fine
+                if LEVEL_NR.text != '':  # If level number box not empty
+
+                    # Creates filepath directory if it's not there already
+                    filepath = '../levels/{}/tilemap.txt'.format(LEVEL_NR.text)
+                    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+
+                    # Start writing the file
+                    with open(filepath, 'w') as f:
+                        f.write('{}, {}, {}\n'.format(start_x, start_y, self.starting_angle))  # Player x, y, starting angle
+                        f.write('{}, {}, {}\n'.format(RGBS[0].text, RGBS[1].text, RGBS[2].text))  # Ceiling colour
+                        f.write('{}, {}, {}\n'.format(RGBS[3].text, RGBS[4].text, RGBS[5].text))  # Floor colour
+                        for row in self.list:
+                            f.write('{}\n'.format(row))  # Tilemap rows
+
+                    self.saved = True  # Saved without errors
+
+            # Add player start item back to editor
+            for value, (type, _) in TILE_VALUES_INFO.items():
+                if type == ('Special', 'Start'):
+                    self.list[int(start_y)][int(start_x)] = value
+
+    def status_update(self):
+        if self.saved != None:
+            if self.saved:
+                DISPLAY.blit(SAVED, (1024 + 64, 1024 - 128))
+            else:
+                DISPLAY.blit(SAVEFAILED, (1024 + 64, 1028 - 128))
+
+            self.ticks -= 1
+            if self.ticks == 0:
+                self.saved = None
 
 
 def draw_tilemap():
@@ -159,6 +188,16 @@ def draw_tilemap():
 
 
 def apply_texture():
+    # If item placed was player start item,
+    # remove previously placed player start item from tilemap
+    # This is done because level can only have 1 player start item
+    if TILE_VALUES_INFO[ACTIVE_VALUE][0] == ('Special', 'Start'):
+        for row in range(len(TILEMAP.list)):
+            for column in range(len(TILEMAP.list[row])):
+                if TILEMAP.list[row][column] == ACTIVE_VALUE:
+                    # Return tile to normal
+                    TILEMAP.list[row][column] = 0
+
     tile_x = int(MOUSE_X / TILEMAP.tile_size) + TILEMAP.offset[0]
     tile_y = int(MOUSE_Y / TILEMAP.tile_size) + TILEMAP.offset[1]
     TILEMAP.list[tile_y][tile_x] = ACTIVE_VALUE
@@ -337,9 +376,15 @@ def get_tilevaluesinfo():
         global ARROW_UP
         global ARROW_DOWN
         global RED_ARROW
+        global SAVED
+        global SAVEFAILED
         ARROW_UP = pygame.image.load('arrow.png').convert()
         ARROW_DOWN = pygame.transform.flip(ARROW_UP, False, True)
         RED_ARROW = pygame.image.load('redarrow.png').convert_alpha()
+        SAVED = pygame.image.load('saved.png').convert_alpha()
+        SAVED = pygame.transform.scale(SAVED, (SAVED.get_width() * 3, SAVED.get_height() * 3))
+        SAVEFAILED = pygame.image.load('savefailed.png').convert_alpha()
+        SAVEFAILED = pygame.transform.scale(SAVEFAILED, (SAVEFAILED.get_width() * 3, SAVEFAILED.get_height() * 3))
 
         eraser = pygame.image.load('eraser.png').convert()
         start = pygame.transform.scale(pygame.image.load('start.png').convert(), (64, 64))
@@ -423,6 +468,7 @@ while not DONE:
     DISPLAY.fill(BLACK)
     MOUSE_X, MOUSE_Y = pygame.mouse.get_pos()
 
+    TILEMAP.status_update()
     events()
     draw_tilemap()
     draw_sidebar()
