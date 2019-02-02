@@ -1,5 +1,5 @@
 # TO DO
-# Level load function
+# Level editor README file describing how to use it
 
 import math
 import raycasting.main.tilevaluesinfo as tilevaluesinfo
@@ -50,7 +50,6 @@ class Inputbox:
         self.limit = limit
         self.rect = pygame.Rect(rect)
         self.text = ''
-        self.text_surface = myfont.render(self.text, True, Inputbox.text_color)
 
     def draw(self, surface):
         # Draw inputbox background
@@ -64,9 +63,11 @@ class Inputbox:
         pygame.draw.rect(surface, background_color, self.rect)
 
         # Draw inputbox text
-        text_offset = ((self.rect.w - self.text_surface.get_width())  / 2,
-                       (self.rect.h - self.text_surface.get_height()) / 2)
-        surface.blit(self.text_surface, (self.rect.x + text_offset[0], self.rect.y + text_offset[1]))
+        text_surface = myfont.render(self.text, True, Inputbox.text_color)
+        text_offset = ((self.rect.w - text_surface.get_width())  / 2,
+                       (self.rect.h - text_surface.get_height()) / 2)
+
+        surface.blit(text_surface, (self.rect.x + text_offset[0], self.rect.y + text_offset[1]))
 
         # Draw caption text
         surface.blit(self.caption, (self.rect.x - self.caption.get_width(), self.rect.y + text_offset[1]))
@@ -78,15 +79,13 @@ class Anglebox:
         self.angle = 0
         self.image = image
 
-    def rotate(self, degrees):
-        self.angle += degrees
-        if self.angle < -180:
-            self.angle += 360
-        TILEMAP.starting_angle = math.radians(-self.angle)
+    def rotate(self, radians):
+        self.angle += radians
+        if self.angle <= -math.pi:
+            self.angle += math.pi * 2
 
     def draw(self, surface):
-        pygame.draw.rect(surface, GREEN, self.rect)
-        surface.blit(pygame.transform.rotate(self.image, self.angle), (self.rect.x, self.rect.y))
+        surface.blit(pygame.transform.rotate(self.image, math.degrees(self.angle)), (self.rect.x, self.rect.y))
 
 
 class Tilemap:
@@ -102,10 +101,22 @@ class Tilemap:
         self.size = 64  # How many tiles can be seen on screen
         self.offset = [0, 0]  # Position of top left tile when zoomed in or not
         self.tile_size = 16  # Tile size on screen (pixels)
-        self.starting_angle = 0  # This value will be in radians
-        self.saved = None  # None bc False means that there was an error saving
+
+        self.saved = None  # None bc False means that there was an error saving/loading
+        self.loaded = None
 
     def new(self):
+        # Reset anglebox
+        ANGLEBOX.angle = 0
+        # Reset rgb values
+        for rgb in RGBS:
+            rgb.text = ''
+        # Set level nr to smallest number from 1 that's not in levels folder
+        level_nr = 1
+        while str(level_nr) in os.listdir('../levels'):
+            level_nr += 1
+        LEVEL_NR.text = str(level_nr)
+
         self.__init__()
 
     def save(self):
@@ -116,7 +127,7 @@ class Tilemap:
             # This is done inside a function to break out from double "for loop" with return
             for row in range(len(self.list)):
                 for column in range(len(self.list[row])):
-                    if TILE_VALUES_INFO[self.list[row][column]][0] == ('Special', 'Start'):
+                    if self.list[row][column] == START_VALUE:
                         # Return tile to normal
                         self.list[row][column] = 0
 
@@ -125,6 +136,7 @@ class Tilemap:
             return None, None
 
         self.ticks = 60
+        self.loaded = None
         self.saved = False
 
         start_x, start_y = get_player_pos()
@@ -143,29 +155,70 @@ class Tilemap:
 
                     # Start writing the file
                     with open(filepath, 'w') as f:
-                        f.write('{}, {}, {}\n'.format(start_x, start_y, self.starting_angle))  # Player x, y, starting angle
-                        f.write('{}, {}, {}\n'.format(RGBS[0].text, RGBS[1].text, RGBS[2].text))  # Ceiling colour
-                        f.write('{}, {}, {}\n'.format(RGBS[3].text, RGBS[4].text, RGBS[5].text))  # Floor colour
+                        f.write('{},{},{}\n'.format(start_x, start_y, ANGLEBOX.angle))  # Player x, y, starting angle
+                        f.write('{},{},{}\n'.format(RGBS[0].text, RGBS[1].text, RGBS[2].text))  # Ceiling colour
+                        f.write('{},{},{}\n'.format(RGBS[3].text, RGBS[4].text, RGBS[5].text))  # Floor colour
                         for row in self.list:
                             f.write('{}\n'.format(row))  # Tilemap rows
 
                     self.saved = True  # Saved without errors
 
             # Add player start item back to editor
-            for value, (type, _) in TILE_VALUES_INFO.items():
-                if type == ('Special', 'Start'):
-                    self.list[int(start_y)][int(start_x)] = value
+            self.list[int(start_y)][int(start_x)] = START_VALUE
+
+    def load(self, level_nr):
+        self.ticks = 60
+        self.saved = None
+        try:
+            with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
+                player_x, player_y, player_angle = [float(i) for i in f.readline().replace('\n', '').split(',')]
+                # Update anglebox angle
+                ANGLEBOX.angle = player_angle
+
+                # Level nr
+                LEVEL_NR.text = str(level_nr)
+                # Ceiling colour
+                RGBS[0].text, RGBS[1].text, RGBS[2].text = f.readline().replace('\n', '').split(',')
+                # Floor colour
+                RGBS[3].text, RGBS[4].text, RGBS[5].text = f.readline().replace('\n', '').split(',')
+
+                # Update the tilemap
+                self.list = []
+                for line in f:
+                    row = line.replace('\n', '')  # Get rid of newline (\n)
+                    row = row[1:-1]  # Get rid of '[' and ']'
+                    row = row.split(',')  # Split line into list
+                    row = [int(i) for i in row]  # Turn all number strings to an int
+                    self.list.append(row)
+                # Add player start tile to tilemap
+                self.list[int(player_y)][int(player_x)] = START_VALUE
+            self.loaded = True
+
+        except FileNotFoundError:
+            self.loaded = False
 
     def status_update(self):
+        message_pos = (1024 + 64, 1024 - 128)
+
         if self.saved != None:
             if self.saved:
-                DISPLAY.blit(SAVED, (1024 + 64, 1024 - 128))
+                DISPLAY.blit(SAVED, message_pos)
             else:
-                DISPLAY.blit(SAVEFAILED, (1024 + 64, 1028 - 128))
+                DISPLAY.blit(SAVEFAILED, message_pos)
 
             self.ticks -= 1
             if self.ticks == 0:
                 self.saved = None
+
+        elif self.loaded != None:
+            if self.loaded:
+                DISPLAY.blit(LOADSUCCESSFUL, message_pos)
+            else:
+                DISPLAY.blit(LOADFAILED, message_pos)
+
+            self.ticks -= 1
+            if self.ticks == 0:
+                self.loaded = None
 
 
 def draw_tilemap():
@@ -191,10 +244,10 @@ def apply_texture():
     # If item placed was player start item,
     # remove previously placed player start item from tilemap
     # This is done because level can only have 1 player start item
-    if TILE_VALUES_INFO[ACTIVE_VALUE][0] == ('Special', 'Start'):
+    if ACTIVE_VALUE == START_VALUE:
         for row in range(len(TILEMAP.list)):
             for column in range(len(TILEMAP.list[row])):
-                if TILEMAP.list[row][column] == ACTIVE_VALUE:
+                if TILEMAP.list[row][column] == START_VALUE:
                     # Return tile to normal
                     TILEMAP.list[row][column] = 0
 
@@ -303,7 +356,7 @@ def events():
                             ib.active = False
 
                     if ANGLEBOX.rect.collidepoint(MOUSE_X, MOUSE_Y):
-                        ANGLEBOX.rotate(-90)
+                        ANGLEBOX.rotate(-math.pi / 2)
 
             if event.button == 4:  # Scroll wheel up
                 # If control pressed down
@@ -334,18 +387,23 @@ def events():
                             break
 
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
+            if event.key == pygame.K_n and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                TILEMAP.new()
+
+            elif event.key == pygame.K_s and pygame.key.get_mods() & pygame.KMOD_CTRL:
                 TILEMAP.save()
 
-            for ib in INPUTBOXES:
-                if ib.active:
-                    if event.key == pygame.K_BACKSPACE:
-                        ib.text = ib.text[:-1]
-                    elif pygame.key.name(event.key).isdigit() and len(ib.text) < 3:  # rgb values cannot be < 3 digits
-                        ib.text += event.unicode
-                    # Re-render the text
-                    ib.text_surface = myfont.render(ib.text, True, Inputbox.text_color)
-                    break
+            elif event.key == pygame.K_l and pygame.key.get_mods() & pygame.KMOD_CTRL:
+                TILEMAP.load(LEVEL_NR.text)
+
+            else:
+                for ib in INPUTBOXES:
+                    if ib.active:
+                        if event.key == pygame.K_BACKSPACE:
+                            ib.text = ib.text[:-1]
+                        elif pygame.key.name(event.key).isdigit() and len(ib.text) < 3:  # rgb values cannot be < 3 digits
+                            ib.text += event.unicode
+                        break
 
     # If mouse left button pressed down and mouse inside tilemap area
     if pygame.mouse.get_pressed()[0] == True:
@@ -371,21 +429,21 @@ def create_inputboxes():
     return rgbs, level_nr, anglebox
 
 
+def get_leveleditor_textures():
+    try:
+        return pygame.image.load('arrow.png').convert(), \
+               pygame.image.load('redarrow.png').convert_alpha(), \
+               pygame.image.load('saved.png').convert_alpha(), \
+               pygame.image.load('savefailed.png').convert_alpha(), \
+               pygame.image.load('loadsuccessful.png').convert_alpha(), \
+               pygame.image.load('loadfailed.png').convert_alpha()
+
+    except pygame.error as exception:
+        sys.exit(exception)
+
+
 def get_tilevaluesinfo():
     try:
-        global ARROW_UP
-        global ARROW_DOWN
-        global RED_ARROW
-        global SAVED
-        global SAVEFAILED
-        ARROW_UP = pygame.image.load('arrow.png').convert()
-        ARROW_DOWN = pygame.transform.flip(ARROW_UP, False, True)
-        RED_ARROW = pygame.image.load('redarrow.png').convert_alpha()
-        SAVED = pygame.image.load('saved.png').convert_alpha()
-        SAVED = pygame.transform.scale(SAVED, (SAVED.get_width() * 3, SAVED.get_height() * 3))
-        SAVEFAILED = pygame.image.load('savefailed.png').convert_alpha()
-        SAVEFAILED = pygame.transform.scale(SAVEFAILED, (SAVEFAILED.get_width() * 3, SAVEFAILED.get_height() * 3))
-
         eraser = pygame.image.load('eraser.png').convert()
         start = pygame.transform.scale(pygame.image.load('start.png').convert(), (64, 64))
         end = pygame.transform.scale(pygame.image.load('end.png').convert(), (64, 64))
@@ -407,13 +465,14 @@ def get_tilevaluesinfo():
         for value, (info, _) in tile_values_info.items():
             if info == ('Wall', 'End-trigger'):
                 tile_values_info[value] = ('Special', 'End-trigger'), end
-                tile_values_info[value + 1] = ('Special', 'Start'), start
+                start_value = value + 1
+                tile_values_info[start_value] = ('Special', 'Start'), start
                 break
 
         # Add eraser texture to value 0
         tile_values_info[0] = ('Special', 'Eraser'), eraser
 
-        return tile_values_info
+        return tile_values_info, start_value
 
 
 def get_texturegroups():
@@ -446,10 +505,11 @@ def get_texturegroups():
 
 
 pygame.init()
-
+pygame.display.set_caption('Raycaster level editor')
 DISPLAY = pygame.display.set_mode((1024 + 528, 1024))  # 528 is the sidebar width
 CLOCK = pygame.time.Clock()
 
+# Font stuff
 pygame.font.init()
 FONT_SIZE = 20
 myfont = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
@@ -457,8 +517,17 @@ myfont = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
 TILEMAP = Tilemap()
 ACTIVE_VALUE = 0
 
-TILE_VALUES_INFO = get_tilevaluesinfo()
+TILE_VALUES_INFO, START_VALUE = get_tilevaluesinfo()
 TEXTUREGROUPS = get_texturegroups()
+
+# Level editor textures/sprites/images
+ARROW_UP,\
+RED_ARROW,\
+SAVED,\
+SAVEFAILED,\
+LOADSUCCESSFUL,\
+LOADFAILED = get_leveleditor_textures()
+ARROW_DOWN = pygame.transform.flip(ARROW_UP, False, True)
 
 RGBS, LEVEL_NR, ANGLEBOX = create_inputboxes()
 INPUTBOXES = RGBS + [LEVEL_NR]
