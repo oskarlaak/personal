@@ -1,10 +1,6 @@
-# Main TODOs:
-# Try to rework player collision once again
-# Revisit and fix comments
-
-# Later:
+# TO DO:
+# setup.py?
 # Add enemy "AI"
-# Add things to README
 # Add weapons + shooting
 
 # NOTES:
@@ -13,7 +9,7 @@
 # Objects are in OBJECTS list only if that object's cell is visible to player
 # Enemies are in ENEMIES list at all times
 # Wall texture files require two textures side by side (even if they are going to be the same),
-# bc raycast() is going to pick one based on the side of interception
+# bc raycast() is going to pick one based on the side of the interception
 # All timed events are tick based,
 # meaning that changing fps will change timer time - might want to change
 
@@ -26,27 +22,6 @@ import pygame
 from pygame.locals import *
 
 import raycasting.main.tilevaluesinfo as tilevaluesinfo
-
-# Game settings
-INFO_LAYER = False
-D_W = 1024
-D_H = 800
-FOV = pi / 2  # = 90 degrees
-RAYS_AMOUNT = int(D_W / 2)  # Drawing frequency across the screen / Rays casted each frame
-SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
-
-# Pygame stuff
-pygame.init()
-pygame.display.set_caption('Raycaster')
-DISPLAY = pygame.display.set_mode((D_W, D_H))
-CLOCK = pygame.time.Clock()
-pygame.mouse.set_visible(False)
-pygame.event.set_grab(True)
-
-# Font stuff
-pygame.font.init()
-FONT_SIZE = 20
-myfont = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
 
 
 class Player:
@@ -63,7 +38,25 @@ class Player:
         self.viewangle = fixed_angle(self.viewangle + radians)
 
     def move(self, x_move, y_move):
-        # Moving player to check collision
+
+        def one_point_collision(y, x):
+            if int(x - x_move) == x - x_move:
+                return True, False
+            if int(y - y_move) == y - y_move:
+                return False, True
+
+            x_offset = x - int(x)
+            y_offset = y - int(y)
+
+            # Distance to closest round(x/y)
+            deltax = abs(round(x_offset) - x_offset)
+            deltay = abs(round(y_offset) - y_offset)
+            if deltax < deltay:
+                return True, False
+            else:
+                return False, True
+
+        # Start off by moving player position
         self.x += x_move
         self.y += y_move
 
@@ -73,68 +66,59 @@ class Player:
         down = self.y + Player.half_hitbox
         up = self.y - Player.half_hitbox
 
+        # Hitbox corners
         # Everything that player can walk on is less than 0 on tilemap
-        # So these will return True if there is a collision
+        # So these will be True if there is a collision
         down_right = TILEMAP[int(down)][int(right)] > 0
         down_left = TILEMAP[int(down)][int(left)] > 0
         up_right = TILEMAP[int(up)][int(right)] > 0
         up_left = TILEMAP[int(up)][int(left)] > 0
 
-        # If hitting something, find the collision type
-        if down_right or up_right or down_left or up_left:
-            x_collision = False
-            y_collision = False
+        # Find the collision type
+        x_collision = False
+        y_collision = False
 
-            # If diagonals touching
-            if down_right and up_left or down_left and up_right:
+        if down_right:
+            if up_left:
                 x_collision = True
                 y_collision = True
-
-            # If top or bottom touching
-            elif down_right and down_left or up_right and up_left:
+            elif down_left:
                 y_collision = True
-
-            # If left or right touching
-            elif down_right and up_right or down_left and up_left:
-                x_collision = True
-
-            # If one corner touching
-            else:
-                if down_right:
-                    edge_x = right
-                    edge_y = down
-                elif down_left:
-                    edge_x = left
-                    edge_y = down
-                elif up_right:
-                    edge_x = right
-                    edge_y = up
-                else:
-                    edge_x = left
-                    edge_y = up
-
-                x_offset = edge_x - int(edge_x)
-                y_offset = edge_y - int(edge_y)
-
-                # Distance to closest round(x/y)
-                deltax = abs(round(x_offset) - x_offset)
-                deltay = abs(round(y_offset) - y_offset)
-                if deltax < deltay:
+                if up_right:
                     x_collision = True
-                else:
+            elif up_right:
+                x_collision = True
+            else:
+                x_collision, y_collision = one_point_collision(down, right)
+
+        elif up_left:
+            if down_left:
+                x_collision = True
+                if up_right:
                     y_collision = True
+            elif up_right:
+                y_collision = True
+            else:
+                x_collision, y_collision = one_point_collision(up, left)
 
-            if x_collision:
-                if self.x - int(self.x) < Player.half_hitbox:
-                    self.x = int(self.x) + Player.half_hitbox
-                else:
-                    self.x = ceil(self.x) - Player.half_hitbox
+        elif down_left:
+            x_collision, y_collision = one_point_collision(down, left)
 
-            if y_collision:
-                if self.y - int(self.y) < Player.half_hitbox:
-                    self.y = int(self.y) + Player.half_hitbox
-                else:
-                    self.y = ceil(self.y) - Player.half_hitbox
+        elif up_right:
+            x_collision, y_collision = one_point_collision(up, right)
+
+        # Apply changes to x/y if there was a collision
+        if x_collision:
+            if self.x - int(self.x) < Player.half_hitbox:
+                self.x = int(self.x) + Player.half_hitbox
+            else:
+                self.x = ceil(self.x) - Player.half_hitbox
+
+        if y_collision:
+            if self.y - int(self.y) < Player.half_hitbox:
+                self.y = int(self.y) + Player.half_hitbox
+            else:
+                self.y = ceil(self.y) - Player.half_hitbox
 
 
 class Door:
@@ -178,8 +162,6 @@ class Door:
 
 
 class Drawable:
-    constant = 0.6 * D_H
-
     def adjust_image_height(self):
         # Depending on self.height, (it being the unoptimized image drawing height) this system will crop out
         # from given unscaled image as many pixel rows from top and bottom as possible,
@@ -211,8 +193,6 @@ class Drawable:
 
 
 class Wall(Drawable):
-    width = int(D_W / RAYS_AMOUNT)
-
     def __init__(self, perp_dist, texture, column, count):
         self.perp_dist = perp_dist  # Needs saving to sort by it later
 
@@ -276,7 +256,7 @@ class Object(Drawable, Sprite):
 
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
-        self.perp_dist = delta_x * VIEWANGLE_DIR_X + delta_y * VIEWANGLE_DIR_Y
+        self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
         if self.perp_dist > 0:
             self.image = TILE_VALUES_INFO[tilevalue][1]  # Name needs to be self.image for it to work in adjust_image_height()
@@ -308,7 +288,7 @@ class Enemy(Drawable, Sprite):
         delta_y = self.y - PLAYER.y
         angle_from_player = atan2(delta_y, delta_x)
 
-        self.perp_dist = delta_x * VIEWANGLE_DIR_X + delta_y * VIEWANGLE_DIR_Y
+        self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
         if self.perp_dist > 0:
             row = self.state
@@ -340,8 +320,8 @@ def events():
                 INFO_LAYER = not INFO_LAYER
 
             if event.key == K_e:
-                x = int(PLAYER.x + VIEWANGLE_DIR_X)
-                y = int(PLAYER.y + VIEWANGLE_DIR_Y)
+                x = int(PLAYER.x + PLAYER.dir_x)
+                y = int(PLAYER.y + PLAYER.dir_y)
                 tile_id = TILE_VALUES_INFO[TILEMAP[y][x]][0]
                 if tile_id[0] == 'Door' and tile_id[1] == 'Dynamic':
                     for d in DOORS:
@@ -354,7 +334,8 @@ def events():
                     #level_end()
 
 
-def update_doors():
+def update_gameobjects():
+    # Function made for updating moving game objects every frame
     for d in DOORS:
         d.move()
     for e in ENEMIES:
@@ -369,84 +350,40 @@ def draw_frame():
         obj.draw(DISPLAY)
 
 
-def load_textures():
-    global TEXTURE_SIZE
-    TEXTURE_SIZE = 64
-
-    global TILE_VALUES_INFO
-    global ENEMY_INFO
-    global DOOR_SIDE_TEXTURE
-    TILE_VALUES_INFO, ENEMY_INFO, DOOR_SIDE_TEXTURE = tilevaluesinfo.get(TEXTURE_SIZE)
-
-
 def load_level(level_nr):
-    global DOORS
-    DOORS = []
-
     # Decoding tilemap
     with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
-        global PLAYER
         row = f.readline().replace('\n', '').split(',')
         row = [float(i) for i in row]
-        PLAYER = Player((row[0], row[1]), row[2])  # Creates player
+        player = Player((row[0], row[1]), row[2])  # Creates player
 
-        global BACKGROUND_COLOURS
-        BACKGROUND_COLOURS = []
+        background_colours = []
         for _ in range(2):
             row = f.readline().replace('\n', '').split(',')  # Split the line to a list and get rid of newline (\n)
             row = [int(i) for i in row]  # Turn all number strings to an int
-            BACKGROUND_COLOURS.append(tuple(row))
+            background_colours.append(tuple(row))
 
-        global TILEMAP
-        TILEMAP = []
+        tilemap = []
         for line in f:
             row = line.replace('\n', '')  # Get rid of newline (\n)
             row = row[1:-1]  # Get rid of '[' and ']'
             row = row.split(',')  # Split line into list
             row = [int(i) for i in row]  # Turn all number strings to an int
-            TILEMAP.append(row)
+            tilemap.append(row)
 
-    # Scan through all of tilemap
-    # Create a enemy if tile id is correct
-    global ENEMIES
-    ENEMIES = []
-    for row in range(len(TILEMAP)):
-        for column in range(len(TILEMAP[row])):
-            tile_id = TILE_VALUES_INFO[TILEMAP[row][column]][0]
+    # Scan through all of tilemap and
+    # create a enemy if the tile id is correct
+    enemies = []
+    for row in range(len(tilemap)):
+        for column in range(len(tilemap[row])):
+            tile_id = TILE_VALUES_INFO[tilemap[row][column]][0]
             if tile_id[0] == 'Enemy':
-                spritesheet = TILE_VALUES_INFO[TILEMAP[row][column]][1]
+                spritesheet = TILE_VALUES_INFO[tilemap[row][column]][1]
                 pos = (column + 0.5, row + 0.5)
-                ENEMIES.append(Enemy(spritesheet, pos))
-                TILEMAP[row][column] = 0  # Clears tile
+                enemies.append(Enemy(spritesheet, pos))
+                tilemap[row][column] = 0  # Clears tile
 
-
-def get_rayangles():
-    # Returns a list of angles which raycast() is going to use to add to player's viewangle
-    # Because these angles do not depend on player's viewangle, they are calculated even before the main loop starts
-    #
-    # It calculates these angles so that each angle's end position is on the camera plane,
-    # equal distance away from the previous one
-    #
-    # Could be made faster, but since it's calculated only once before main loop, readability is more important
-    # Note that in 2D rendering, camera plane is actually a single line
-    # Also FOV has to be < pi (and not <= pi) for it to work properly
-    global RAYANGLES
-    RAYANGLES = []
-
-    # These global values are needed to calculate sprite display_x position
-    global CAMERA_PLANE_LEN
-    global CAMERA_PLANE_DIST
-
-    CAMERA_PLANE_LEN = 1
-    camera_plane_start = -CAMERA_PLANE_LEN / 2
-    camera_plane_step = CAMERA_PLANE_LEN / RAYS_AMOUNT
-
-    CAMERA_PLANE_DIST = (CAMERA_PLANE_LEN / 2) / tan(FOV / 2)
-    for i in range(RAYS_AMOUNT):
-        camera_plane_pos = camera_plane_start + i * camera_plane_step
-
-        angle = atan2(camera_plane_pos, CAMERA_PLANE_DIST)
-        RAYANGLES.append(angle)
+    return player, background_colours, tilemap, enemies, []  # <-- empty doors list
 
 
 def send_rays():
@@ -489,7 +426,7 @@ def send_rays():
         delta_y = ray_y - PLAYER.y
 
         # Calculate perpendicular distance (needed to avoid fisheye effect)
-        perp_dist = delta_x * VIEWANGLE_DIR_X + delta_y * VIEWANGLE_DIR_Y
+        perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
         # Get wall texture
         for d in DOORS:
@@ -646,44 +583,39 @@ def fixed_angle(angle):
 
     if angle > pi:  # 3.14+
         angle -= 2 * pi
-
     elif angle < -pi:  # 3.14-
         angle += 2 * pi
 
     return angle
 
 
-def mouse():
-    radians = pygame.mouse.get_rel()[0] * SENSITIVITY
-    PLAYER.rotate(radians)
-
-
 def movement():
-    global VIEWANGLE_DIR_X
-    global VIEWANGLE_DIR_Y
-    VIEWANGLE_DIR_X = cos(PLAYER.viewangle)
-    VIEWANGLE_DIR_Y = sin(PLAYER.viewangle)
+    # Checks for player movement (WASD)
+    # Also returns player direction vector to use elsewhere
 
-    keys = pygame.key.get_pressed()
+    keys_pressed = pygame.key.get_pressed()
+    player_dir_x = cos(PLAYER.viewangle)
+    player_dir_y = sin(PLAYER.viewangle)
+
     # Vector based movement, bc otherwise player could move faster diagonally
-    if keys[K_w] or keys[K_a] or keys[K_s] or keys[K_d]:
+    if keys_pressed[K_w] or keys_pressed[K_a] or keys_pressed[K_s] or keys_pressed[K_d]:
         movement_x = 0
         movement_y = 0
-        if keys[K_w]:
-            movement_x += VIEWANGLE_DIR_X
-            movement_y += VIEWANGLE_DIR_Y
+        if keys_pressed[K_w]:
+            movement_x += player_dir_x
+            movement_y += player_dir_y
 
-        if keys[K_a]:
-            movement_x += VIEWANGLE_DIR_Y
-            movement_y += -VIEWANGLE_DIR_X
+        if keys_pressed[K_a]:
+            movement_x += player_dir_y
+            movement_y += -player_dir_x
 
-        if keys[K_s]:
-            movement_x += -VIEWANGLE_DIR_X
-            movement_y += -VIEWANGLE_DIR_Y
+        if keys_pressed[K_s]:
+            movement_x += -player_dir_x
+            movement_y += -player_dir_y
 
-        if keys[K_d]:
-            movement_x += -VIEWANGLE_DIR_Y
-            movement_y += VIEWANGLE_DIR_X
+        if keys_pressed[K_d]:
+            movement_x += -player_dir_y
+            movement_y += player_dir_x
 
         # Needed for normalize() function
         movement_vector = np.asarray([[movement_x, movement_y]])
@@ -699,6 +631,8 @@ def movement():
 
             PLAYER.move(movement_x, movement_y)
 
+    return player_dir_x, player_dir_y
+
 
 def bottom_layer():
     pygame.draw.rect(DISPLAY, BACKGROUND_COLOURS[0], ((0,       0), (D_W, D_H / 2)))  # Ceiling
@@ -706,50 +640,111 @@ def bottom_layer():
 
 
 def top_layer():
+    # HUD stuff
     if INFO_LAYER:
         text_color = (255, 255, 255)
         decimals = 3
 
-        fps_text = 'FPS: {}'.format(int(CLOCK.get_fps()))
-        fps_image = myfont.render(fps_text, True, text_color)
+        fps_text = 'FPS: {}'.format(round(CLOCK.get_fps()))
+        fps_textsurface = MYFONT.render(fps_text, True, text_color)
 
         player_x_text = 'X: {}'.format(round(PLAYER.x, decimals))
-        player_x_image = myfont.render(player_x_text, True, text_color)
+        player_x_textsurface = MYFONT.render(player_x_text, True, text_color)
 
         player_y_text = 'Y: {}'.format(round(PLAYER.y, decimals))
-        player_y_image = myfont.render(player_y_text, True, text_color)
+        player_y_textsurface = MYFONT.render(player_y_text, True, text_color)
 
         viewangle_text = 'RAD: {}'.format(round(PLAYER.viewangle, decimals))
-        viewangle_image = myfont.render(viewangle_text, True, text_color)
+        viewangle_textsurface = MYFONT.render(viewangle_text, True, text_color)
 
-        DISPLAY.blit(      fps_image, (4, FONT_SIZE * 0))
-        DISPLAY.blit( player_x_image, (4, FONT_SIZE * 1))
-        DISPLAY.blit( player_y_image, (4, FONT_SIZE * 2))
-        DISPLAY.blit(viewangle_image, (4, FONT_SIZE * 3))
-
-
-def game_loop():
-    get_rayangles()
-    load_textures()
-    load_level(1)
-
-    global RUNNING
-    RUNNING = True
-    while RUNNING:
-        events()
-        mouse()
-        movement()
-
-        bottom_layer()
-        update_doors()
-        send_rays()
-        draw_frame()
-        top_layer()
-
-        pygame.display.flip()
-        CLOCK.tick(30)
-
-    pygame.quit()
+        DISPLAY.blit(      fps_textsurface, (4, FONT_SIZE * 0))
+        DISPLAY.blit( player_x_textsurface, (4, FONT_SIZE * 1))
+        DISPLAY.blit( player_y_textsurface, (4, FONT_SIZE * 2))
+        DISPLAY.blit(viewangle_textsurface, (4, FONT_SIZE * 3))
 
 
-game_loop()
+def get_rayangles(rays_amount):
+    # Returns a list of angles which raycast() is going to use to add to player's viewangle
+    # Because these angles do not depend on player's viewangle, they are calculated even before the main loop starts
+    #
+    # It calculates these angles so that each angle's end position is on the camera plane,
+    # equal distance away from the previous one
+    #
+    # Could be made faster, but since it's calculated only once before main loop, readability is more important
+    # Note that in 2D rendering, camera plane is actually a single line
+    # Also FOV has to be < pi (and not <= pi) for it to work properly
+
+    rayangles = []
+    camera_plane_len = 1
+    camera_plane_start = -camera_plane_len / 2
+    camera_plane_step = camera_plane_len / rays_amount
+
+    camera_plane_dist = (camera_plane_len / 2) / tan(FOV / 2)
+    for i in range(rays_amount):
+        camera_plane_pos = camera_plane_start + i * camera_plane_step
+
+        angle = atan2(camera_plane_pos, camera_plane_dist)
+        rayangles.append(angle)
+
+    return rayangles, camera_plane_len, camera_plane_dist
+
+
+# Game settings
+INFO_LAYER = False
+D_W = 1024
+D_H = 800
+FOV = pi / 2  # = 90 degrees
+RAYS_AMOUNT = int(D_W / 2)  # Drawing frequency across the screen / Rays casted each frame
+SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
+
+# Pygame stuff
+pygame.init()
+pygame.display.set_caption('Raycaster')
+DISPLAY = pygame.display.set_mode((D_W, D_H))
+CLOCK = pygame.time.Clock()
+pygame.mouse.set_visible(False)
+pygame.event.set_grab(True)
+
+# Font stuff
+pygame.font.init()
+FONT_SIZE = 20
+MYFONT = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
+
+TEXTURE_SIZE = 64
+
+TILE_VALUES_INFO,\
+ENEMY_INFO,\
+DOOR_SIDE_TEXTURE = tilevaluesinfo.get(TEXTURE_SIZE)
+
+RAYANGLES,\
+CAMERA_PLANE_LEN,\
+CAMERA_PLANE_DIST = get_rayangles(RAYS_AMOUNT)
+
+PLAYER,\
+BACKGROUND_COLOURS,\
+TILEMAP,\
+ENEMIES,\
+DOORS = load_level(1)
+
+####
+Drawable.constant = 0.6 * D_H
+Wall.width = int(D_W / RAYS_AMOUNT)
+####
+
+RUNNING = True
+while RUNNING:
+    events()
+    PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
+    PLAYER.dir_x, PLAYER.dir_y = movement()
+
+    update_gameobjects()
+
+    bottom_layer()
+    send_rays()
+    draw_frame()
+    top_layer()
+
+    pygame.display.flip()
+    CLOCK.tick(30)
+
+pygame.quit()

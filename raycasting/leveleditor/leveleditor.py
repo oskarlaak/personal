@@ -45,7 +45,7 @@ class Inputbox:
     text_color = BLACK
 
     def __init__(self, rect, caption, limit=999):
-        self.caption = myfont.render(caption, True, WHITE)
+        self.caption = MYFONT.render(caption, True, WHITE)
         self.active = False
         self.limit = limit
         self.rect = pygame.Rect(rect)
@@ -63,7 +63,7 @@ class Inputbox:
         pygame.draw.rect(surface, background_color, self.rect)
 
         # Draw inputbox text
-        text_surface = myfont.render(self.text, True, Inputbox.text_color)
+        text_surface = MYFONT.render(self.text, True, Inputbox.text_color)
         text_offset = ((self.rect.w - text_surface.get_width())  / 2,
                        (self.rect.h - text_surface.get_height()) / 2)
 
@@ -262,9 +262,9 @@ def draw_sidebar():
     DISPLAY.blit(pygame.transform.scale(active_texture, (128, 128)), (1024 + 32, 0 + 16))
 
     # Active value description
-    activeitem_text = myfont.render('ACTIVE ITEM:', True, WHITE)
-    item_type = myfont.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), True, WHITE)
-    item_description = myfont.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], True, WHITE)
+    activeitem_text = MYFONT.render('ACTIVE ITEM:', True, WHITE)
+    item_type = MYFONT.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), True, WHITE)
+    item_description = MYFONT.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], True, WHITE)
 
     DISPLAY.blit(activeitem_text, (1152 + 32, 0 + 16))
     DISPLAY.blit(item_type, (1152 + 32,  20 + 16))
@@ -275,8 +275,8 @@ def draw_sidebar():
         tg.draw(DISPLAY)
 
     # Draw rgb boxes
-    ceiling_text = myfont.render('CEILING COLOUR', True, WHITE)
-    floor_text = myfont.render('FLOOR COLOUR', True, WHITE)
+    ceiling_text = MYFONT.render('CEILING COLOUR', True, WHITE)
+    floor_text = MYFONT.render('FLOOR COLOUR', True, WHITE)
     DISPLAY.blit(ceiling_text, (RGBS[0].rect.x, RGBS[0].rect.y - FONT_SIZE))
     DISPLAY.blit(  floor_text, (RGBS[3].rect.x, RGBS[3].rect.y - FONT_SIZE))
     for ib in RGBS:
@@ -286,7 +286,7 @@ def draw_sidebar():
     LEVEL_NR.draw(DISPLAY)
 
     # Draw starting angle box
-    starting_angle_text = myfont.render('STARTING ANGLE:', True, WHITE)
+    starting_angle_text = MYFONT.render('STARTING ANGLE:', True, WHITE)
     DISPLAY.blit(starting_angle_text, (ANGLEBOX.rect.x, ANGLEBOX.rect.y - FONT_SIZE))
     ANGLEBOX.draw(DISPLAY)
 
@@ -512,7 +512,7 @@ CLOCK = pygame.time.Clock()
 # Font stuff
 pygame.font.init()
 FONT_SIZE = 20
-myfont = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
+MYFONT = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
 
 TILEMAP = Tilemap()
 ACTIVE_VALUE = 0
