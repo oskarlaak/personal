@@ -543,6 +543,6 @@ while not DONE:
     draw_sidebar()
 
     pygame.display.flip()
-    CLOCK.tick(30)
+    CLOCK.tick()
 
 pygame.quit()

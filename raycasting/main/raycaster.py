@@ -2,6 +2,9 @@
 # setup.py?
 # Add enemy "AI"
 # Add weapons + shooting
+#
+# Get a working pathfinding algoryth from point A to B working in pathfinding.py and them implement it in raycast
+# ratcast will call it every frame for every alerted enemy and these enemies will then step their first step of that path before calling pathfinding again
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -13,15 +16,7 @@
 # All timed events are tick based,
 # meaning that changing fps will change timer time - might want to change
 
-from math import *
-
-import numpy as np
-from sklearn.preprocessing import normalize
-
-import pygame
-from pygame.locals import *
-
-import raycasting.main.tilevaluesinfo as tilevaluesinfo
+# Enemy pathfinding doors problem can be solved by simply opening a door if a chasing enemy is standing in it
 
 
 class Player:
@@ -274,31 +269,67 @@ class Object(Drawable, Sprite):
 
 
 class Enemy(Drawable, Sprite):
+    # Amount of ticks that every image of animation is going to be shown
+    # The delay of which images are going to change
+    animation_ticks = 6
+
     def __init__(self, spritesheet, pos):
         self.x, self.y = pos
         self.sheet = spritesheet
         # Take attributes from ENEMY_INFO based on spritesheet
         self.hp = ENEMY_INFO[self.sheet]
-
         self.angle = 0
-        self.state = 0
+
+        self.row = 0
+        # There is no self.column bc that's not gonna be changed outside of update() -- for now
+
+        self.ticks = 0  # A variable to store time passed
+        self.alerted = False
 
     def update(self):
+        def enemy_visible_to_player():
+            # Returns True if visible, False if not visible
+            _, ray_x, ray_y, _ = raycast(angle_from_player)
+
+            ray_dist_squared = (PLAYER.x - ray_x)**2 + (PLAYER.y - ray_y)**2
+
+            enemy_dist_squared = (delta_x)**2 + (delta_y)**2
+
+            if enemy_dist_squared > ray_dist_squared:
+                return False
+            return True
+
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
         angle_from_player = atan2(delta_y, delta_x)
 
         self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
-        if self.perp_dist > 0:
-            row = self.state
-            if row < 5:  # If walking or standing
-                angle = fixed_angle(-angle_from_player - self.angle) + pi  # +pi to get rid of negative values
-                column = round(angle / (pi / 4))
-                if column == 8:
-                    column = 0
+        # Find the right column if enemy running or standing
+        if self.row < 5:
+            angle = fixed_angle(-angle_from_player - self.angle) + pi  # +pi to get rid of negative values
+            column = round(angle / (pi / 4))
+            if column == 8:
+                column = 0
 
-            self.image = self.sheet.subsurface(column * TEXTURE_SIZE, row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
+        # Find the right row depending on the enemy movement
+        if self.alerted:
+            self.ticks += 1
+            if self.ticks == Enemy.animation_ticks:
+                self.ticks = 0
+                self.row += 1
+                if self.row == 5:
+                    self.row = 1
+
+        if self.perp_dist > 0:  # If enemy is going to be drawn
+            # Check for alert state
+            if not self.alerted and enemy_visible_to_player():
+                if column == 0 or column == 1 or column == 7:  # If enemy face visible to player
+                    self.alerted = True
+                    self.row = 1
+
+            # Update image for drawing
+            self.image = self.sheet.subsurface(column * TEXTURE_SIZE, self.row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
 
             self.height = self.width = int(Drawable.constant / self.perp_dist)
             if self.height > D_H:
@@ -350,7 +381,7 @@ def draw_frame():
         obj.draw(DISPLAY)
 
 
-def load_level(level_nr):
+def load_level(level_nr, tile_values_info):
     # Decoding tilemap
     with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
         row = f.readline().replace('\n', '').split(',')
@@ -376,9 +407,9 @@ def load_level(level_nr):
     enemies = []
     for row in range(len(tilemap)):
         for column in range(len(tilemap[row])):
-            tile_id = TILE_VALUES_INFO[tilemap[row][column]][0]
+            tile_id = tile_values_info[tilemap[row][column]][0]
             if tile_id[0] == 'Enemy':
-                spritesheet = TILE_VALUES_INFO[tilemap[row][column]][1]
+                spritesheet = tile_values_info[tilemap[row][column]][1]
                 pos = (column + 0.5, row + 0.5)
                 enemies.append(Enemy(spritesheet, pos))
                 tilemap[row][column] = 0  # Clears tile
@@ -688,63 +719,73 @@ def get_rayangles(rays_amount):
 
     return rayangles, camera_plane_len, camera_plane_dist
 
+if __name__ == '__main__':
+    from math import *
 
-# Game settings
-INFO_LAYER = False
-D_W = 1024
-D_H = 800
-FOV = pi / 2  # = 90 degrees
-RAYS_AMOUNT = int(D_W / 2)  # Drawing frequency across the screen / Rays casted each frame
-SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
+    import numpy as np
+    from sklearn.preprocessing import normalize
 
-# Pygame stuff
-pygame.init()
-pygame.display.set_caption('Raycaster')
-DISPLAY = pygame.display.set_mode((D_W, D_H))
-CLOCK = pygame.time.Clock()
-pygame.mouse.set_visible(False)
-pygame.event.set_grab(True)
+    import pygame
+    from pygame.locals import *
 
-# Font stuff
-pygame.font.init()
-FONT_SIZE = 20
-MYFONT = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
+    import raycasting.main.tilevaluesinfo as tilevaluesinfo
 
-TEXTURE_SIZE = 64
+    # Game settings
+    INFO_LAYER = False
+    D_W = 1024
+    D_H = 800
+    FOV = pi / 2  # = 90 degrees
+    RAYS_AMOUNT = int(D_W / 2)  # Drawing frequency across the screen / Rays casted each frame
+    SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
 
-TILE_VALUES_INFO,\
-ENEMY_INFO,\
-DOOR_SIDE_TEXTURE = tilevaluesinfo.get(TEXTURE_SIZE)
+    # Pygame stuff
+    pygame.init()
+    pygame.display.set_caption('Raycaster')
+    DISPLAY = pygame.display.set_mode((D_W, D_H))
+    CLOCK = pygame.time.Clock()
+    pygame.mouse.set_visible(False)
+    pygame.event.set_grab(True)
 
-RAYANGLES,\
-CAMERA_PLANE_LEN,\
-CAMERA_PLANE_DIST = get_rayangles(RAYS_AMOUNT)
+    # Font stuff
+    pygame.font.init()
+    FONT_SIZE = 20
+    MYFONT = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
 
-PLAYER,\
-BACKGROUND_COLOURS,\
-TILEMAP,\
-ENEMIES,\
-DOORS = load_level(1)
+    TEXTURE_SIZE = 64
 
-####
-Drawable.constant = 0.6 * D_H
-Wall.width = int(D_W / RAYS_AMOUNT)
-####
+    TILE_VALUES_INFO,\
+    ENEMY_INFO,\
+    DOOR_SIDE_TEXTURE = tilevaluesinfo.get(TEXTURE_SIZE)
 
-RUNNING = True
-while RUNNING:
-    events()
-    PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
-    PLAYER.dir_x, PLAYER.dir_y = movement()
+    RAYANGLES,\
+    CAMERA_PLANE_LEN,\
+    CAMERA_PLANE_DIST = get_rayangles(RAYS_AMOUNT)
 
-    update_gameobjects()
+    PLAYER,\
+    BACKGROUND_COLOURS,\
+    TILEMAP,\
+    ENEMIES,\
+    DOORS = load_level(2, TILE_VALUES_INFO)
 
-    bottom_layer()
-    send_rays()
-    draw_frame()
-    top_layer()
+    ####
+    Drawable.constant = 0.6 * D_H
+    Wall.width = int(D_W / RAYS_AMOUNT)
+    ####
 
-    pygame.display.flip()
-    CLOCK.tick(30)
+    RUNNING = True
+    while RUNNING:
+        PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
+        PLAYER.dir_x, PLAYER.dir_y = movement()
 
-pygame.quit()
+        update_gameobjects()
+        events()
+
+        bottom_layer()
+        send_rays()
+        draw_frame()
+        top_layer()
+
+        pygame.display.flip()
+        CLOCK.tick(30)
+
+    pygame.quit()
