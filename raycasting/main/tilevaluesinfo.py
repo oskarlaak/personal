@@ -80,10 +80,9 @@ def get(texture_size):
 
         # Enemies
         ENEMY_INFO = {
-            # spritesheet: hp
-            # Allows for more attributes than just hp
-            guard: (3),
-            ss: (5)
+            # spritesheet: hp, speed
+            guard: (3, 0.04),
+            ss: (5, 0.06)
         }
         for c, spritesheet in enumerate(ENEMY_INFO):  # For every enemy type in ENEMY_INFO, add value to TILE_VALUES_INFO
             TILE_VALUES_INFO[index + c] = ('Enemy', 'Basic'), spritesheet

@@ -1,22 +1,19 @@
 # TO DO:
-# setup.py?
-# Add enemy "AI"
-# Add weapons + shooting
-#
-# Get a working pathfinding algoryth from point A to B working in pathfinding.py and them implement it in raycast
-# ratcast will call it every frame for every alerted enemy and these enemies will then step their first step of that path before calling pathfinding again
+# Enemy looking around system
+# Make enemies only update their path if they have finished their previous step
+# Make enemies open doors when needed
+# Weapons
+# Shooting
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
 # All angles are in radians
 # Objects are in OBJECTS list only if that object's cell is visible to player
-# Enemies are in ENEMIES list at all times
+# Enemies are in ENEMIES list at all times bc moving objects are harder to optimize
 # Wall texture files require two textures side by side (even if they are going to be the same),
 # bc raycast() is going to pick one based on the side of the interception
 # All timed events are tick based,
 # meaning that changing fps will change timer time - might want to change
-
-# Enemy pathfinding doors problem can be solved by simply opening a door if a chasing enemy is standing in it
 
 
 class Player:
@@ -269,39 +266,51 @@ class Object(Drawable, Sprite):
 
 
 class Enemy(Drawable, Sprite):
-    speed = 0.04
     # Amount of ticks that every image of animation is going to be shown
     # The delay of which images are going to change
     animation_ticks = 6
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = pos
-        self.sheet = spritesheet
-        # Take attributes from ENEMY_INFO based on spritesheet
-        self.hp = ENEMY_INFO[self.sheet]
+        self.home = (int(self.x), int(self.y))
         self.angle = 0
+        self.sheet = spritesheet
 
-        self.row = 0
-        # There is no self.column bc that's not gonna be changed outside of update() -- for now
+        # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
+        self.hp, self.speed = ENEMY_INFO[self.sheet]
 
-        self.ticks = 0  # A variable to store time passed
-        self.alerted = False
-        self.path = []
+        self.row = 0  # Spritesheet row
+        self.ticks = 0  # A variable to store time passed during animation
+        self.seen_ticks = 210  # A variable to store time passed when enemy last saw the player
+        self.path = []  # Enemy running path
+
+    def can_see_player(self, player_dist_x, player_dist_y):
+        # Returns True if player visible, False if not visible
+
+        # If player in enemy's theoretical 90 degree FOV
+        angle_to_player = atan2(-player_dist_y, -player_dist_x)
+        if abs(angle_to_player - self.angle) < pi / 4:
+            # Check if there is something between enemy and player
+            ray_x, ray_y = raycast(angle_to_player, (self.x, self.y))[1:3]  # <-- Only selects ray_x/ray_y
+            ray_dist_squared = (self.x - ray_x)**2 + (self.y - ray_y)**2
+            player_dist_squared = (player_dist_x)**2 + (player_dist_y)**2
+            if ray_dist_squared > player_dist_squared:  # If interception farther than player
+                return True
+        return False
 
     def update(self):
-        def enemy_visible_to_player():
-            # Sends a ray towards enemy and if interception point is farther than enemy,
-            # enemy must be in sight
-            # Returns True if visible, False if not visible
-            _, ray_x, ray_y, _ = raycast(angle_from_player)
+        if self.path:
+            step_x, step_y = self.path[0]
+            step_x += 0.5  # Centers tile pos
+            step_y += 0.5
 
-            ray_dist_squared = (PLAYER.x - ray_x)**2 + (PLAYER.y - ray_y)**2
+            self.angle = atan2(step_y - self.y, step_x - self.x)
+            self.x += cos(self.angle) * self.speed
+            self.y += sin(self.angle) * self.speed
 
-            enemy_dist_squared = (delta_x)**2 + (delta_y)**2
-
-            if enemy_dist_squared > ray_dist_squared:
-                return False
-            return True
+            # If enemy close enough to the path step
+            if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
+                del self.path[0]
 
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
@@ -310,14 +319,17 @@ class Enemy(Drawable, Sprite):
         self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
         # Find the right column if enemy running or standing
-        if self.row < 5:
-            angle = fixed_angle(-angle_from_player - self.angle) + pi  # +pi to get rid of negative values
+        # Else it's going to pick it manually - shooting, death animation etc.
+        if self.row <= 4:
+            angle = fixed_angle(-angle_from_player + self.angle) + pi  # +pi to get rid of negative values
             column = round(angle / (pi / 4))
             if column == 8:
                 column = 0
 
-        # Find the right row depending on the enemy movement
-        if self.alerted:
+        # Find the right spritesheet row
+        if self.path:  # If movement
+            if self.row == 0:
+                self.row = 1
             # Cycle through running animation
             self.ticks += 1
             if self.ticks == Enemy.animation_ticks:
@@ -325,31 +337,26 @@ class Enemy(Drawable, Sprite):
                 self.row += 1
                 if self.row == 5:
                     self.row = 1
+        else:  # If not movement
+            # Enemy standing
+            self.row = 0
 
+        # If enemy_can_see_player, update path for next loop
+        if self.can_see_player(delta_x, delta_y):
             self.path = pathfinding.pathfind((int(self.x), int(self.y)), (int(PLAYER.x), int(PLAYER.y)))
+            self.seen_ticks = 0
 
-        if self.path:
-            step_x, step_y = self.path[0]
-            step_x += 0.5  # Centers tile pos
-            step_y += 0.5
-            self.angle = atan2(step_y - self.y, step_x - self.x)
-            self.x += cos(self.angle) * self.speed
-            self.y += sin(self.angle) * self.speed
-            # If enemy close enough to the path step
-            if abs(self.x - step_x) < 0.1 and abs(self.y - step_y):
-                del self.path[0]
+        elif self.seen_ticks < 120:  # If the enemy last saw player in the last 4 seconds, update path
+            self.path = pathfinding.pathfind((int(self.x), int(self.y)), (int(PLAYER.x), int(PLAYER.y)))
+            self.seen_ticks += 1
 
+        elif self.seen_ticks < 210:  # Stay on the look-out for 3 seconds
+            self.seen_ticks += 1
 
+        else:  # Go back to home tile if can't see anything
+            self.path = pathfinding.pathfind((int(self.x), int(self.y)), self.home)
 
-
-        if self.perp_dist > 0:  # If enemy is going to be drawn
-            # Check for alert state
-            if not self.alerted and enemy_visible_to_player():  # if enemy_can_see_player
-                if column == 0 or column == 1 or column == 7:  # If enemy face visible to player
-                    self.alerted = True
-                    self.row = 1
-
-            # Update image for drawing
+        if self.perp_dist > 0:  # If enemy is going to be drawn, update image for drawing
             self.image = self.sheet.subsurface(column * TEXTURE_SIZE, self.row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
 
             self.height = self.width = int(Drawable.constant / self.perp_dist)
@@ -476,7 +483,7 @@ def send_rays():
         rayangle = fixed_angle(PLAYER.viewangle + RAYANGLES[i])
 
         # Get values from raycast()
-        tile_value, ray_x, ray_y, column = raycast(rayangle)
+        tile_value, ray_x, ray_y, column = raycast(rayangle, (PLAYER.x, PLAYER.y))
         delta_x = ray_x - PLAYER.x
         delta_y = ray_y - PLAYER.y
 
@@ -498,7 +505,7 @@ def send_rays():
         WALLS.append(Wall(perp_dist, texture, column, i))
 
 
-def raycast(rayangle):
+def raycast(rayangle, pos):
     #   Variables depending
     #     on the rayangle
     #            |
@@ -518,8 +525,7 @@ def raycast(rayangle):
     else:
         B = 1
 
-    ray_x = PLAYER.x
-    ray_y = PLAYER.y
+    ray_x, ray_y = pos
     tan_rayangle = tan(rayangle)  # Calculating tay(rayangle) once to not calculate it over every step
 
     while True:
