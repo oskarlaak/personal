@@ -3,12 +3,6 @@ class Door:
         self.pos = pos
         self.neighbours = []
 
-    def get_neighbours(self):
-        neighbour_doors = get_neighbour_doors(self.pos)
-        for door in DOORS:
-            if door.pos in neighbour_doors:
-                self.neighbours.append(door)
-
 
 def get_neighbour_doors(pos):
     # Returns a list of doors that can be reached from given location
@@ -36,19 +30,39 @@ def get_neighbour_doors(pos):
         visited.append(current)  # Add point to visited
         get_unvisited(current)  # Scan new points from that location
 
-    return doors_found
+    return sorted(doors_found)
 
 
-def get_doors():
-    doors = []
+def setup(tilemap, tile_values_info):
+    # Pathfinding setup
+
+    # Creating 3 global variables for itself to use later
+    global TILEMAP
+    global TILE_VALUES_INFO
+    global DOORS
+    TILEMAP = tilemap
+    TILE_VALUES_INFO = tile_values_info
+
+    # Scanning through tilemap and getting all the doors
+    DOORS = []
     for row in range(len(TILEMAP)):
         for column in range(len(TILEMAP[row])):
             if TILE_VALUES_INFO[TILEMAP[row][column]][0] == ('Door', 'Dynamic'):
-                doors.append(Door((column, row)))
-    return doors
+                DOORS.append(Door((column, row)))
+
+    # Getting all door neighbours
+    for parent_door in DOORS:
+        neighbours = get_neighbour_doors(parent_door.pos)
+        for child_door in DOORS:
+            if child_door.pos in neighbours:
+                parent_door.neighbours.append(child_door)
 
 
-def a_star(start, end, tilemap):
+def squared_dist(from_, to):
+    return (from_[0] - to[0])**2 + (from_[1] - to[1])**2
+
+
+def a_star(start, end):
     # Simplified version of A* search algorithm
 
     class Point:
@@ -95,12 +109,12 @@ def a_star(start, end, tilemap):
         for x in range(-1, 2):  # -1, 0, 1
             for y in range(-1, 2):  # -1, 0, 1
                 pos_x, pos_y = (pos[0] + x, pos[1] + y)
-                if (pos_x, pos_y) not in all_points and tilemap[pos_y][pos_x] <= 0:
+                if (pos_x, pos_y) not in all_points and TILEMAP[pos_y][pos_x] <= 0:
                     unvisited.append((pos_x, pos_y))
                     points.append(Point((pos_x, pos_y)))
 
-    end_value = tilemap[end[1]][end[0]]  # Remember end value
-    tilemap[end[1]][end[0]] = 0  # Modify tilemap
+    end_value = TILEMAP[end[1]][end[0]]  # Remember end value
+    TILEMAP[end[1]][end[0]] = 0  # Modify tilemap in case end location is a door
 
     points = []  # List storing Point class objects
 
@@ -125,19 +139,18 @@ def a_star(start, end, tilemap):
         del unvisited[winner_index]  # Remove that point from unvisited
         visited.append(current)  # Add current to visited
 
-    tilemap[end[1]][end[0]] = end_value  # Change back tilemap
+    TILEMAP[end[1]][end[0]] = end_value  # Change back tilemap
     return get_path()
 
 
-def squared_dist(from_, to):
-    return (from_[0] - to[0])**2 + (from_[1] - to[1])**2
-
-
-def pathfind(start, end, tilemap):
+def pathfind(start, end):
+    # Main pathfinding system
     start_doors = get_neighbour_doors(start)
     end_doors = get_neighbour_doors(end)
     if start_doors == end_doors:
-        return a_star(start, end, tilemap)
+        return a_star(start, end)
+    if end in start_doors or start in end_doors:
+        return a_star(start, end)
 
     # If start and end in different rooms
     # Get best starting door
@@ -186,16 +199,15 @@ def pathfind(start, end, tilemap):
     path = []
     old = start
     for point in doors_path:
-        path += a_star(old, point.pos, tilemap)
+        path += a_star(old, point.pos)
         old = point.pos
-    path += a_star(old, end, tilemap)
+    path += a_star(old, end)
 
     return path
 
 
 if __name__ == '__main__':
     import raycasting.main.tilevaluesinfo as tilevaluesinfo
-    import raycasting.main.raycaster as raycaster
     import pygame
     from pygame.locals import *
 
@@ -203,16 +215,25 @@ if __name__ == '__main__':
     DISPLAY = pygame.display.set_mode((1024, 1024))
     CLOCK = pygame.time.Clock()
 
-    TILE_VALUES_INFO = tilevaluesinfo.get(64)[0]
-    TILEMAP = raycaster.load_level(2, TILE_VALUES_INFO)[2]  # <-- We only need tilemap
+    tile_values_info = tilevaluesinfo.get(64)[0]
+    tilemap = []
+    with open('../levels/1/tilemap.txt', 'r') as f:
+        row = f.readline().replace('\n', '').split(',')
+        row = tuple(int(float(i)) for i in row)
+        start = row[0:2]
+        # Skip the level colour lines
+        next(f)
+        next(f)
+        for line in f:
+            row = line.replace('\n', '')  # Get rid of newline (\n)
+            row = row[1:-1]  # Get rid of '[' and ']'
+            row = row.split(',')  # Split line into list
+            row = [int(i) for i in row]  # Turn all number strings to an int
+            tilemap.append(row)
 
-    DOORS = get_doors()
-    for door in DOORS:
-        door.get_neighbours()
+    setup(tilemap, tile_values_info)
 
-    start = (34, 54)
-    end = (55, 45)
-
+    end_x, end_y = 0, 0
     running = True
     while running:
         # Event handling
@@ -225,22 +246,32 @@ if __name__ == '__main__':
 
         DISPLAY.fill((255, 255, 255))
 
-        # Draw the actual tilemap
+        # Draw the tilemap
         for row in range(64):
             for column in range(64):
                 tile_value = TILEMAP[row][column]
                 if tile_value != 0:
-                    texture = TILE_VALUES_INFO[tile_value][1]  # Get the texture
+                    texture = TILE_VALUES_INFO[tile_value][1]
                     texture = texture.subsurface(0, 0, 64, 64)
                     texture = pygame.transform.scale(texture, (16, 16))
                     DISPLAY.blit(texture, (column * 16, row * 16))
 
-        # Draw path in red
-        path = pathfind(start, end, TILEMAP)
-        old_x, old_y = start
-        for point_x, point_y in path:
-            pygame.draw.line(DISPLAY, (255, 0, 0), ((old_x+.5) * 16, (old_y+.5) * 16), ((point_x+.5) * 16, (point_y+.5) * 16))
-            old_x, old_y = point_x, point_y
+        end_x += 1
+        if end_x > 63:
+            end_x = 0
+            end_y += 1
+            if end_y > 63:
+                end_y = 0
+        pygame.draw.rect(DISPLAY, (0, 255, 0), (end_x*16, end_y*16, 16, 16))
+        if TILEMAP[end_y][end_x] <= 0:
+            # Draw path in red
+            path = pathfind(start, (end_x, end_y))
+            old_x, old_y = start
+            for point_x, point_y in path:
+                pygame.draw.line(DISPLAY, (255, 0, 0),
+                                 (  (old_x+.5) * 16,   (old_y+.5) * 16),
+                                 ((point_x+.5) * 16, (point_y+.5) * 16))
+                old_x, old_y = point_x, point_y
 
         pygame.display.flip()
         CLOCK.tick()

@@ -269,6 +269,7 @@ class Object(Drawable, Sprite):
 
 
 class Enemy(Drawable, Sprite):
+    speed = 0.04
     # Amount of ticks that every image of animation is going to be shown
     # The delay of which images are going to change
     animation_ticks = 6
@@ -285,9 +286,12 @@ class Enemy(Drawable, Sprite):
 
         self.ticks = 0  # A variable to store time passed
         self.alerted = False
+        self.path = []
 
     def update(self):
         def enemy_visible_to_player():
+            # Sends a ray towards enemy and if interception point is farther than enemy,
+            # enemy must be in sight
             # Returns True if visible, False if not visible
             _, ray_x, ray_y, _ = raycast(angle_from_player)
 
@@ -314,6 +318,7 @@ class Enemy(Drawable, Sprite):
 
         # Find the right row depending on the enemy movement
         if self.alerted:
+            # Cycle through running animation
             self.ticks += 1
             if self.ticks == Enemy.animation_ticks:
                 self.ticks = 0
@@ -321,9 +326,25 @@ class Enemy(Drawable, Sprite):
                 if self.row == 5:
                     self.row = 1
 
+            self.path = pathfinding.pathfind((int(self.x), int(self.y)), (int(PLAYER.x), int(PLAYER.y)))
+
+        if self.path:
+            step_x, step_y = self.path[0]
+            step_x += 0.5  # Centers tile pos
+            step_y += 0.5
+            self.angle = atan2(step_y - self.y, step_x - self.x)
+            self.x += cos(self.angle) * self.speed
+            self.y += sin(self.angle) * self.speed
+            # If enemy close enough to the path step
+            if abs(self.x - step_x) < 0.1 and abs(self.y - step_y):
+                del self.path[0]
+
+
+
+
         if self.perp_dist > 0:  # If enemy is going to be drawn
             # Check for alert state
-            if not self.alerted and enemy_visible_to_player():
+            if not self.alerted and enemy_visible_to_player():  # if enemy_can_see_player
                 if column == 0 or column == 1 or column == 7:  # If enemy face visible to player
                     self.alerted = True
                     self.row = 1
@@ -413,6 +434,9 @@ def load_level(level_nr, tile_values_info):
                 pos = (column + 0.5, row + 0.5)
                 enemies.append(Enemy(spritesheet, pos))
                 tilemap[row][column] = 0  # Clears tile
+
+    # Run pathfinding setup function
+    pathfinding.setup(tilemap, tile_values_info)
 
     return player, background_colours, tilemap, enemies, []  # <-- empty doors list
 
@@ -729,6 +753,7 @@ if __name__ == '__main__':
     from pygame.locals import *
 
     import raycasting.main.tilevaluesinfo as tilevaluesinfo
+    import raycasting.main.pathfinding as pathfinding
 
     # Game settings
     INFO_LAYER = False
@@ -765,7 +790,7 @@ if __name__ == '__main__':
     BACKGROUND_COLOURS,\
     TILEMAP,\
     ENEMIES,\
-    DOORS = load_level(2, TILE_VALUES_INFO)
+    DOORS = load_level(1, TILE_VALUES_INFO)
 
     ####
     Drawable.constant = 0.6 * D_H
