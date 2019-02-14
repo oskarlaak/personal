@@ -1,7 +1,5 @@
 # TO DO:
 # Enemy looking around system
-# Make enemies only update their path if they have finished their previous step
-# Make enemies open doors when needed
 # Weapons
 # Shooting
 
@@ -13,7 +11,7 @@
 # Wall texture files require two textures side by side (even if they are going to be the same),
 # bc raycast() is going to pick one based on the side of the interception
 # All timed events are tick based,
-# meaning that changing fps will change timer time - might want to change
+# meaning that changing fps will change timer time
 
 
 class Player:
@@ -119,7 +117,7 @@ class Door:
 
     def __init__(self, map_pos, tile_value):
         self.x, self.y = map_pos
-        self.tile_value = tile_value
+        self.value = tile_value
         self.ticks = 0
         self.state = 0
         self.opened_state = 0  # 1 is fully opened, 0 is fully closed
@@ -142,7 +140,7 @@ class Door:
                     # Checking if player is not in door's way
                     safe_dist = 0.5 + Player.half_hitbox
                     if abs(self.x + 0.5 - PLAYER.x) > safe_dist or abs(self.y + 0.5 - PLAYER.y) > safe_dist:
-                        TILEMAP[self.y][self.x] = self.tile_value  # Make tile non-walkable
+                        TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
                         self.ticks = 0
                         self.state += 1
 
@@ -181,7 +179,7 @@ class Drawable:
 
         # Adjusting height accordingly
         multiplier = cropping_size / perfect_size
-        self.height = int(D_H * multiplier)
+        self.height = int(D_H * multiplier)  # Rounding it doesn't make difference
 
 
 class Wall(Drawable):
@@ -266,23 +264,26 @@ class Object(Drawable, Sprite):
 
 
 class Enemy(Drawable, Sprite):
+
     # Amount of ticks that every image of animation is going to be shown
     # The delay of which images are going to change
     animation_ticks = 6
 
     def __init__(self, spritesheet, pos):
-        self.x, self.y = pos
-        self.home = (int(self.x), int(self.y))
+        self.x, self.y = self.home = pos
         self.angle = 0
         self.sheet = spritesheet
+        self.row = 0  # Spritesheet row
+        self.path = []  # Enemy running path
 
         # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
-        self.hp, self.speed = ENEMY_INFO[self.sheet]
+        # What each attribute means see tilevaluesinfo.py enemy info dictionary description
+        self.hp, self.speed, self.memory, self.patience = ENEMY_INFO[self.sheet]
 
-        self.row = 0  # Spritesheet row
-        self.ticks = 0  # A variable to store time passed during animation
-        self.seen_ticks = 210  # A variable to store time passed when enemy last saw the player
-        self.path = []  # Enemy running path
+        # Timed events tick (frames passed) variables
+        self.anim_ticks = 0  # Time passed during animation
+        self.last_saw_ticks = self.memory  # Time passed when the enemy last saw the player
+        self.steady_ticks = 0  # Time enemy has stayed stationary
 
     def can_see_player(self, player_dist_x, player_dist_y):
         # Returns True if player visible, False if not visible
@@ -299,7 +300,45 @@ class Enemy(Drawable, Sprite):
         return False
 
     def update(self):
+
+        # Enemy door opening system
+        # If door underneath enemy,
+        # create a door obj in that location if it isn't there already
+        # and start opening it immediately
+        tile_value = TILEMAP[int(self.y)][int(self.x)]
+        tile_id = TILE_VALUES_INFO[tile_value][0]
+        if tile_id == ('Door', 'Dynamic'):
+            for d in DOORS:
+                if (d.x, d.y) == (int(self.x), int(self.y)):
+                    d.state = 1
+                    break
+            else:
+                d = Door((int(self.x), int(self.y)), tile_value)
+                d.state = 1
+                DOORS.append(d)
+
+        delta_x = self.x - PLAYER.x
+        delta_y = self.y - PLAYER.y
+        can_see_player = self.can_see_player(delta_x, delta_y)
+
+        # Update last_saw_ticks
+        if can_see_player:
+            self.last_saw_ticks = 0
+        elif self.last_saw_ticks < self.memory:  # Prevents variable getting unnecessarily big
+            self.last_saw_ticks += 1
+
+        if not self.path:
+            self.steady_ticks += 1
+            if can_see_player:
+                self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
+
+            elif (self.x, self.y) != self.home:  # If enemy without path outside home
+                if self.steady_ticks > self.patience:
+                    self.path = pathfinding.pathfind((self.x, self.y), self.home)
+
         if self.path:
+            self.steady_ticks = 0
+
             step_x, step_y = self.path[0]
             step_x += 0.5  # Centers tile pos
             step_y += 0.5
@@ -308,16 +347,18 @@ class Enemy(Drawable, Sprite):
             self.x += cos(self.angle) * self.speed
             self.y += sin(self.angle) * self.speed
 
+            # Could recalculate delta_x/delta_y here but it makes next to no difference
+
             # If enemy close enough to the path step
             if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
-                del self.path[0]
+                self.x = step_x
+                self.y = step_y
+                if can_see_player or self.last_saw_ticks < self.memory:
+                    self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
+                else:
+                    del self.path[0]
 
-        delta_x = self.x - PLAYER.x
-        delta_y = self.y - PLAYER.y
         angle_from_player = atan2(delta_y, delta_x)
-
-        self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
-
         # Find the right column if enemy running or standing
         # Else it's going to pick it manually - shooting, death animation etc.
         if self.row <= 4:
@@ -331,31 +372,17 @@ class Enemy(Drawable, Sprite):
             if self.row == 0:
                 self.row = 1
             # Cycle through running animation
-            self.ticks += 1
-            if self.ticks == Enemy.animation_ticks:
-                self.ticks = 0
+            self.anim_ticks += 1
+            if self.anim_ticks == Enemy.animation_ticks:
+                self.anim_ticks = 0
                 self.row += 1
                 if self.row == 5:
                     self.row = 1
         else:  # If not movement
-            # Enemy standing
+            self.anim_ticks = 0
             self.row = 0
 
-        # If enemy_can_see_player, update path for next loop
-        if self.can_see_player(delta_x, delta_y):
-            self.path = pathfinding.pathfind((int(self.x), int(self.y)), (int(PLAYER.x), int(PLAYER.y)))
-            self.seen_ticks = 0
-
-        elif self.seen_ticks < 120:  # If the enemy last saw player in the last 4 seconds, update path
-            self.path = pathfinding.pathfind((int(self.x), int(self.y)), (int(PLAYER.x), int(PLAYER.y)))
-            self.seen_ticks += 1
-
-        elif self.seen_ticks < 210:  # Stay on the look-out for 3 seconds
-            self.seen_ticks += 1
-
-        else:  # Go back to home tile if can't see anything
-            self.path = pathfinding.pathfind((int(self.x), int(self.y)), self.home)
-
+        self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
         if self.perp_dist > 0:  # If enemy is going to be drawn, update image for drawing
             self.image = self.sheet.subsurface(column * TEXTURE_SIZE, self.row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
 
@@ -385,7 +412,7 @@ def events():
                 if tile_id[0] == 'Door' and tile_id[1] == 'Dynamic':
                     for d in DOORS:
                         # If found the right door and it's not in motion already
-                        if x == d.x and y == d.y and d.state == 0:
+                        if x == d.x and y == d.y:
                             d.state = 1
                             break
                 elif tile_id[0] == 'Wall' and tile_id[1] == 'End-trigger':

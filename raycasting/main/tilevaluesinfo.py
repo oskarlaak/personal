@@ -1,4 +1,7 @@
 def get(texture_size):
+    import sys
+    import pygame
+
     def assign_texture_sheet(cell_w, cell_h, sheet, step, type):
         global index
         for row in range(int(sheet.get_height() / cell_h)):
@@ -6,11 +9,8 @@ def get(texture_size):
             for column in range(int(sheet.get_width() / cell_w)):
 
                 texture = sheet.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
-                TILE_VALUES_INFO[index] = (type, texture)
+                tile_values_info[index] = (type, texture)
                 index += step
-
-    import sys
-    import pygame
 
     try:
         # Wall textures
@@ -23,7 +23,7 @@ def get(texture_size):
         end_trigger_textures = pygame.image.load('../textures/walls/endtrigger.png').convert()
 
         # Door textures
-        DOOR_SIDE_TEXTURE = pygame.image.load('../textures/doors/side.png').convert()
+        door_side_texture = pygame.image.load('../textures/doors/side.png').convert()
         dynamic_door_textures = pygame.image.load('../textures/doors/dynamic.png').convert()
         static_door_textures = pygame.image.load('../textures/doors/static.png').convert()
 
@@ -43,20 +43,20 @@ def get(texture_size):
 
     else:  # If no error when loading textures
         global index
-        TILE_VALUES_INFO = {}
+        tile_values_info = {}
 
         # Negative values
         # Ammo
-        TILE_VALUES_INFO[-1] = ('Object', 'Ammo'), ammo_sprite
+        tile_values_info[-1] = ('Object', 'Ammo'), ammo_sprite
 
         # Health
-        TILE_VALUES_INFO[-2] = ('Object', 'Health'), health_sprite
+        tile_values_info[-2] = ('Object', 'Health'), health_sprite
 
         # Other non-solid objects
         index = -3
         assign_texture_sheet(texture_size, texture_size, nonsolid_sprites, -1, ('Object', 'Non-solid'))
 
-        TILE_VALUES_INFO[0] = 'Empty', None
+        tile_values_info[0] = 'Empty', None
 
         # Positive values
         # Solid objects
@@ -79,15 +79,19 @@ def get(texture_size):
         assign_texture_sheet(texture_size * 2, texture_size, end_trigger_textures, 1, ('Wall', 'End-trigger'))
 
         # Enemies
-        ENEMY_INFO = {
-            # spritesheet: hp, speed
-            guard: (3, 0.04),
-            ss: (5, 0.06)
+        enemy_info = {
+            # spritesheet: hp, speed, memory, patience
+            # Attributes description:
+            # memory = the time (in ticks) enemy knows player position after he has disappeared from his vision
+            #          (also the time in which enemy's path will be updated towards player)
+            # patience = the maximum time enemy stays standing still without an action
+            guard: (3, 0.04, 90, 90),
+            ss: (5, 0.06, 90, 90)
         }
-        for c, spritesheet in enumerate(ENEMY_INFO):  # For every enemy type in ENEMY_INFO, add value to TILE_VALUES_INFO
-            TILE_VALUES_INFO[index + c] = ('Enemy', 'Basic'), spritesheet
+        for c, spritesheet in enumerate(enemy_info):  # For every enemy type in ENEMY_INFO, add value to TILE_VALUES_INFO
+            tile_values_info[index + c] = ('Enemy', 'Basic'), spritesheet
 
-        return TILE_VALUES_INFO, ENEMY_INFO, DOOR_SIDE_TEXTURE
+        return tile_values_info, enemy_info, door_side_texture
 
 
 if __name__ == '__main__':

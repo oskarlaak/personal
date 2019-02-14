@@ -145,6 +145,11 @@ def a_star(start, end):
 
 def pathfind(start, end):
     # Main pathfinding system
+
+    # Turn start and end positons to ints
+    start = (int(start[0]), int(start[1]))
+    end = (int(end[0]), int(end[1]))
+
     start_doors = get_neighbour_doors(start)
     end_doors = get_neighbour_doors(end)
     if start_doors == end_doors:
