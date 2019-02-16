@@ -1,7 +1,8 @@
 # TO DO:
-# Enemy looking around system
+# Add combat:
 # Weapons
 # Shooting
+# Health and ammo HUD
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -267,11 +268,16 @@ class Enemy(Drawable, Sprite):
 
     # Amount of ticks that every image of animation is going to be shown
     # The delay of which images are going to change
-    animation_ticks = 6
+    animation_ticks = 5
+
+    # Stationary enemy turning speed
+    # Radians per tick as always
+    turning_speed = 0.08
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = self.home = pos
-        self.angle = 0
+        self.angle = 0  # Enemy actual angle
+        self.wanted_angle = 0  # Angle to which enemy is turning
         self.sheet = spritesheet
         self.row = 0  # Spritesheet row
         self.path = []  # Enemy running path
@@ -284,6 +290,20 @@ class Enemy(Drawable, Sprite):
         self.anim_ticks = 0  # Time passed during animation
         self.last_saw_ticks = self.memory  # Time passed when the enemy last saw the player
         self.steady_ticks = 0  # Time enemy has stayed stationary
+
+        # Creates a list of angles that are going to be chosen by random every once in a while
+        # Angles which enemy can see more are chosen more often
+        self.look_angles = []
+        # 20 different viewangles should be enough
+        rayangles = [pi,  pi*.9,  pi*.8,  pi*.7,  pi*.6,  pi*.5,  pi*.4,  pi*.3,  pi*.2,  pi*.1,
+                      0, -pi*.9, -pi*.8, -pi*.7, -pi*.6, -pi*.5, -pi*.4, -pi*.3, -pi*.2, -pi*.1]
+        for rayangle in rayangles:
+
+            ray_x, ray_y = raycast(rayangle, (self.x, self.y))[1:3]  # <-- Only selects ray_x/ray_y
+            ray_dist = sqrt((ray_x - self.x)**2 + (ray_y - self.y)**2)
+
+            for _ in range(int(ray_dist)):
+                self.look_angles.append(rayangle)
 
     def can_see_player(self, player_dist_x, player_dist_y):
         # Returns True if player visible, False if not visible
@@ -335,6 +355,21 @@ class Enemy(Drawable, Sprite):
             elif (self.x, self.y) != self.home:  # If enemy without path outside home
                 if self.steady_ticks > self.patience:
                     self.path = pathfinding.pathfind((self.x, self.y), self.home)
+            else:
+                if self.steady_ticks > self.patience:  # If been stationary for a while
+                    self.wanted_angle = random.choice(self.look_angles)  # Update wanted looking angle
+
+                # Enemy turning system
+                if self.angle != self.wanted_angle:
+                    self.steady_ticks = 0  # If turning - not steady
+                    if self.angle < self.wanted_angle:
+                        self.angle += Enemy.turning_speed
+                    else:
+                        self.angle -= Enemy.turning_speed
+
+                    # If self.angle close enough
+                    if abs(self.angle - self.wanted_angle) < Enemy.turning_speed:
+                        self.angle = self.wanted_angle  # Finish turning
 
         if self.path:
             self.steady_ticks = 0
@@ -436,6 +471,21 @@ def draw_frame():
         obj.draw(DISPLAY)
 
 
+def load_enemies(tilemap, tile_values_info):
+    # Scan through all of tilemap and
+    # create a enemy if the tile id is correct
+    enemies = []
+    for row in range(len(tilemap)):
+        for column in range(len(tilemap[row])):
+            tile_id = tile_values_info[tilemap[row][column]][0]
+            if tile_id[0] == 'Enemy':
+                spritesheet = tile_values_info[tilemap[row][column]][1]
+                pos = (column + 0.5, row + 0.5)
+                enemies.append(Enemy(spritesheet, pos))
+                tilemap[row][column] = 0  # Clears tile
+    return enemies
+
+
 def load_level(level_nr, tile_values_info):
     # Decoding tilemap
     with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
@@ -457,22 +507,10 @@ def load_level(level_nr, tile_values_info):
             row = [int(i) for i in row]  # Turn all number strings to an int
             tilemap.append(row)
 
-    # Scan through all of tilemap and
-    # create a enemy if the tile id is correct
-    enemies = []
-    for row in range(len(tilemap)):
-        for column in range(len(tilemap[row])):
-            tile_id = tile_values_info[tilemap[row][column]][0]
-            if tile_id[0] == 'Enemy':
-                spritesheet = tile_values_info[tilemap[row][column]][1]
-                pos = (column + 0.5, row + 0.5)
-                enemies.append(Enemy(spritesheet, pos))
-                tilemap[row][column] = 0  # Clears tile
-
     # Run pathfinding setup function
     pathfinding.setup(tilemap, tile_values_info)
 
-    return player, background_colours, tilemap, enemies, []  # <-- empty doors list
+    return player, background_colours, tilemap, []  # <-- empty doors list
 
 
 def send_rays():
@@ -778,6 +816,7 @@ def get_rayangles(rays_amount):
 
 if __name__ == '__main__':
     from math import *
+    import random
 
     import numpy as np
     from sklearn.preprocessing import normalize
@@ -822,8 +861,9 @@ if __name__ == '__main__':
     PLAYER,\
     BACKGROUND_COLOURS,\
     TILEMAP,\
-    ENEMIES,\
     DOORS = load_level(1, TILE_VALUES_INFO)
+
+    ENEMIES = load_enemies(TILEMAP, TILE_VALUES_INFO)
 
     ####
     Drawable.constant = 0.6 * D_H
