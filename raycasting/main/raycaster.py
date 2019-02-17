@@ -1,8 +1,10 @@
 # TO DO:
-# Add combat:
-# Weapons
-# Shooting
+# Enemy shooting
+# Enemy getting hit/dying
+# Player reload
 # Health and ammo HUD
+# Try scaling weapon images while loading
+# Aiming
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -23,10 +25,32 @@ class Player:
         self.x, self.y = pos
         self.viewangle = angle + 0.0000001
         self.hp = 100
-        self.ammo = 10
+        self.ammo = 999
+
+        self.weapon_nr = 1
+        self.shooting_ticks = 0
+        self.shooting_stage = 0  # 0 is not shooting
 
     def rotate(self, radians):
         self.viewangle = fixed_angle(self.viewangle + radians)
+
+    def shooting_anim(self):
+        weapon = WEAPONS[self.weapon_nr]
+
+        self.shooting_ticks += 1
+        if self.shooting_ticks == weapon.fire_delay / weapon.animation_frames:
+            self.shooting_ticks = 0
+
+            self.shooting_stage += 1
+            if self.shooting_stage > weapon.animation_frames:
+                self.shooting_stage = 1
+
+            if self.shooting_stage == 1:
+                self.shoot()
+
+    def shoot(self):
+        # When player sends out a bullet
+        self.ammo -= 1
 
     def move(self, x_move, y_move):
 
@@ -289,7 +313,7 @@ class Enemy(Drawable, Sprite):
         # Timed events tick (frames passed) variables
         self.anim_ticks = 0  # Time passed during animation
         self.last_saw_ticks = self.memory  # Time passed when the enemy last saw the player
-        self.steady_ticks = 0  # Time enemy has stayed stationary
+        self.stationary_ticks = 0  # Time enemy has stayed stationary/without moving (turning counts as moving)
 
         # Creates a list of angles that are going to be chosen by random every once in a while
         # Angles which enemy can see more are chosen more often
@@ -348,20 +372,20 @@ class Enemy(Drawable, Sprite):
             self.last_saw_ticks += 1
 
         if not self.path:
-            self.steady_ticks += 1
+            self.stationary_ticks += 1
             if can_see_player:
                 self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
 
             elif (self.x, self.y) != self.home:  # If enemy without path outside home
-                if self.steady_ticks > self.patience:
+                if self.stationary_ticks > self.patience:
                     self.path = pathfinding.pathfind((self.x, self.y), self.home)
             else:
-                if self.steady_ticks > self.patience:  # If been stationary for a while
+                if self.stationary_ticks > self.patience:  # If been stationary for a while
                     self.wanted_angle = random.choice(self.look_angles)  # Update wanted looking angle
 
                 # Enemy turning system
                 if self.angle != self.wanted_angle:
-                    self.steady_ticks = 0  # If turning - not steady
+                    self.stationary_ticks = 0  # If turning - not stationary
                     if self.angle < self.wanted_angle:
                         self.angle += Enemy.turning_speed
                     else:
@@ -372,7 +396,7 @@ class Enemy(Drawable, Sprite):
                         self.angle = self.wanted_angle  # Finish turning
 
         if self.path:
-            self.steady_ticks = 0
+            self.stationary_ticks = 0
 
             step_x, step_y = self.path[0]
             step_x += 0.5  # Centers tile pos
@@ -428,6 +452,20 @@ class Enemy(Drawable, Sprite):
             self.calc_display_xy(angle_from_player)
 
 
+class Weapon:
+    def __init__(self, weapon_sheet, fire_delay, animation_frames):
+        self.weapon_sheet = weapon_sheet
+        self.fire_delay = fire_delay
+        self.animation_frames = animation_frames
+
+
+def load_weapons():
+    ak47 = pygame.image.load('../textures/weapons/ak47.png').convert_alpha()
+    weapons = [None]  # Makes it so first weapon is index 1 insted of 0
+    weapons.append(Weapon(ak47, 4, 2))  # Fire delay has to be dividable by animation frames
+    return weapons
+
+
 def events():
     global RUNNING
     global INFO_LAYER
@@ -453,6 +491,12 @@ def events():
                 elif tile_id[0] == 'Wall' and tile_id[1] == 'End-trigger':
                     TILEMAP[y][x] += 1  # Change triggerblock texture
                     #level_end()
+
+    if (pygame.mouse.get_pressed()[0] or PLAYER.shooting_ticks > 0) and PLAYER.ammo:
+        PLAYER.shooting_anim()
+    else:
+        PLAYER.shooting_ticks = 0
+        PLAYER.shooting_stage = 0
 
 
 def update_gameobjects():
@@ -783,10 +827,32 @@ def top_layer():
         viewangle_text = 'RAD: {}'.format(round(PLAYER.viewangle, decimals))
         viewangle_textsurface = MYFONT.render(viewangle_text, True, text_color)
 
+        ammo_text = 'AMMO: {}'.format(PLAYER.ammo)
+        ammo_textsurface = MYFONT.render(ammo_text, True, text_color)
+
         DISPLAY.blit(      fps_textsurface, (4, FONT_SIZE * 0))
         DISPLAY.blit( player_x_textsurface, (4, FONT_SIZE * 1))
         DISPLAY.blit( player_y_textsurface, (4, FONT_SIZE * 2))
         DISPLAY.blit(viewangle_textsurface, (4, FONT_SIZE * 3))
+        DISPLAY.blit(     ammo_textsurface, (4, FONT_SIZE * 4))
+
+    weapon = WEAPONS[PLAYER.weapon_nr]  # Choose the right weapon from WEAPONS
+    weapon = weapon.weapon_sheet.subsurface(TEXTURE_SIZE * PLAYER.shooting_stage, 0, TEXTURE_SIZE, TEXTURE_SIZE)
+    weapon = pygame.transform.scale(weapon, (612, 612))
+    DISPLAY.blit(weapon, (D_W - 612 - 100, D_H - 612))
+
+    # Crosshair
+    ch_width = 2
+    ch_gap = 6
+    ch_len = 6
+    ch_colour = (0, 255, 0)
+    # Half width/height
+    h_w = D_W / 2
+    h_h = D_H / 2
+    pygame.draw.line(DISPLAY, ch_colour, (h_w + ch_gap, h_h), (h_w + ch_gap + ch_len, h_h), ch_width)
+    pygame.draw.line(DISPLAY, ch_colour, (h_w - ch_gap, h_h), (h_w - ch_gap - ch_len, h_h), ch_width)
+    pygame.draw.line(DISPLAY, ch_colour, (h_w, h_h + ch_gap), (h_w, h_h + ch_gap + ch_len), ch_width)
+    pygame.draw.line(DISPLAY, ch_colour, (h_w, h_h - ch_gap), (h_w, h_h - ch_gap - ch_len), ch_width)
 
 
 def get_rayangles(rays_amount):
@@ -864,6 +930,7 @@ if __name__ == '__main__':
     DOORS = load_level(1, TILE_VALUES_INFO)
 
     ENEMIES = load_enemies(TILEMAP, TILE_VALUES_INFO)
+    WEAPONS = load_weapons()
 
     ####
     Drawable.constant = 0.6 * D_H
