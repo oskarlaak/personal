@@ -2,9 +2,8 @@
 # Enemy shooting
 # Enemy getting hit/dying
 # Player reload
+# Weapon model class handling all weapon animations
 # Health and ammo HUD
-# Try scaling weapon images while loading
-# Aiming
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -25,7 +24,7 @@ class Player:
         self.x, self.y = pos
         self.viewangle = angle + 0.0000001
         self.hp = 100
-        self.ammo = 999
+        self.ammo = 60
 
         self.weapon_nr = 1
         self.shooting_ticks = 0
@@ -34,23 +33,29 @@ class Player:
     def rotate(self, radians):
         self.viewangle = fixed_angle(self.viewangle + radians)
 
-    def shooting_anim(self):
-        weapon = WEAPONS[self.weapon_nr]
-
+    def shooting_anim(self, weapon):
+        # Shooting animation system
         self.shooting_ticks += 1
         if self.shooting_ticks == weapon.fire_delay / weapon.animation_frames:
             self.shooting_ticks = 0
-
             self.shooting_stage += 1
-            if self.shooting_stage > weapon.animation_frames:
-                self.shooting_stage = 1
+
+            if self.shooting_stage > weapon.animation_frames:  # If finished shot animation
+                # If automatic, has magazine ammo and mouse down
+                if weapon.automatic and weapon.mag_ammo and pygame.mouse.get_pressed()[0]:
+                    self.shooting_stage = 1  # Keep going
+                else:
+                    self.shooting_stage = 0  # End animation
 
             if self.shooting_stage == 1:
-                self.shoot()
+                self.shoot(weapon)
 
-    def shoot(self):
+    def shoot(self, weapon):
         # When player sends out a bullet
-        self.ammo -= 1
+        weapon.mag_ammo -= 1
+
+    def reload(self, weapon):
+        pass
 
     def move(self, x_move, y_move):
 
@@ -453,22 +458,32 @@ class Enemy(Drawable, Sprite):
 
 
 class Weapon:
-    def __init__(self, weapon_sheet, fire_delay, animation_frames):
+    def __init__(self, name, weapon_sheet, animation_frames, fire_delay, mag_size, automatic, ammo_unlimited):
+        self.name = name
         self.weapon_sheet = weapon_sheet
+        self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
+
         self.fire_delay = fire_delay
-        self.animation_frames = animation_frames
+        self.mag_size = mag_size  # Mag's total capacity
+        self.mag_ammo = self.mag_size  # Currently ammo in weapon's mag
+        self.automatic = automatic
+        self.ammo_unlimited = ammo_unlimited
 
 
 def load_weapons():
-    ak47 = pygame.image.load('../textures/weapons/ak47.png').convert_alpha()
+    ak47 = pygame.image.load('../textures/weapons/ak47.png')  # (48*4)x32
+    ak47 = pygame.transform.scale(ak47, (ak47.get_width() * 10, ak47.get_height() * 10)).convert_alpha()
     weapons = [None]  # Makes it so first weapon is index 1 insted of 0
-    weapons.append(Weapon(ak47, 4, 2))  # Fire delay has to be dividable by animation frames
+    weapons.append(Weapon('AK-47', ak47, 3, 3, 30, True, False))  # Fire delay has to be dividable by animation frames
     return weapons
 
 
 def events():
     global RUNNING
     global INFO_LAYER
+
+    # Current weapon held
+    weapon = WEAPONS[PLAYER.weapon_nr]
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
@@ -492,11 +507,12 @@ def events():
                     TILEMAP[y][x] += 1  # Change triggerblock texture
                     #level_end()
 
-    if (pygame.mouse.get_pressed()[0] or PLAYER.shooting_ticks > 0) and PLAYER.ammo:
-        PLAYER.shooting_anim()
-    else:
-        PLAYER.shooting_ticks = 0
-        PLAYER.shooting_stage = 0
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if weapon.mag_ammo:  # If bullets in weapon:
+                PLAYER.shooting_anim(weapon)
+
+    if PLAYER.shooting_stage > 0:  # If shot animation unfinished
+        PLAYER.shooting_anim(weapon)  # Keep going
 
 
 def update_gameobjects():
@@ -837,9 +853,10 @@ def top_layer():
         DISPLAY.blit(     ammo_textsurface, (4, FONT_SIZE * 4))
 
     weapon = WEAPONS[PLAYER.weapon_nr]  # Choose the right weapon from WEAPONS
-    weapon = weapon.weapon_sheet.subsurface(TEXTURE_SIZE * PLAYER.shooting_stage, 0, TEXTURE_SIZE, TEXTURE_SIZE)
-    weapon = pygame.transform.scale(weapon, (612, 612))
-    DISPLAY.blit(weapon, (D_W - 612 - 100, D_H - 612))
+    cell_w = weapon.weapon_sheet.get_width() / (weapon.animation_frames + 1)
+    cell_h = weapon.weapon_sheet.get_height()
+    weapon = weapon.weapon_sheet.subsurface(cell_w * PLAYER.shooting_stage, 0, cell_w, cell_h)
+    DISPLAY.blit(weapon, (D_W - cell_w - 30, D_H - cell_h))
 
     # Crosshair
     ch_width = 2
