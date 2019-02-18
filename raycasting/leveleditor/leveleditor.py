@@ -17,7 +17,7 @@ GREEN = (0, 255, 0)
 NUMBERS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
 
 
-class Texturegroup:
+class TextureGroup:
     def __init__(self, pos, value):
         self.x, self.y = pos
         self.active = False
@@ -41,7 +41,7 @@ class Texturegroup:
         pygame.draw.rect(surface, color, self.rect, 1)
 
 
-class Inputbox:
+class InputBox:
     text_color = BLACK
 
     def __init__(self, rect, caption, limit=999):
@@ -63,7 +63,7 @@ class Inputbox:
         pygame.draw.rect(surface, background_color, self.rect)
 
         # Draw inputbox text
-        text_surface = MYFONT.render(self.text, True, Inputbox.text_color)
+        text_surface = MYFONT.render(self.text, True, InputBox.text_color)
         text_offset = ((self.rect.w - text_surface.get_width())  / 2,
                        (self.rect.h - text_surface.get_height()) / 2)
 
@@ -73,7 +73,7 @@ class Inputbox:
         surface.blit(self.caption, (self.rect.x - self.caption.get_width(), self.rect.y + text_offset[1]))
 
 
-class Anglebox:
+class AngleBox:
     def __init__(self, rect, image):
         self.rect = pygame.Rect(rect)
         self.angle = 0
@@ -414,18 +414,18 @@ def events():
 def create_inputboxes():
     rgbs = []
     # Ceiling colour
-    rgbs.append(Inputbox((1024 +  64, 1024 - 256, 40, FONT_SIZE), 'R:', 255))
-    rgbs.append(Inputbox((1024 + 128, 1024 - 256, 40, FONT_SIZE), 'G:', 255))
-    rgbs.append(Inputbox((1024 + 192, 1024 - 256, 40, FONT_SIZE), 'B:', 255))
+    rgbs.append(InputBox((1024 +  64, 1024 - 256, 40, FONT_SIZE), 'R:', 255))
+    rgbs.append(InputBox((1024 + 128, 1024 - 256, 40, FONT_SIZE), 'G:', 255))
+    rgbs.append(InputBox((1024 + 192, 1024 - 256, 40, FONT_SIZE), 'B:', 255))
     # Floor colour
-    rgbs.append(Inputbox((1024 +  64, 1024 - 192, 40, FONT_SIZE), 'R:', 255))
-    rgbs.append(Inputbox((1024 + 128, 1024 - 192, 40, FONT_SIZE), 'G:', 255))
-    rgbs.append(Inputbox((1024 + 192, 1024 - 192, 40, FONT_SIZE), 'B:', 255))
+    rgbs.append(InputBox((1024 +  64, 1024 - 192, 40, FONT_SIZE), 'R:', 255))
+    rgbs.append(InputBox((1024 + 128, 1024 - 192, 40, FONT_SIZE), 'G:', 255))
+    rgbs.append(InputBox((1024 + 192, 1024 - 192, 40, FONT_SIZE), 'B:', 255))
     # Level number
-    level_nr = Inputbox((1024 + 384, 1024 - 192, 40, FONT_SIZE), 'LEVEL NR:')
+    level_nr = InputBox((1024 + 384, 1024 - 192, 40, FONT_SIZE), 'LEVEL NR:')
 
     # Create starting angle "box" on sidebar
-    anglebox = Anglebox((1024 + 288, 1024 - 256, 32, 32), RED_ARROW)
+    anglebox = AngleBox((1024 + 288, 1024 - 256, 32, 32), RED_ARROW)
     return rgbs, level_nr, anglebox
 
 
@@ -494,7 +494,7 @@ def get_texturegroups():
             for i in infos:  # For every texturegroup with same tpye, add 80 to x
                 if i[0] == info[0]:
                     x += 80
-            texturegroups.append(Texturegroup((x, heights[info[0]]), value))
+            texturegroups.append(TextureGroup((x, heights[info[0]]), value))
             infos.append(info)
         else:
             texturegroups[-1].values.append(value)

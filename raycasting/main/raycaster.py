@@ -27,35 +27,23 @@ class Player:
         self.ammo = 60
 
         self.weapon_nr = 1
-        self.shooting_ticks = 0
-        self.shooting_stage = 0  # 0 is not shooting
 
     def rotate(self, radians):
         self.viewangle = fixed_angle(self.viewangle + radians)
-
-    def shooting_anim(self, weapon):
-        # Shooting animation system
-        self.shooting_ticks += 1
-        if self.shooting_ticks == weapon.fire_delay / weapon.animation_frames:
-            self.shooting_ticks = 0
-            self.shooting_stage += 1
-
-            if self.shooting_stage > weapon.animation_frames:  # If finished shot animation
-                # If automatic, has magazine ammo and mouse down
-                if weapon.automatic and weapon.mag_ammo and pygame.mouse.get_pressed()[0]:
-                    self.shooting_stage = 1  # Keep going
-                else:
-                    self.shooting_stage = 0  # End animation
-
-            if self.shooting_stage == 1:
-                self.shoot(weapon)
 
     def shoot(self, weapon):
         # When player sends out a bullet
         weapon.mag_ammo -= 1
 
     def reload(self, weapon):
-        pass
+        ammo_needed = weapon.mag_size - weapon.mag_ammo
+
+        if not weapon.ammo_unlimited:
+            if ammo_needed > self.ammo:
+                ammo_needed = self.ammo
+            self.ammo -= ammo_needed
+
+        weapon.mag_ammo += ammo_needed
 
     def move(self, x_move, y_move):
 
@@ -139,6 +127,61 @@ class Player:
                 self.y = int(self.y) + Player.half_hitbox
             else:
                 self.y = ceil(self.y) - Player.half_hitbox
+
+
+class WeaponModel:
+    def __init__(self):
+        self.shooting = False
+        self.ticks = 0  # A var to store time passed between each animation frame
+        self.column = 0
+        self.reloading = False
+
+        self.draw_y = 0
+
+    def shoot(self, weapon):
+        # Shooting animation system
+        self.ticks += 1
+        if self.ticks == weapon.fire_delay / weapon.animation_frames:
+            self.ticks = 0
+
+            self.column += 1
+
+            if self.column > weapon.animation_frames:  # If finished shot animation
+                # If weapon automatic, has magazine ammo and mouse down
+                if weapon.automatic and weapon.mag_ammo and pygame.mouse.get_pressed()[0]:
+                    self.column = 1  # Keep going
+                else:
+                    self.column = 0  # End animation
+                    self.shooting = False
+
+            if self.column == 1:
+                PLAYER.shoot(weapon)
+
+    def reload(self, weapon):
+        self.ticks += 1
+        if self.ticks <= weapon.reload_time / 2:
+            self.draw_y += 20
+        elif self.ticks <= weapon.reload_time:
+            self.draw_y -= 20
+        else:
+            self.ticks = 0
+            self.reloading = False
+            PLAYER.reload(weapon)
+
+    def update(self):
+        self.weapon = WEAPONS[PLAYER.weapon_nr]
+
+        if self.shooting:
+            self.shoot(self.weapon)
+
+        elif self.reloading:
+            self.reload(self.weapon)
+
+    def draw(self, surface):
+        cell_w = self.weapon.weapon_sheet.get_width() / (self.weapon.animation_frames + 1)
+        cell_h = self.weapon.weapon_sheet.get_height()
+        image = self.weapon.weapon_sheet.subsurface(cell_w * WEAPON_MODEL.column, 0, cell_w, cell_h)
+        DISPLAY.blit(image, (D_W / 2, D_H - cell_h + self.draw_y))
 
 
 class Door:
@@ -458,14 +501,15 @@ class Enemy(Drawable, Sprite):
 
 
 class Weapon:
-    def __init__(self, name, weapon_sheet, animation_frames, fire_delay, mag_size, automatic, ammo_unlimited):
+    def __init__(self, name, weapon_sheet, animation_frames, fire_delay, mag_size, reload_time, automatic, ammo_unlimited):
         self.name = name
         self.weapon_sheet = weapon_sheet
         self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
 
-        self.fire_delay = fire_delay
+        self.fire_delay = fire_delay  # Has to be dividable by animation frames
         self.mag_size = mag_size  # Mag's total capacity
         self.mag_ammo = self.mag_size  # Currently ammo in weapon's mag
+        self.reload_time = reload_time  # Reloading time in ticks
         self.automatic = automatic
         self.ammo_unlimited = ammo_unlimited
 
@@ -474,24 +518,27 @@ def load_weapons():
     ak47 = pygame.image.load('../textures/weapons/ak47.png')  # (48*4)x32
     ak47 = pygame.transform.scale(ak47, (ak47.get_width() * 10, ak47.get_height() * 10)).convert_alpha()
     weapons = [None]  # Makes it so first weapon is index 1 insted of 0
-    weapons.append(Weapon('AK-47', ak47, 3, 3, 30, True, False))  # Fire delay has to be dividable by animation frames
+    weapons.append(Weapon('AK-47', ak47, 3, 3, 30, 50, True, False))
     return weapons
 
 
 def events():
     global RUNNING
-    global INFO_LAYER
 
-    # Current weapon held
-    weapon = WEAPONS[PLAYER.weapon_nr]
+    weapon = WEAPON_MODEL.weapon
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
             if event.key == K_ESCAPE:
                 RUNNING = False
 
-            if event.key == K_F1:
-                INFO_LAYER = not INFO_LAYER
+            if event.key == K_r:
+                # If magazine not full and weapon not shooting
+                if weapon.mag_ammo < weapon.mag_size and not WEAPON_MODEL.shooting:
+                    if weapon.ammo_unlimited:
+                        WEAPON_MODEL.reloading = True
+                    elif PLAYER.ammo:
+                        WEAPON_MODEL.reloading = True
 
             if event.key == K_e:
                 x = int(PLAYER.x + PLAYER.dir_x)
@@ -507,20 +554,19 @@ def events():
                     TILEMAP[y][x] += 1  # Change triggerblock texture
                     #level_end()
 
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if weapon.mag_ammo:  # If bullets in weapon:
-                PLAYER.shooting_anim(weapon)
-
-    if PLAYER.shooting_stage > 0:  # If shot animation unfinished
-        PLAYER.shooting_anim(weapon)  # Keep going
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                if WEAPON_MODEL.weapon.mag_ammo and not WEAPON_MODEL.reloading:  # If bullets in weapon and not reloading:
+                    WEAPON_MODEL.shooting = True
 
 
 def update_gameobjects():
-    # Function made for updating moving game objects every frame
+    # Function made for updating dynamic game objects every frame
     for d in DOORS:
         d.move()
     for e in ENEMIES:
         e.update()
+    WEAPON_MODEL.update()
 
 
 def draw_frame():
@@ -826,46 +872,35 @@ def bottom_layer():
 
 
 def top_layer():
-    # HUD stuff
-    if INFO_LAYER:
-        text_color = (255, 255, 255)
-        decimals = 3
+    # FPS counter
+    fps_text = str(round(CLOCK.get_fps()))
+    text_surface = GAME_FONT.render(fps_text, False, (0, 255, 0))
+    DISPLAY.blit(text_surface, (4, 4))
 
-        fps_text = 'FPS: {}'.format(round(CLOCK.get_fps()))
-        fps_textsurface = MYFONT.render(fps_text, True, text_color)
+    # Weapon model
+    WEAPON_MODEL.draw(DISPLAY)
 
-        player_x_text = 'X: {}'.format(round(PLAYER.x, decimals))
-        player_x_textsurface = MYFONT.render(player_x_text, True, text_color)
+    # Weapon name and ammo
+    if WEAPON_MODEL.weapon.ammo_unlimited:
+        total_ammo = 'Unlimited'
+    else:
+        total_ammo = PLAYER.ammo
+    weapon_text = '{}: {}/{}'.format(WEAPON_MODEL.weapon.name, WEAPON_MODEL.weapon.mag_ammo, total_ammo)
+    text_surface = GAME_FONT.render(weapon_text, False, (255, 255, 255))
+    DISPLAY.blit(text_surface, (4, D_H - 32))
 
-        player_y_text = 'Y: {}'.format(round(PLAYER.y, decimals))
-        player_y_textsurface = MYFONT.render(player_y_text, True, text_color)
-
-        viewangle_text = 'RAD: {}'.format(round(PLAYER.viewangle, decimals))
-        viewangle_textsurface = MYFONT.render(viewangle_text, True, text_color)
-
-        ammo_text = 'AMMO: {}'.format(PLAYER.ammo)
-        ammo_textsurface = MYFONT.render(ammo_text, True, text_color)
-
-        DISPLAY.blit(      fps_textsurface, (4, FONT_SIZE * 0))
-        DISPLAY.blit( player_x_textsurface, (4, FONT_SIZE * 1))
-        DISPLAY.blit( player_y_textsurface, (4, FONT_SIZE * 2))
-        DISPLAY.blit(viewangle_textsurface, (4, FONT_SIZE * 3))
-        DISPLAY.blit(     ammo_textsurface, (4, FONT_SIZE * 4))
-
-    weapon = WEAPONS[PLAYER.weapon_nr]  # Choose the right weapon from WEAPONS
-    cell_w = weapon.weapon_sheet.get_width() / (weapon.animation_frames + 1)
-    cell_h = weapon.weapon_sheet.get_height()
-    weapon = weapon.weapon_sheet.subsurface(cell_w * PLAYER.shooting_stage, 0, cell_w, cell_h)
-    DISPLAY.blit(weapon, (D_W - cell_w - 30, D_H - cell_h))
+    # Player hp
+    hp_text = 'HP: {}'.format(PLAYER.hp)
+    text_surface = GAME_FONT.render(hp_text, False, (255, 255, 255))
+    DISPLAY.blit(text_surface, (4, D_H - 64))
 
     # Crosshair
     ch_width = 2
     ch_gap = 6
     ch_len = 6
     ch_colour = (0, 255, 0)
-    # Half width/height
-    h_w = D_W / 2
-    h_h = D_H / 2
+    h_w = D_W / 2  # Half width
+    h_h = D_H / 2  # Half height
     pygame.draw.line(DISPLAY, ch_colour, (h_w + ch_gap, h_h), (h_w + ch_gap + ch_len, h_h), ch_width)
     pygame.draw.line(DISPLAY, ch_colour, (h_w - ch_gap, h_h), (h_w - ch_gap - ch_len, h_h), ch_width)
     pygame.draw.line(DISPLAY, ch_colour, (h_w, h_h + ch_gap), (h_w, h_h + ch_gap + ch_len), ch_width)
@@ -911,7 +946,6 @@ if __name__ == '__main__':
     import raycasting.main.pathfinding as pathfinding
 
     # Game settings
-    INFO_LAYER = False
     D_W = 1024
     D_H = 800
     FOV = pi / 2  # = 90 degrees
@@ -925,11 +959,6 @@ if __name__ == '__main__':
     CLOCK = pygame.time.Clock()
     pygame.mouse.set_visible(False)
     pygame.event.set_grab(True)
-
-    # Font stuff
-    pygame.font.init()
-    FONT_SIZE = 20
-    MYFONT = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
 
     TEXTURE_SIZE = 64
 
@@ -948,11 +977,13 @@ if __name__ == '__main__':
 
     ENEMIES = load_enemies(TILEMAP, TILE_VALUES_INFO)
     WEAPONS = load_weapons()
+    WEAPON_MODEL = WeaponModel()
+    GAME_FONT = pygame.font.Font('../LCD_Solid.ttf', 32)
 
-    ####
+    ###
     Drawable.constant = 0.6 * D_H
     Wall.width = int(D_W / RAYS_AMOUNT)
-    ####
+    ###
 
     RUNNING = True
     while RUNNING:
