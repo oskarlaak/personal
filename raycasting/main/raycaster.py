@@ -1,9 +1,7 @@
 # TO DO:
-# Enemy shooting
+# Player shot detection
 # Enemy getting hit/dying
-# Player reload
-# Weapon model class handling all weapon animations
-# Health and ammo HUD
+# Enemy attack
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -130,11 +128,14 @@ class Player:
 
 
 class WeaponModel:
+    switch_ticks = 20
+
     def __init__(self):
         self.shooting = False
-        self.ticks = 0  # A var to store time passed between each animation frame
+        self.ticks = 0  # A var to store time
         self.column = 0
         self.reloading = False
+        self.switching = 0
 
         self.draw_y = 0
 
@@ -168,6 +169,19 @@ class WeaponModel:
             self.reloading = False
             PLAYER.reload(weapon)
 
+    def switch_weapons(self):
+        self.ticks += 1
+        if self.ticks == WeaponModel.switch_ticks / 2:
+            PLAYER.weapon_nr += self.switching  # Switches weapon model when halfway through
+
+        if self.ticks <= WeaponModel.switch_ticks / 2:
+            self.draw_y += 40
+        elif self.ticks <= WeaponModel.switch_ticks:
+            self.draw_y -= 40
+        else:
+            self.ticks = 0
+            self.switching = 0
+
     def update(self):
         self.weapon = WEAPONS[PLAYER.weapon_nr]
 
@@ -176,6 +190,9 @@ class WeaponModel:
 
         elif self.reloading:
             self.reload(self.weapon)
+
+        elif self.switching:
+            self.switch_weapons()
 
     def draw(self, surface):
         cell_w = self.weapon.weapon_sheet.get_width() / (self.weapon.animation_frames + 1)
@@ -500,8 +517,24 @@ class Enemy(Drawable, Sprite):
             self.calc_display_xy(angle_from_player)
 
 
+class Crosshair:
+    def __init__(self, width, gap, len, colour):
+        self.width = width
+        self.gap = gap
+        self.len = len
+        self.colour = colour
+
+    def draw(self, surface):
+        h_w = D_W / 2  # Half width
+        h_h = D_H / 2  # Half height
+        pygame.draw.line(surface, self.colour, (h_w + self.gap, h_h), (h_w + self.gap + self.len, h_h), self.width)
+        pygame.draw.line(surface, self.colour, (h_w - self.gap, h_h), (h_w - self.gap - self.len, h_h), self.width)
+        pygame.draw.line(surface, self.colour, (h_w, h_h + self.gap), (h_w, h_h + self.gap + self.len), self.width)
+        pygame.draw.line(surface, self.colour, (h_w, h_h - self.gap), (h_w, h_h - self.gap - self.len), self.width)
+
+
 class Weapon:
-    def __init__(self, name, weapon_sheet, animation_frames, fire_delay, mag_size, reload_time, automatic, ammo_unlimited):
+    def __init__(self, name, weapon_sheet, animation_frames, fire_delay, mag_size, reload_time, automatic, ammo_unlimited, silenced):
         self.name = name
         self.weapon_sheet = weapon_sheet
         self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
@@ -509,16 +542,22 @@ class Weapon:
         self.fire_delay = fire_delay  # Has to be dividable by animation frames
         self.mag_size = mag_size  # Mag's total capacity
         self.mag_ammo = self.mag_size  # Currently ammo in weapon's mag
-        self.reload_time = reload_time  # Reloading time in ticks
+        self.reload_time = reload_time  # Reloading time in ticks, has to be even number
         self.automatic = automatic
         self.ammo_unlimited = ammo_unlimited
+        self.silenced = silenced
 
 
 def load_weapons():
-    ak47 = pygame.image.load('../textures/weapons/ak47.png')  # (48*4)x32
+    # Weapon cells are all 48x32
+    ak47 = pygame.image.load('../textures/weapons/ak47.png')
     ak47 = pygame.transform.scale(ak47, (ak47.get_width() * 10, ak47.get_height() * 10)).convert_alpha()
+    usps = pygame.image.load('../textures/weapons/usp-s.png')
+    usps = pygame.transform.scale(usps, (usps.get_width() * 10, usps.get_height() * 10)).convert_alpha()
+
     weapons = [None]  # Makes it so first weapon is index 1 insted of 0
-    weapons.append(Weapon('AK-47', ak47, 3, 3, 30, 50, True, False))
+    weapons.append(Weapon('AK-47', ak47, 3, 3, 30, 72, True, False, False))
+    weapons.append(Weapon('USP-S', usps, 2, 4, 12, 64, False, True, True))
     return weapons
 
 
@@ -534,7 +573,7 @@ def events():
 
             if event.key == K_r:
                 # If magazine not full and weapon not shooting
-                if weapon.mag_ammo < weapon.mag_size and not WEAPON_MODEL.shooting:
+                if weapon.mag_ammo < weapon.mag_size and not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
                     if weapon.ammo_unlimited:
                         WEAPON_MODEL.reloading = True
                     elif PLAYER.ammo:
@@ -556,8 +595,15 @@ def events():
 
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
-                if WEAPON_MODEL.weapon.mag_ammo and not WEAPON_MODEL.reloading:  # If bullets in weapon and not reloading:
+                if WEAPON_MODEL.weapon.mag_ammo and not WEAPON_MODEL.reloading and not WEAPON_MODEL.switching:
                     WEAPON_MODEL.shooting = True
+            elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
+                if event.button == 4:  # Mousewheel up
+                    if PLAYER.weapon_nr > 1:  # Can't go under 1
+                        WEAPON_MODEL.switching = -1
+                if event.button == 5:  # Mousewheel down
+                    if PLAYER.weapon_nr < len(WEAPONS) - 1:
+                        WEAPON_MODEL.switching = 1
 
 
 def update_gameobjects():
@@ -866,45 +912,54 @@ def movement():
     return player_dir_x, player_dir_y
 
 
-def bottom_layer():
+def draw_background():
     pygame.draw.rect(DISPLAY, BACKGROUND_COLOURS[0], ((0,       0), (D_W, D_H / 2)))  # Ceiling
     pygame.draw.rect(DISPLAY, BACKGROUND_COLOURS[1], ((0, D_H / 2), (D_W, D_H / 2)))  # Floor
 
 
-def top_layer():
+def draw_hud():
+    def dynamic_colour(current, max):
+        ratio = current / max  # 1 is completely green, 0 completely red
+        if ratio < 0.5:
+            red = 255  # Red stays
+            green = int(ratio * 2 * 255)
+        else:
+            ratio = 1 - ratio
+            green = 255  # Green stays
+            red = int(ratio * 2 * 255)
+
+        return (red, green, 0)
+
     # FPS counter
-    fps_text = str(round(CLOCK.get_fps()))
-    text_surface = GAME_FONT.render(fps_text, False, (0, 255, 0))
+    text_surface = GAME_FONT.render(str(round(CLOCK.get_fps())), False, (0, 255, 0))
     DISPLAY.blit(text_surface, (4, 4))
+
+    # Crosshair
+    CROSSHAIR.draw(DISPLAY)
 
     # Weapon model
     WEAPON_MODEL.draw(DISPLAY)
 
-    # Weapon name and ammo
+    # Weapon name
+    weapon_name = '{}: '.format(WEAPON_MODEL.weapon.name)
+    weapon_name_surface = GAME_FONT.render(weapon_name, False, (255, 255, 255))
+    DISPLAY.blit(weapon_name_surface, (4, D_H - 32))
+
+    # Weapon ammo
     if WEAPON_MODEL.weapon.ammo_unlimited:
         total_ammo = 'Unlimited'
     else:
         total_ammo = PLAYER.ammo
-    weapon_text = '{}: {}/{}'.format(WEAPON_MODEL.weapon.name, WEAPON_MODEL.weapon.mag_ammo, total_ammo)
-    text_surface = GAME_FONT.render(weapon_text, False, (255, 255, 255))
-    DISPLAY.blit(text_surface, (4, D_H - 32))
+    weapon_ammo = '{}/{}'.format(WEAPON_MODEL.weapon.mag_ammo, total_ammo)
+    weapon_ammo_surface = GAME_FONT.render(weapon_ammo, False, dynamic_colour(WEAPON_MODEL.weapon.mag_ammo, WEAPON_MODEL.weapon.mag_size))
+    DISPLAY.blit(weapon_ammo_surface, (4 + weapon_name_surface.get_width(), D_H - 32))
 
     # Player hp
-    hp_text = 'HP: {}'.format(PLAYER.hp)
-    text_surface = GAME_FONT.render(hp_text, False, (255, 255, 255))
-    DISPLAY.blit(text_surface, (4, D_H - 64))
+    hp_text_surface = GAME_FONT.render('HP: ', False, (255, 255, 255))
+    DISPLAY.blit(hp_text_surface, (4, D_H - 64))
 
-    # Crosshair
-    ch_width = 2
-    ch_gap = 6
-    ch_len = 6
-    ch_colour = (0, 255, 0)
-    h_w = D_W / 2  # Half width
-    h_h = D_H / 2  # Half height
-    pygame.draw.line(DISPLAY, ch_colour, (h_w + ch_gap, h_h), (h_w + ch_gap + ch_len, h_h), ch_width)
-    pygame.draw.line(DISPLAY, ch_colour, (h_w - ch_gap, h_h), (h_w - ch_gap - ch_len, h_h), ch_width)
-    pygame.draw.line(DISPLAY, ch_colour, (h_w, h_h + ch_gap), (h_w, h_h + ch_gap + ch_len), ch_width)
-    pygame.draw.line(DISPLAY, ch_colour, (h_w, h_h - ch_gap), (h_w, h_h - ch_gap - ch_len), ch_width)
+    hp_amount_surface = GAME_FONT.render(str(PLAYER.hp), False, dynamic_colour(PLAYER.hp, 100))
+    DISPLAY.blit(hp_amount_surface, (4 + hp_text_surface.get_width(), D_H - 64))
 
 
 def get_rayangles(rays_amount):
@@ -978,6 +1033,8 @@ if __name__ == '__main__':
     ENEMIES = load_enemies(TILEMAP, TILE_VALUES_INFO)
     WEAPONS = load_weapons()
     WEAPON_MODEL = WeaponModel()
+    CROSSHAIR = Crosshair(2, 6, 6, (0, 255, 0))
+
     GAME_FONT = pygame.font.Font('../LCD_Solid.ttf', 32)
 
     ###
@@ -993,10 +1050,10 @@ if __name__ == '__main__':
         update_gameobjects()
         events()
 
-        bottom_layer()
+        draw_background()
         send_rays()
         draw_frame()
-        top_layer()
+        draw_hud()
 
         pygame.display.flip()
         CLOCK.tick(30)
