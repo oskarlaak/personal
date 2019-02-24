@@ -1,5 +1,5 @@
 # TO DO:
-# Enemy getting hit without dying animation
+# Make enemy hit animations not show so often
 # Enemy attack
 # Level end system
 
@@ -390,6 +390,7 @@ class Enemy(Drawable, Sprite):
 
         self.path = []  # Enemy running path
         self.dead = False
+        self.hit = False
 
         # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
         # What each attribute means see tilevaluesinfo.py enemy info dictionary description
@@ -414,12 +415,13 @@ class Enemy(Drawable, Sprite):
                 self.look_angles.append(rayangle)
 
     def hurt(self):
-        self.hp -= 1
-        if self.hp == 0:
+        self.hit = True  # Mark as hit
+        self.hp -= 1  # Take hp away from enemy
+        self.row = 5  # Choose death/hurt animation row
+        self.anim_ticks = 0  # Reset animation ticks
+        if self.hp == 0:  # If dead
             self.dead = True  # Mark as dead
-            self.row = 5  # Choose death/hurt animation row
-            self.column = 0
-            self.anim_ticks = 0  # Reset animation ticks
+            self.column = 0  # Choose first death animation frame
 
     def update(self):
         delta_x = self.x - PLAYER.x
@@ -428,7 +430,7 @@ class Enemy(Drawable, Sprite):
 
         self.dist_squared = delta_x**2 + delta_y**2
 
-        if not self.dead:
+        if not self.hit:
             # Enemy door opening system
             # If door underneath enemy,
             # create a door obj in that location if it isn't there already
@@ -498,17 +500,15 @@ class Enemy(Drawable, Sprite):
                     else:
                         del self.path[0]
 
-            # Find the right column if enemy running or standing
-            # Else it's going to pick it manually - shooting, death animation etc.
-            if self.row <= 4:
-                angle = fixed_angle(-angle_from_player + self.angle) + pi  # +pi to get rid of negative values
-                self.column = round(angle / (pi / 4))
-                if self.column == 8:
-                    self.column = 0
+            # Find the right spritesheet column
+            angle = fixed_angle(-angle_from_player + self.angle) + pi  # +pi to get rid of negative values
+            self.column = round(angle / (pi / 4))
+            if self.column == 8:
+                self.column = 0
 
             # Find the right spritesheet row
             if self.path:  # If movement
-                if self.row == 0:
+                if self.row == 0 or self.row > 4:
                     self.row = 1
                 # Cycle through running animation
                 self.anim_ticks += 1
@@ -521,12 +521,20 @@ class Enemy(Drawable, Sprite):
                 self.anim_ticks = 0
                 self.row = 0
 
-        else:  # If dead/dying
-            if self.column < 4:  # 4 is the final death animation frame ; If death animation not completed
+        else:
+            if self.dead:  # If dead/dying
+                if self.column < 4:  # 4 is the final death animation frame ; If death animation not completed
+                    self.anim_ticks += 1
+                    if self.anim_ticks == Enemy.animation_ticks:
+                        self.anim_ticks = 0
+                        self.column += 1
+            else:  # If hit
+                self.column = 7
                 self.anim_ticks += 1
                 if self.anim_ticks == Enemy.animation_ticks:
                     self.anim_ticks = 0
-                    self.column += 1
+                    self.hit = False
+                    self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
 
         self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
         if self.perp_dist > 0:  # If enemy is going to be drawn, update image for drawing
