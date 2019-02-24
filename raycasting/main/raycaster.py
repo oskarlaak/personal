@@ -1,5 +1,4 @@
 # TO DO:
-# Make enemy hit animations not show so often
 # Enemy attack
 # Level end system
 
@@ -325,15 +324,17 @@ class Sprite:
                 column_right_side += column_width
 
                 if column_left_side < D_W and column_right_side > 0:  # If row on screen
+                    try:
+                        # Getting sprite column out of image
+                        sprite_column = self.image.subsurface(column, 0, 1, self.image.get_height())
 
-                    # Getting sprite column out of image
-                    sprite_column = self.image.subsurface(column, 0, 1, self.image.get_height())
+                        # Scaling that column
+                        sprite_column = pygame.transform.scale(sprite_column, (ceil(column_width), self.height))
 
-                    # Scaling that column
-                    sprite_column = pygame.transform.scale(sprite_column, (ceil(column_width), self.height))
-
-                    # Blitting that column
-                    surface.blit(sprite_column, (column_left_side, self.display_y))
+                        # Blitting that column
+                        surface.blit(sprite_column, (column_left_side, self.display_y))
+                    except pygame.error:  # If scaling size is too big (happens rarely if player too close to enemy)
+                        break  # End drawing sprite
 
     def calc_display_xy(self, angle_from_player):
         # In order to calculate sprite's correct display x/y position, we need to calculate it's camera plane position
@@ -400,6 +401,7 @@ class Enemy(Drawable, Sprite):
         self.anim_ticks = 0  # Time passed during animation
         self.last_saw_ticks = self.memory  # Time passed when the enemy last saw the player
         self.stationary_ticks = 0  # Time enemy has stayed stationary/without moving (turning counts as moving)
+        self.last_hit_anim_ticks = Enemy.animation_ticks  # Makes enemies not freeze when they're shot very often
 
     def get_look_angles(self):
         # Creates a list of angles that are going to be chosen by random when stationary every once in a while
@@ -415,22 +417,31 @@ class Enemy(Drawable, Sprite):
                 self.look_angles.append(rayangle)
 
     def hurt(self):
-        self.hit = True  # Mark as hit
         self.hp -= 1  # Take hp away from enemy
-        self.row = 5  # Choose death/hurt animation row
-        self.anim_ticks = 0  # Reset animation ticks
         if self.hp == 0:  # If dead
+            self.hit = True  # Mark as hit
+            self.row = 5  # Choose death/hurt animation row
+            self.anim_ticks = 0  # Reset animation ticks
             self.dead = True  # Mark as dead
             self.column = 0  # Choose first death animation frame
+        elif self.last_hit_anim_ticks >= Enemy.animation_ticks:  # If not dead and enough time passed to show new hit animation
+            self.hit = True
+            self.row = 5
+            self.anim_ticks = 0
+            self.last_hit_anim_ticks = 0
 
     def update(self):
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
         angle_from_player = atan2(delta_y, delta_x)
 
-        self.dist_squared = delta_x**2 + delta_y**2
+        self.dist_squared = delta_x**2 + delta_y**2  # Used in player's shot detection
 
         if not self.hit:
+            # Update last hit animation ticks
+            if self.last_hit_anim_ticks != Enemy.animation_ticks:
+                self.last_hit_anim_ticks += 1
+
             # Enemy door opening system
             # If door underneath enemy,
             # create a door obj in that location if it isn't there already
