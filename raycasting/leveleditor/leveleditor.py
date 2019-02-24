@@ -337,7 +337,7 @@ def events():
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             DONE = True
-        if event.type == pygame.MOUSEBUTTONDOWN:
+        elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
                 if MOUSE_X > 1024:
                     # Activate/deactivate texturegroups
@@ -358,7 +358,7 @@ def events():
                     if ANGLEBOX.rect.collidepoint(MOUSE_X, MOUSE_Y):
                         ANGLEBOX.rotate(-math.pi / 2)
 
-            if event.button == 4:  # Scroll wheel up
+            elif event.button == 4:  # Scroll wheel up
                 # If control pressed down
                 if pygame.key.get_mods() & pygame.KMOD_CTRL:
                     zoom(True)
@@ -386,7 +386,7 @@ def events():
                                 ACTIVE_VALUE = tg.value
                             break
 
-        if event.type == pygame.KEYDOWN:
+        elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_n and pygame.key.get_mods() & pygame.KMOD_CTRL:
                 TILEMAP.new()
 

@@ -85,8 +85,8 @@ def get(texture_size):
             # memory = the time (in ticks) enemy knows player position after he has disappeared from his vision
             #          (also the time in which enemy's path will be updated towards player)
             # patience = the maximum time enemy stays standing still without an action
-            guard: (3, 0.04, 90, 90),
-            ss: (5, 0.06, 90, 90)
+            guard: (5, 0.04, 90, 90),
+            ss: (10, 0.06, 90, 90)
         }
         for c, spritesheet in enumerate(enemy_info):  # For every enemy type in ENEMY_INFO, add value to TILE_VALUES_INFO
             tile_values_info[index + c] = ('Enemy', 'Basic'), spritesheet

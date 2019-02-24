@@ -1,7 +1,9 @@
 # TO DO:
-# Player shot detection
-# Enemy getting hit/dying
+# Better hit registration
+#
+# Enemy getting hit without dying animation
 # Enemy attack
+# Level end system
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -32,6 +34,7 @@ class Player:
     def shoot(self, weapon):
         # When player sends out a bullet
         weapon.mag_ammo -= 1
+        raycast(self.viewangle, (self.x, self.y), True)  # Automatically registers enemy hits
 
     def reload(self, weapon):
         ammo_needed = weapon.mag_size - weapon.mag_ammo
@@ -172,7 +175,7 @@ class WeaponModel:
     def switch_weapons(self):
         self.ticks += 1
         if self.ticks == WeaponModel.switch_ticks / 2:
-            PLAYER.weapon_nr += self.switching  # Switches weapon model when halfway through
+            PLAYER.weapon_nr = self.switching  # Switches weapon model when halfway through
 
         if self.ticks <= WeaponModel.switch_ticks / 2:
             self.draw_y += 40
@@ -367,9 +370,13 @@ class Enemy(Drawable, Sprite):
         self.x, self.y = self.home = pos
         self.angle = 0  # Enemy actual angle
         self.wanted_angle = 0  # Angle to which enemy is turning
+
         self.sheet = spritesheet
         self.row = 0  # Spritesheet row
+        self.column = 0  # Spritesheet column
+
         self.path = []  # Enemy running path
+        self.dead = False
 
         # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
         # What each attribute means see tilevaluesinfo.py enemy info dictionary description
@@ -380,12 +387,11 @@ class Enemy(Drawable, Sprite):
         self.last_saw_ticks = self.memory  # Time passed when the enemy last saw the player
         self.stationary_ticks = 0  # Time enemy has stayed stationary/without moving (turning counts as moving)
 
-        # Creates a list of angles that are going to be chosen by random every once in a while
+    def get_look_angles(self):
+        # Creates a list of angles that are going to be chosen by random when stationary every once in a while
         # Angles which enemy can see more are chosen more often
         self.look_angles = []
-        # 20 different viewangles should be enough
-        rayangles = [pi,  pi*.9,  pi*.8,  pi*.7,  pi*.6,  pi*.5,  pi*.4,  pi*.3,  pi*.2,  pi*.1,
-                      0, -pi*.9, -pi*.8, -pi*.7, -pi*.6, -pi*.5, -pi*.4, -pi*.3, -pi*.2, -pi*.1]
+        rayangles = [x/10*pi for x in range(10, -10, -1)]  # 20 different viewangles should be enough
         for rayangle in rayangles:
 
             ray_x, ray_y = raycast(rayangle, (self.x, self.y))[1:3]  # <-- Only selects ray_x/ray_y
@@ -394,121 +400,124 @@ class Enemy(Drawable, Sprite):
             for _ in range(int(ray_dist)):
                 self.look_angles.append(rayangle)
 
-    def can_see_player(self, player_dist_x, player_dist_y):
-        # Returns True if player visible, False if not visible
-
-        # If player in enemy's theoretical 90 degree FOV
-        angle_to_player = atan2(-player_dist_y, -player_dist_x)
-        if abs(angle_to_player - self.angle) < pi / 4:
-            # Check if there is something between enemy and player
-            ray_x, ray_y = raycast(angle_to_player, (self.x, self.y))[1:3]  # <-- Only selects ray_x/ray_y
-            ray_dist_squared = (self.x - ray_x)**2 + (self.y - ray_y)**2
-            player_dist_squared = (player_dist_x)**2 + (player_dist_y)**2
-            if ray_dist_squared > player_dist_squared:  # If interception farther than player
-                return True
-        return False
+    def hurt(self):
+        self.hp -= 1
+        if self.hp == 0:
+            self.dead = True  # Mark as dead
+            self.row = 5  # Choose death/hurt animation row
+            self.column = 0
+            self.anim_ticks = 0  # Reset animation ticks
 
     def update(self):
-
-        # Enemy door opening system
-        # If door underneath enemy,
-        # create a door obj in that location if it isn't there already
-        # and start opening it immediately
-        tile_value = TILEMAP[int(self.y)][int(self.x)]
-        tile_id = TILE_VALUES_INFO[tile_value][0]
-        if tile_id == ('Door', 'Dynamic'):
-            for d in DOORS:
-                if (d.x, d.y) == (int(self.x), int(self.y)):
-                    d.state = 1
-                    break
-            else:
-                d = Door((int(self.x), int(self.y)), tile_value)
-                d.state = 1
-                DOORS.append(d)
-
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
-        can_see_player = self.can_see_player(delta_x, delta_y)
-
-        # Update last_saw_ticks
-        if can_see_player:
-            self.last_saw_ticks = 0
-        elif self.last_saw_ticks < self.memory:  # Prevents variable getting unnecessarily big
-            self.last_saw_ticks += 1
-
-        if not self.path:
-            self.stationary_ticks += 1
-            if can_see_player:
-                self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
-
-            elif (self.x, self.y) != self.home:  # If enemy without path outside home
-                if self.stationary_ticks > self.patience:
-                    self.path = pathfinding.pathfind((self.x, self.y), self.home)
-            else:
-                if self.stationary_ticks > self.patience:  # If been stationary for a while
-                    self.wanted_angle = random.choice(self.look_angles)  # Update wanted looking angle
-
-                # Enemy turning system
-                if self.angle != self.wanted_angle:
-                    self.stationary_ticks = 0  # If turning - not stationary
-                    if self.angle < self.wanted_angle:
-                        self.angle += Enemy.turning_speed
-                    else:
-                        self.angle -= Enemy.turning_speed
-
-                    # If self.angle close enough
-                    if abs(self.angle - self.wanted_angle) < Enemy.turning_speed:
-                        self.angle = self.wanted_angle  # Finish turning
-
-        if self.path:
-            self.stationary_ticks = 0
-
-            step_x, step_y = self.path[0]
-            step_x += 0.5  # Centers tile pos
-            step_y += 0.5
-
-            self.angle = atan2(step_y - self.y, step_x - self.x)
-            self.x += cos(self.angle) * self.speed
-            self.y += sin(self.angle) * self.speed
-
-            # Could recalculate delta_x/delta_y here but it makes next to no difference
-
-            # If enemy close enough to the path step
-            if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
-                self.x = step_x
-                self.y = step_y
-                if can_see_player or self.last_saw_ticks < self.memory:
-                    self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
-                else:
-                    del self.path[0]
-
         angle_from_player = atan2(delta_y, delta_x)
-        # Find the right column if enemy running or standing
-        # Else it's going to pick it manually - shooting, death animation etc.
-        if self.row <= 4:
-            angle = fixed_angle(-angle_from_player + self.angle) + pi  # +pi to get rid of negative values
-            column = round(angle / (pi / 4))
-            if column == 8:
-                column = 0
 
-        # Find the right spritesheet row
-        if self.path:  # If movement
-            if self.row == 0:
-                self.row = 1
-            # Cycle through running animation
-            self.anim_ticks += 1
-            if self.anim_ticks == Enemy.animation_ticks:
-                self.anim_ticks = 0
-                self.row += 1
-                if self.row == 5:
+        self.dist_squared = delta_x**2 + delta_y**2
+
+        if not self.dead:
+            # Enemy door opening system
+            # If door underneath enemy,
+            # create a door obj in that location if it isn't there already
+            # and start opening it immediately
+            tile_value = TILEMAP[int(self.y)][int(self.x)]
+            if TILE_VALUES_INFO[tile_value][0][0] == 'Door':
+                for d in DOORS:
+                    if (d.x, d.y) == (int(self.x), int(self.y)):
+                        d.state = 1
+                        break
+                else:
+                    d = Door((int(self.x), int(self.y)), tile_value)
+                    d.state = 1
+                    DOORS.append(d)
+
+            can_see_player = can_see((self.x, self.y), (PLAYER.x, PLAYER.y), self.angle, FOV)
+
+            # Update last_saw_ticks
+            if can_see_player:
+                self.last_saw_ticks = 0
+            elif self.last_saw_ticks < self.memory:  # Prevents variable getting unnecessarily big
+                self.last_saw_ticks += 1
+
+            if not self.path:
+                self.stationary_ticks += 1
+                if can_see_player:
+                    self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
+
+                elif (self.x, self.y) != self.home:  # If enemy without path outside home
+                    if self.stationary_ticks > self.patience:
+                        self.path = pathfinding.pathfind((self.x, self.y), self.home)
+                else:
+                    if self.stationary_ticks > self.patience:  # If been stationary for a while
+                        self.wanted_angle = random.choice(self.look_angles)  # Update wanted looking angle
+
+                    # Enemy turning system
+                    if self.angle != self.wanted_angle:
+                        self.stationary_ticks = 0  # If turning - not stationary
+                        if self.angle < self.wanted_angle:
+                            self.angle += Enemy.turning_speed
+                        else:
+                            self.angle -= Enemy.turning_speed
+
+                        # If self.angle close enough
+                        if abs(self.angle - self.wanted_angle) < Enemy.turning_speed:
+                            self.angle = self.wanted_angle  # Finish turning
+
+            if self.path:
+                self.stationary_ticks = 0
+
+                step_x, step_y = self.path[0]
+                step_x += 0.5  # Centers tile pos
+                step_y += 0.5
+
+                self.angle = atan2(step_y - self.y, step_x - self.x)
+                self.x += cos(self.angle) * self.speed
+                self.y += sin(self.angle) * self.speed
+
+                # Could recalculate delta_x/delta_y here but it makes next to no difference
+
+                # If enemy close enough to the path step
+                if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
+                    self.x = step_x
+                    self.y = step_y
+                    if can_see_player or self.last_saw_ticks < self.memory:
+                        self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
+                    else:
+                        del self.path[0]
+
+            # Find the right column if enemy running or standing
+            # Else it's going to pick it manually - shooting, death animation etc.
+            if self.row <= 4:
+                angle = fixed_angle(-angle_from_player + self.angle) + pi  # +pi to get rid of negative values
+                self.column = round(angle / (pi / 4))
+                if self.column == 8:
+                    self.column = 0
+
+            # Find the right spritesheet row
+            if self.path:  # If movement
+                if self.row == 0:
                     self.row = 1
-        else:  # If not movement
-            self.anim_ticks = 0
-            self.row = 0
+                # Cycle through running animation
+                self.anim_ticks += 1
+                if self.anim_ticks == Enemy.animation_ticks:
+                    self.anim_ticks = 0
+                    self.row += 1
+                    if self.row == 5:
+                        self.row = 1
+            else:  # If not movement
+                self.anim_ticks = 0
+                self.row = 0
+
+        else:  # If dead/dying
+            if self.column < 4:  # 4 is the final death animation frame ; If death animation not completed
+                self.anim_ticks += 1
+                if self.anim_ticks == Enemy.animation_ticks:
+                    self.anim_ticks = 0
+                    self.column += 1
 
         self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
         if self.perp_dist > 0:  # If enemy is going to be drawn, update image for drawing
-            self.image = self.sheet.subsurface(column * TEXTURE_SIZE, self.row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
+            self.image = self.sheet.subsurface(self.column * TEXTURE_SIZE, self.row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
 
             self.height = self.width = int(Drawable.constant / self.perp_dist)
             if self.height > D_H:
@@ -534,7 +543,8 @@ class Crosshair:
 
 
 class Weapon:
-    def __init__(self, name, weapon_sheet, animation_frames, fire_delay, mag_size, reload_time, automatic, ammo_unlimited, silenced):
+    def __init__(self, name, weapon_sheet, animation_frames, fire_delay, mag_size, reload_time,
+                 automatic, ammo_unlimited, silenced):
         self.name = name
         self.weapon_sheet = weapon_sheet
         self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
@@ -543,6 +553,7 @@ class Weapon:
         self.mag_size = mag_size  # Mag's total capacity
         self.mag_ammo = self.mag_size  # Currently ammo in weapon's mag
         self.reload_time = reload_time  # Reloading time in ticks, has to be even number
+
         self.automatic = automatic
         self.ammo_unlimited = ammo_unlimited
         self.silenced = silenced
@@ -571,7 +582,7 @@ def events():
             if event.key == K_ESCAPE:
                 RUNNING = False
 
-            if event.key == K_r:
+            elif event.key == K_r:
                 # If magazine not full and weapon not shooting
                 if weapon.mag_ammo < weapon.mag_size and not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
                     if weapon.ammo_unlimited:
@@ -579,7 +590,7 @@ def events():
                     elif PLAYER.ammo:
                         WEAPON_MODEL.reloading = True
 
-            if event.key == K_e:
+            elif event.key == K_e:
                 x = int(PLAYER.x + PLAYER.dir_x)
                 y = int(PLAYER.y + PLAYER.dir_y)
                 tile_id = TILE_VALUES_INFO[TILEMAP[y][x]][0]
@@ -590,20 +601,48 @@ def events():
                             d.state = 1
                             break
                 elif tile_id[0] == 'Wall' and tile_id[1] == 'End-trigger':
-                    TILEMAP[y][x] += 1  # Change triggerblock texture
+                    TILEMAP[y][x] += 1  # Change trigger block texture
                     #level_end()
 
-        if event.type == pygame.MOUSEBUTTONDOWN:
+            elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
+                key = pygame.key.name(event.key)
+                numbers = (str(x) for x in range(1, 10))  # Skips 0 bc that can't be weapon slot
+                if key in numbers:
+                    key = int(key)
+                    # If requested weapon not equipped already and key index in WEAPONS
+                    if key != PLAYER.weapon_nr and key <= len(WEAPONS) - 1:
+                        WEAPON_MODEL.switching = key
+
+        elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 if WEAPON_MODEL.weapon.mag_ammo and not WEAPON_MODEL.reloading and not WEAPON_MODEL.switching:
                     WEAPON_MODEL.shooting = True
             elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
                 if event.button == 4:  # Mousewheel up
                     if PLAYER.weapon_nr > 1:  # Can't go under 1
-                        WEAPON_MODEL.switching = -1
+                        WEAPON_MODEL.switching = PLAYER.weapon_nr - 1
                 if event.button == 5:  # Mousewheel down
                     if PLAYER.weapon_nr < len(WEAPONS) - 1:
-                        WEAPON_MODEL.switching = 1
+                        WEAPON_MODEL.switching = PLAYER.weapon_nr + 1
+
+
+def can_see(from_, to, viewangle, fov):
+    # Universal function for checking if it's possible to see one point from another in tilemap
+    # Returns True if end point visible, False if not visible
+
+    start_x, start_y = from_
+    end_x, end_y = to
+
+    angle_to_end = atan2(end_y - start_y, end_x - start_x)
+    if abs(angle_to_end - viewangle) < fov / 2:  # If end position inside viewangle
+
+        # Check if there is something between enemy and player
+        ray_x, ray_y = raycast(angle_to_end, from_)[1:3]  # [1:3] only selects ray_x/ray_y
+        ray_dist_squared = (start_x - ray_x) ** 2 + (start_y - ray_y) ** 2
+        end_dist_squared = (start_x - end_x) ** 2 + (start_y - end_y) ** 2
+        if ray_dist_squared > end_dist_squared:  # If interception farther than end point ; If no wall in front of end point
+            return True
+    return False
 
 
 def update_gameobjects():
@@ -635,6 +674,10 @@ def load_enemies(tilemap, tile_values_info):
                 pos = (column + 0.5, row + 0.5)
                 enemies.append(Enemy(spritesheet, pos))
                 tilemap[row][column] = 0  # Clears tile
+
+    for e in enemies:
+        e.get_look_angles()
+
     return enemies
 
 
@@ -722,7 +765,19 @@ def send_rays():
         WALLS.append(Wall(perp_dist, texture, column, i))
 
 
-def raycast(rayangle, pos):
+def raycast(rayangle, start_pos, shooting=False):
+    if shooting:
+        # Only select enemies that can actually be shot
+        enemies = []
+        for e in ENEMIES:
+            if not e.dead and can_see((PLAYER.x, PLAYER.y), (e.x, e.y), PLAYER.viewangle, FOV):
+                enemies.append(e)
+        enemies.sort(key=lambda x: x.dist_squared, reverse=True)  # Makes hit register for closest enemy
+
+        if enemies and (int(enemies[0].x), int(enemies[0].y)) == start_pos:  # If closest enemy inside player tile
+            enemies[0].hurt()
+            return None
+
     #   Variables depending
     #     on the rayangle
     #            |
@@ -742,7 +797,7 @@ def raycast(rayangle, pos):
     else:
         B = 1
 
-    ray_x, ray_y = pos
+    ray_x, ray_y = start_pos
     tan_rayangle = tan(rayangle)  # Calculating tay(rayangle) once to not calculate it over every step
 
     while True:
@@ -788,6 +843,12 @@ def raycast(rayangle, pos):
             map_y = int(ray_y) + (B - 1)
             map_x = int(ray_x)
             side = 1
+
+        if shooting:
+            for e in enemies:  # For every shottable enemy
+                if (int(e.x), int(e.y)) == (map_x, map_y):  # If enemy in the same tile that ray is going through
+                    e.hurt()
+                    return None  # Break out from function ; Every shot only registers one hit maximum
 
         tile_value = TILEMAP[map_y][map_x]
         if tile_value != 0:  # If ray touching something
@@ -1002,7 +1063,7 @@ if __name__ == '__main__':
 
     # Game settings
     D_W = 1024
-    D_H = 800
+    D_H = 768
     FOV = pi / 2  # = 90 degrees
     RAYS_AMOUNT = int(D_W / 2)  # Drawing frequency across the screen / Rays casted each frame
     SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
@@ -1010,7 +1071,7 @@ if __name__ == '__main__':
     # Pygame stuff
     pygame.init()
     pygame.display.set_caption('Raycaster')
-    DISPLAY = pygame.display.set_mode((D_W, D_H))
+    DISPLAY = pygame.display.set_mode((D_W, D_H), FULLSCREEN)
     CLOCK = pygame.time.Clock()
     pygame.mouse.set_visible(False)
     pygame.event.set_grab(True)
