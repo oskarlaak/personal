@@ -1,6 +1,4 @@
 # TO DO:
-# Better hit registration
-#
 # Enemy getting hit without dying animation
 # Enemy attack
 # Level end system
@@ -34,7 +32,22 @@ class Player:
     def shoot(self, weapon):
         # When player sends out a bullet
         weapon.mag_ammo -= 1
-        raycast(self.viewangle, (self.x, self.y), True)  # Automatically registers enemy hits
+
+        # Find all shottable enemies in ENEMIES list
+        shottable_enemies = []
+        for e in ENEMIES:
+            # If enemy not dead and player can see him
+            if not e.dead and can_see((PLAYER.x, PLAYER.y), (e.x, e.y), PLAYER.viewangle, FOV):
+                shottable_enemies.append(e)
+        shottable_enemies.sort(key=lambda x: x.dist_squared)  # Makes hit register for closest enemy
+
+        for e in shottable_enemies:
+            enemy_center_display_x = e.display_x + (e.width / 2)
+            x_offset = abs((D_W / 2) - enemy_center_display_x)
+            hittable_offset = e.width / 6  # Assuming that 1/3 of enemy's spritesheet cells are their bodies
+            if hittable_offset > x_offset:  # If crosshair more or less on enemy
+                e.hurt()
+                break
 
     def reload(self, weapon):
         ammo_needed = weapon.mag_size - weapon.mag_ammo
@@ -765,19 +778,7 @@ def send_rays():
         WALLS.append(Wall(perp_dist, texture, column, i))
 
 
-def raycast(rayangle, start_pos, shooting=False):
-    if shooting:
-        # Only select enemies that can actually be shot
-        enemies = []
-        for e in ENEMIES:
-            if not e.dead and can_see((PLAYER.x, PLAYER.y), (e.x, e.y), PLAYER.viewangle, FOV):
-                enemies.append(e)
-        enemies.sort(key=lambda x: x.dist_squared, reverse=True)  # Makes hit register for closest enemy
-
-        if enemies and (int(enemies[0].x), int(enemies[0].y)) == start_pos:  # If closest enemy inside player tile
-            enemies[0].hurt()
-            return None
-
+def raycast(rayangle, start_pos):
     #   Variables depending
     #     on the rayangle
     #            |
@@ -843,12 +844,6 @@ def raycast(rayangle, start_pos, shooting=False):
             map_y = int(ray_y) + (B - 1)
             map_x = int(ray_x)
             side = 1
-
-        if shooting:
-            for e in enemies:  # For every shottable enemy
-                if (int(e.x), int(e.y)) == (map_x, map_y):  # If enemy in the same tile that ray is going through
-                    e.hurt()
-                    return None  # Break out from function ; Every shot only registers one hit maximum
 
         tile_value = TILEMAP[map_y][map_x]
         if tile_value != 0:  # If ray touching something
