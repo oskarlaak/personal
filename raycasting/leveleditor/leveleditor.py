@@ -1,21 +1,6 @@
 # TO DO
 # Level editor README file describing how to use it
 
-import math
-import raycasting.game.graphics as tilevaluesinfo
-import pygame
-import sys
-import os
-
-# Colours
-BLACK = (0, 0, 0)
-GREY = (128, 128, 128)
-WHITE = (255, 255, 255)
-RED = (255, 0, 0)
-GREEN = (0, 255, 0)
-
-NUMBERS = (0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
-
 
 class TextureGroup:
     def __init__(self, pos, value):
@@ -42,10 +27,8 @@ class TextureGroup:
 
 
 class InputBox:
-    text_color = BLACK
-
     def __init__(self, rect, caption, limit=999):
-        self.caption = MYFONT.render(caption, True, WHITE)
+        self.caption = LEVELEDITOR_FONT.render(caption, False, WHITE)
         self.active = False
         self.limit = limit
         self.rect = pygame.Rect(rect)
@@ -63,7 +46,7 @@ class InputBox:
         pygame.draw.rect(surface, background_color, self.rect)
 
         # Draw inputbox text
-        text_surface = MYFONT.render(self.text, True, InputBox.text_color)
+        text_surface = LEVELEDITOR_FONT.render(self.text, False, InputBox.text_color)
         text_offset = ((self.rect.w - text_surface.get_width())  / 2,
                        (self.rect.h - text_surface.get_height()) / 2)
 
@@ -135,7 +118,7 @@ class Tilemap:
                         return column + 0.5, row + 0.5
             return None, None
 
-        self.ticks = 60
+        self.ticks = 90
         self.loaded = None
         self.saved = False
 
@@ -167,7 +150,7 @@ class Tilemap:
             self.list[int(start_y)][int(start_x)] = START_VALUE
 
     def load(self, level_nr):
-        self.ticks = 60
+        self.ticks = 90
         self.saved = None
         try:
             with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
@@ -202,9 +185,11 @@ class Tilemap:
 
         if self.saved != None:
             if self.saved:
-                DISPLAY.blit(SAVED, message_pos)
+                message_text = LEVELEDITOR_FONT.render('SAVED', False, GREEN)
+                DISPLAY.blit(message_text, message_pos)
             else:
-                DISPLAY.blit(SAVEFAILED, message_pos)
+                message_text = LEVELEDITOR_FONT.render('SAVE FAILED', False, RED)
+                DISPLAY.blit(message_text, message_pos)
 
             self.ticks -= 1
             if self.ticks == 0:
@@ -212,9 +197,11 @@ class Tilemap:
 
         elif self.loaded != None:
             if self.loaded:
-                DISPLAY.blit(LOADSUCCESSFUL, message_pos)
+                message_text = LEVELEDITOR_FONT.render('LOAD SUCCESSFUL', False, GREEN)
+                DISPLAY.blit(message_text, message_pos)
             else:
-                DISPLAY.blit(LOADFAILED, message_pos)
+                message_text = LEVELEDITOR_FONT.render('LOAD FAILED', False, RED)
+                DISPLAY.blit(message_text, message_pos)
 
             self.ticks -= 1
             if self.ticks == 0:
@@ -262,9 +249,9 @@ def draw_sidebar():
     DISPLAY.blit(pygame.transform.scale(active_texture, (128, 128)), (1024 + 32, 0 + 16))
 
     # Active value description
-    activeitem_text = MYFONT.render('ACTIVE ITEM:', True, WHITE)
-    item_type = MYFONT.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), True, WHITE)
-    item_description = MYFONT.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], True, WHITE)
+    activeitem_text = LEVELEDITOR_FONT.render('ACTIVE ITEM:', False, WHITE)
+    item_type = LEVELEDITOR_FONT.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), False, WHITE)
+    item_description = LEVELEDITOR_FONT.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], False, WHITE)
 
     DISPLAY.blit(activeitem_text, (1152 + 32, 0 + 16))
     DISPLAY.blit(item_type, (1152 + 32,  20 + 16))
@@ -275,8 +262,8 @@ def draw_sidebar():
         tg.draw(DISPLAY)
 
     # Draw rgb boxes
-    ceiling_text = MYFONT.render('CEILING COLOUR', True, WHITE)
-    floor_text = MYFONT.render('FLOOR COLOUR', True, WHITE)
+    ceiling_text = LEVELEDITOR_FONT.render('CEILING COLOUR', False, WHITE)
+    floor_text = LEVELEDITOR_FONT.render('FLOOR COLOUR', False, WHITE)
     DISPLAY.blit(ceiling_text, (RGBS[0].rect.x, RGBS[0].rect.y - FONT_SIZE))
     DISPLAY.blit(  floor_text, (RGBS[3].rect.x, RGBS[3].rect.y - FONT_SIZE))
     for ib in RGBS:
@@ -286,7 +273,7 @@ def draw_sidebar():
     LEVEL_NR.draw(DISPLAY)
 
     # Draw starting angle box
-    starting_angle_text = MYFONT.render('STARTING ANGLE:', True, WHITE)
+    starting_angle_text = LEVELEDITOR_FONT.render('STARTING ANGLE:', False, WHITE)
     DISPLAY.blit(starting_angle_text, (ANGLEBOX.rect.x, ANGLEBOX.rect.y - FONT_SIZE))
     ANGLEBOX.draw(DISPLAY)
 
@@ -429,31 +416,28 @@ def create_inputboxes():
     return rgbs, level_nr, anglebox
 
 
-def get_leveleditor_textures():
+def get_leveleditor_images():
     try:
-        return pygame.image.load('arrow.png').convert(), \
-               pygame.image.load('redarrow.png').convert_alpha(), \
-               pygame.image.load('saved.png').convert_alpha(), \
-               pygame.image.load('savefailed.png').convert_alpha(), \
-               pygame.image.load('loadsuccessful.png').convert_alpha(), \
-               pygame.image.load('loadfailed.png').convert_alpha()
+        return pygame.image.load('redarrow.png').convert_alpha(),\
+               pygame.image.load('arrow.png').convert()
 
-    except pygame.error as exception:
-        sys.exit(exception)
+    except pygame.error as loading_error:
+        sys.exit(loading_error)
 
 
 def get_tilevaluesinfo():
     try:
-        eraser = pygame.image.load('eraser.png').convert()
+        eraser = pygame.transform.scale(pygame.image.load('eraser.png').convert(), (64, 64))
         start = pygame.transform.scale(pygame.image.load('start.png').convert(), (64, 64))
         end = pygame.transform.scale(pygame.image.load('end.png').convert(), (64, 64))
 
-    except pygame.error as exception:
-        sys.exit(exception)
+    except pygame.error as loading_error:
+        sys.exit(loading_error)
 
     else:
-        # Get TILE_VALUES_INFO from graphics.py
-        tile_values_info = tilevaluesinfo.get(64)[0]
+        # Get tile_values_info from graphics.py
+        enemy_info = graphics.get_enemy_info(sys, pygame)
+        tile_values_info = graphics.get_tile_values_info(sys, pygame, 64, enemy_info)
 
         # Replace all textures in it with 64x64 pixel textures
         for value in tile_values_info:
@@ -504,15 +488,28 @@ def get_texturegroups():
     return texturegroups
 
 
+import math
+import raycasting.game.graphics as graphics
+import pygame
+import sys
+import os
+
+# Colours
+BLACK = (0, 0, 0)
+GREY = (128, 128, 128)
+WHITE = (255, 255, 255)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+InputBox.text_color = BLACK
+
 pygame.init()
 pygame.display.set_caption('Raycaster level editor')
 DISPLAY = pygame.display.set_mode((1024 + 528, 1024))  # 528 is the sidebar width
 CLOCK = pygame.time.Clock()
 
 # Font stuff
-pygame.font.init()
-FONT_SIZE = 20
-MYFONT = pygame.font.SysFont('franklingothicmedium', FONT_SIZE)
+FONT_SIZE = 16
+LEVELEDITOR_FONT = pygame.font.Font('../LCD_Solid.ttf', FONT_SIZE)
 
 TILEMAP = Tilemap()
 ACTIVE_VALUE = 0
@@ -520,13 +517,8 @@ ACTIVE_VALUE = 0
 TILE_VALUES_INFO, START_VALUE = get_tilevaluesinfo()
 TEXTUREGROUPS = get_texturegroups()
 
-# Level editor textures/sprites/images
-ARROW_UP,\
-RED_ARROW,\
-SAVED,\
-SAVEFAILED,\
-LOADSUCCESSFUL,\
-LOADFAILED = get_leveleditor_textures()
+# Level editor images
+RED_ARROW, ARROW_UP = get_leveleditor_images()
 ARROW_DOWN = pygame.transform.flip(ARROW_UP, False, True)
 
 RGBS, LEVEL_NR, ANGLEBOX = create_inputboxes()
@@ -543,6 +535,6 @@ while not DONE:
     draw_sidebar()
 
     pygame.display.flip()
-    CLOCK.tick()
+    CLOCK.tick(60)
 
 pygame.quit()
