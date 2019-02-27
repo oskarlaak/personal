@@ -1,6 +1,8 @@
 # TO DO:
 # Enemy attack
+# Enemy wondering arond in his room system
 # Level end system
+# Fix leveleditor
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -217,7 +219,7 @@ class WeaponModel:
 
 
 class Door:
-    speed = 0.04
+    speed = 0.05
     open_ticks = 60
 
     def __init__(self, map_pos, tile_value):
@@ -394,8 +396,8 @@ class Enemy(Drawable, Sprite):
         self.hit = False
 
         # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
-        # What each attribute means see tilevaluesinfo.py enemy info dictionary description
-        self.hp, self.speed, self.memory, self.patience = ENEMY_INFO[self.sheet]
+        # What each attribute means see graphics.py enemy info dictionary description
+        self.name, self.hp, self.speed, self.memory, self.patience = ENEMY_INFO[self.sheet]
 
         # Timed events tick (frames passed) variables
         self.anim_ticks = 0  # Time passed during animation
@@ -572,36 +574,6 @@ class Crosshair:
         pygame.draw.line(surface, self.colour, (h_w - self.gap, h_h), (h_w - self.gap - self.len, h_h), self.width)
         pygame.draw.line(surface, self.colour, (h_w, h_h + self.gap), (h_w, h_h + self.gap + self.len), self.width)
         pygame.draw.line(surface, self.colour, (h_w, h_h - self.gap), (h_w, h_h - self.gap - self.len), self.width)
-
-
-class Weapon:
-    def __init__(self, name, weapon_sheet, animation_frames, fire_delay, mag_size, reload_time,
-                 automatic, ammo_unlimited, silenced):
-        self.name = name
-        self.weapon_sheet = weapon_sheet
-        self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
-
-        self.fire_delay = fire_delay  # Has to be dividable by animation frames
-        self.mag_size = mag_size  # Mag's total capacity
-        self.mag_ammo = self.mag_size  # Currently ammo in weapon's mag
-        self.reload_time = reload_time  # Reloading time in ticks, has to be even number
-
-        self.automatic = automatic
-        self.ammo_unlimited = ammo_unlimited
-        self.silenced = silenced
-
-
-def load_weapons():
-    # Weapon cells are all 48x32
-    ak47 = pygame.image.load('../textures/weapons/ak47.png')
-    ak47 = pygame.transform.scale(ak47, (ak47.get_width() * 10, ak47.get_height() * 10)).convert_alpha()
-    usps = pygame.image.load('../textures/weapons/usp-s.png')
-    usps = pygame.transform.scale(usps, (usps.get_width() * 10, usps.get_height() * 10)).convert_alpha()
-
-    weapons = [None]  # Makes it so first weapon is index 1 insted of 0
-    weapons.append(Weapon('AK-47', ak47, 3, 3, 30, 72, True, False, False))
-    weapons.append(Weapon('USP-S', usps, 2, 4, 12, 64, False, True, True))
-    return weapons
 
 
 def events():
@@ -1039,12 +1011,12 @@ def draw_hud():
 
 def get_rayangles(rays_amount):
     # Returns a list of angles which raycast() is going to use to add to player's viewangle
-    # Because these angles do not depend on player's viewangle, they are calculated even before the main loop starts
+    # Because these angles do not depend on player's viewangle, they are calculated even before the game loop starts
     #
     # It calculates these angles so that each angle's end position is on the camera plane,
     # equal distance away from the previous one
     #
-    # Could be made faster, but since it's calculated only once before main loop, readability is more important
+    # Could be made faster, but since it's calculated only once before game loop, readability is more important
     # Note that in 2D rendering, camera plane is actually a single line
     # Also FOV has to be < pi (and not <= pi) for it to work properly
 
@@ -1063,6 +1035,8 @@ def get_rayangles(rays_amount):
     return rayangles, camera_plane_len, camera_plane_dist
 
 if __name__ == '__main__':
+    import sys
+
     from math import *
     import random
 
@@ -1072,8 +1046,8 @@ if __name__ == '__main__':
     import pygame
     from pygame.locals import *
 
-    import raycasting.main.tilevaluesinfo as tilevaluesinfo
-    import raycasting.main.pathfinding as pathfinding
+    import raycasting.game.graphics as graphics
+    import raycasting.game.pathfinding as pathfinding
 
     # Game settings
     D_W = 1024
@@ -1090,11 +1064,15 @@ if __name__ == '__main__':
     pygame.mouse.set_visible(False)
     pygame.event.set_grab(True)
 
+    # Font
+    GAME_FONT = pygame.font.Font('../LCD_Solid.ttf', 32)
+
     TEXTURE_SIZE = 64
 
-    TILE_VALUES_INFO,\
-    ENEMY_INFO,\
-    DOOR_SIDE_TEXTURE = tilevaluesinfo.get(TEXTURE_SIZE)
+    DOOR_SIDE_TEXTURE = graphics.get_door_side_texture(sys, pygame)
+    ENEMY_INFO = graphics.get_enemy_info(sys, pygame)
+    TILE_VALUES_INFO = graphics.get_tile_values_info(sys, pygame, TEXTURE_SIZE, ENEMY_INFO)
+    WEAPONS = graphics.get_weapons(sys, pygame)
 
     RAYANGLES,\
     CAMERA_PLANE_LEN,\
@@ -1106,16 +1084,13 @@ if __name__ == '__main__':
     DOORS = load_level(1, TILE_VALUES_INFO)
 
     ENEMIES = load_enemies(TILEMAP, TILE_VALUES_INFO)
-    WEAPONS = load_weapons()
+
     WEAPON_MODEL = WeaponModel()
     CROSSHAIR = Crosshair(2, 6, 6, (0, 255, 0))
 
-    GAME_FONT = pygame.font.Font('../LCD_Solid.ttf', 32)
-
-    ###
+    # Make class constants
     Drawable.constant = 0.6 * D_H
     Wall.width = int(D_W / RAYS_AMOUNT)
-    ###
 
     RUNNING = True
     while RUNNING:

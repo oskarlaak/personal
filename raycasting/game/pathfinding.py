@@ -212,7 +212,8 @@ def pathfind(start, end):
 
 
 if __name__ == '__main__':
-    import raycasting.main.tilevaluesinfo as tilevaluesinfo
+    import raycasting.game.graphics as graphics
+    import sys
     import pygame
     from pygame.locals import *
 
@@ -220,9 +221,10 @@ if __name__ == '__main__':
     DISPLAY = pygame.display.set_mode((1024, 1024))
     CLOCK = pygame.time.Clock()
 
-    tile_values_info = tilevaluesinfo.get(64)[0]
+    enemy_info = graphics.get_enemy_info(sys, pygame)
+    tile_values_info = graphics.get_tile_values_info(sys, pygame, 64, enemy_info)
     tilemap = []
-    with open('../levels/1/tilemap.txt', 'r') as f:
+    with open('../levels/2/tilemap.txt', 'r') as f:
         row = f.readline().replace('\n', '').split(',')
         row = tuple(int(float(i)) for i in row)
         start = row[0:2]

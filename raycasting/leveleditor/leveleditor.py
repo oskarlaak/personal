@@ -2,7 +2,7 @@
 # Level editor README file describing how to use it
 
 import math
-import raycasting.main.tilevaluesinfo as tilevaluesinfo
+import raycasting.game.graphics as tilevaluesinfo
 import pygame
 import sys
 import os
@@ -452,7 +452,7 @@ def get_tilevaluesinfo():
         sys.exit(exception)
 
     else:
-        # Get TILE_VALUES_INFO from tilevaluesinfo.py
+        # Get TILE_VALUES_INFO from graphics.py
         tile_values_info = tilevaluesinfo.get(64)[0]
 
         # Replace all textures in it with 64x64 pixel textures
@@ -465,14 +465,14 @@ def get_tilevaluesinfo():
         for value, (info, _) in tile_values_info.items():
             if info == ('Wall', 'End-trigger'):
                 tile_values_info[value] = ('Special', 'End-trigger'), end
-                start_value = value + 1
-                tile_values_info[start_value] = ('Special', 'Start'), start
+                start_block_value = value + 1
+                tile_values_info[start_block_value] = ('Special', 'Start'), start
                 break
 
         # Add eraser texture to value 0
         tile_values_info[0] = ('Special', 'Eraser'), eraser
 
-        return tile_values_info, start_value
+        return tile_values_info, start_block_value
 
 
 def get_texturegroups():
