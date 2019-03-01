@@ -122,7 +122,7 @@ def a_star(start, end):
     unvisited = []  # Unvisited points that can be visited next step
     current = start  # Stores current point pos
 
-    while visited[-1] != end:  # Quits if end position is in visited
+    while current != end:  # Quits if end position is in visited
         get_unvisited(current)  # Get new unvisited options
         if not unvisited:  # If path cannot be created
             return []  # Return emtpy list

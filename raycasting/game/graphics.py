@@ -1,37 +1,41 @@
 def get_weapons(sys_module, pygame_module):
     class Weapon:
-        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, mag_size, reload_time,
-                     automatic, ammo_unlimited, silenced):
+        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, reload_time, mag_size,
+                     automatic, ammo_unlimited, melee=False):
             self.name = name
             self.weapon_sheet = weapon_sheet
             self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
 
             self.fire_delay = fire_delay  # Has to be dividable by animation frames
+            self.reload_time = reload_time  # Reloading time in ticks, has to be even number
             self.mag_size = mag_size  # Mag's total capacity
             self.mag_ammo = self.mag_size  # Currently ammo in weapon's mag
-            self.reload_time = reload_time  # Reloading time in ticks, has to be even number
 
             self.automatic = automatic
             self.ammo_unlimited = ammo_unlimited
-            self.silenced = silenced
+            self.melee = melee
 
     sys = sys_module
     pygame = pygame_module
 
     try:
-        # Weapon cells are all 48x32
-        ak47 = pygame.image.load('../textures/weapons/ak47.png')
-        ak47 = pygame.transform.scale(ak47, (ak47.get_width() * 10, ak47.get_height() * 10)).convert_alpha()
-        usps = pygame.image.load('../textures/weapons/usp-s.png')
-        usps = pygame.transform.scale(usps, (usps.get_width() * 10, usps.get_height() * 10)).convert_alpha()
+        def scale(image, times):
+            return pygame.transform.scale(image, (image.get_width() * times, image.get_height() * times))
+
+        knife = scale(pygame.image.load('../textures/weapons/knife.png'), 8)
+        pistol = scale(pygame.image.load('../textures/weapons/pistol.png'), 8)
+        machinegun = scale(pygame.image.load('../textures/weapons/machinegun.png'), 8)
+        chaingun = scale(pygame.image.load('../textures/weapons/chaingun.png'), 8)
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
 
     else:
         weapons = [None]  # Makes it so first weapon is index 1 insted of 0
-        weapons.append(Weapon('AK-47', ak47, 3, 3, 30, 72, True, False, False))
-        weapons.append(Weapon('USP-S', usps, 2, 4, 12, 64, False, True, True))
+        weapons.append(Weapon('Knife', knife, 3, 9, False, False, False, True, True))
+        weapons.append(Weapon('Pistol', pistol, 4, 8, 50, 12, False, True))
+        weapons.append(Weapon('Machinegun', machinegun, 4, 4, 60, 30, True, False))
+        weapons.append(Weapon('Chaingun', chaingun, 3, 3, 120, 50, True, False))
         return weapons
 
 
@@ -69,9 +73,9 @@ def get_enemy_info(sys_module, pygame_module):
             # memory = the time (in ticks) enemy knows player position after he has disappeared from his vision
             #          (also the time in which enemy's path will be updated towards player)
             # patience = the maximum time enemy stays standing still without an action
-            guard: ('Guard', 5, 0.04, 90, 120),
-            ss: ('SS', 10, 0.06, 150, 120),
-            officer: ('Officer', 8, 0.07, 150, 90)
+            guard: ('Guard', 3, 0.04, 90, 120),
+            ss: ('SS', 9, 0.05, 150, 120),
+            officer: ('Officer', 6, 0.06, 150, 90)
         }
         return enemy_info
 

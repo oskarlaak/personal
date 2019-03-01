@@ -1,8 +1,7 @@
 # TO DO:
 # Enemy attack
-# Enemy wondering arond in his room system
+# Enemies avoiding each other ; No enemies inside each other
 # Level end system
-# Fix leveleditor
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -32,7 +31,8 @@ class Player:
 
     def shoot(self, weapon):
         # When player sends out a bullet
-        weapon.mag_ammo -= 1
+        if not weapon.melee:
+            weapon.mag_ammo -= 1
 
         # Find all shottable enemies in ENEMIES list
         shottable_enemies = []
@@ -47,7 +47,10 @@ class Player:
             x_offset = abs((D_W / 2) - enemy_center_display_x)
             hittable_offset = e.width / 6  # Assuming that 1/3 of enemy's spritesheet cells are their bodies
             if hittable_offset > x_offset:  # If crosshair more or less on enemy
-                e.hurt()
+                if not weapon.melee:
+                    e.hurt()
+                elif e.dist_squared <= 2:  # Assuming that melee weapons don't hit enemies more than sqrt(2) = 1.4 units away
+                    e.hurt(4)  # Assuming that melee weapons deal 4 damage
                 break
 
     def reload(self, weapon):
@@ -212,10 +215,9 @@ class WeaponModel:
             self.switch_weapons()
 
     def draw(self, surface):
-        cell_w = self.weapon.weapon_sheet.get_width() / (self.weapon.animation_frames + 1)
-        cell_h = self.weapon.weapon_sheet.get_height()
-        image = self.weapon.weapon_sheet.subsurface(cell_w * WEAPON_MODEL.column, 0, cell_w, cell_h)
-        DISPLAY.blit(image, (D_W / 2, D_H - cell_h + self.draw_y))
+        cell_w = cell_h = 512
+        weapon_image = self.weapon.weapon_sheet.subsurface(cell_w * self.column, 0, cell_w, cell_h)
+        surface.blit(weapon_image, ((D_W - cell_w) / 2, D_H - cell_h + self.draw_y))
 
 
 class Door:
@@ -418,15 +420,39 @@ class Enemy(Drawable, Sprite):
             for _ in range(int(ray_dist)):
                 self.look_angles.append(rayangle)
 
-    def hurt(self):
-        self.hp -= 1  # Take hp away from enemy
-        if self.hp == 0:  # If dead
+    def get_home_room(self):
+        # Makes a self.home_room list which contains all the map points in his room
+
+        def get_unvisited(pos):
+            # Gets new unvisited points
+            all_points = visited + unvisited
+            for x in range(-1, 2):  # -1, 0, 1
+                for y in range(-1, 2):  # -1, 0, 1
+                    pos_x, pos_y = (pos[0] + x, pos[1] + y)
+                    if (pos_x, pos_y) not in all_points and TILEMAP[pos_y][pos_x] <= 0:
+                        unvisited.append((pos_x, pos_y))
+
+        visited = [(int(self.x), int(self.y))]
+        unvisited = []
+        get_unvisited((int(self.x), int(self.y)))
+
+        while unvisited:  # While there is unscanned points
+            current = unvisited[0]  # Get new point
+            del unvisited[0]  # Delete it from unvisited bc it's about to get visited
+            visited.append(current)  # Add point to visited
+            get_unvisited(current)  # Scan new points from that location
+
+        self.home_room = visited
+
+    def hurt(self, damage=1):
+        self.hp -= damage  # Take hp away from enemy
+        if self.hp <= 0:  # If dead
             self.hit = True  # Mark as hit
             self.row = 5  # Choose death/hurt animation row
             self.anim_ticks = 0  # Reset animation ticks
             self.dead = True  # Mark as dead
             self.column = 0  # Choose first death animation frame
-        elif self.last_hit_anim_ticks >= Enemy.animation_ticks:  # If not dead and enough time passed to show new hit animation
+        elif self.last_hit_anim_ticks >= Enemy.animation_ticks - 2:  # If not dead and enough time passed to show new hit animation
             self.hit = True
             self.row = 5
             self.anim_ticks = 0
@@ -468,28 +494,40 @@ class Enemy(Drawable, Sprite):
                 self.last_saw_ticks += 1
 
             if not self.path:
+                # Scope logic:
+                #   If enemy can see player:
+                #       Set path to player
+                #   Elif wanted looking angle not reached:
+                #       Turn towards that angle
+                #   Elif enemy's been stationary for a while:
+                #       Choose a new action
                 self.stationary_ticks += 1
                 if can_see_player:
                     self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
 
-                elif (self.x, self.y) != self.home:  # If enemy without path outside home
-                    if self.stationary_ticks > self.patience:
-                        self.path = pathfinding.pathfind((self.x, self.y), self.home)
-                else:
-                    if self.stationary_ticks > self.patience:  # If been stationary for a while
-                        self.wanted_angle = random.choice(self.look_angles)  # Update wanted looking angle
+                elif self.angle != self.wanted_angle:
+                    self.stationary_ticks = 0
+                    if self.angle < self.wanted_angle:
+                        self.angle += Enemy.turning_speed
+                    else:
+                        self.angle -= Enemy.turning_speed
 
-                    # Enemy turning system
-                    if self.angle != self.wanted_angle:
-                        self.stationary_ticks = 0  # If turning - not stationary
-                        if self.angle < self.wanted_angle:
-                            self.angle += Enemy.turning_speed
+                    # If self.angle close enough:
+                    # Finish turning
+                    if abs(self.angle - self.wanted_angle) < Enemy.turning_speed:
+                        self.angle = self.wanted_angle
+
+                elif self.stationary_ticks > self.patience:
+                    if (self.x, self.y) == self.home:
+                        # If at home:
+                        # Either look at semi-random angle
+                        # Or go to a random location in his room
+                        if random.randint(0, 1) == 0:
+                            self.wanted_angle = random.choice(self.look_angles)
                         else:
-                            self.angle -= Enemy.turning_speed
-
-                        # If self.angle close enough
-                        if abs(self.angle - self.wanted_angle) < Enemy.turning_speed:
-                            self.angle = self.wanted_angle  # Finish turning
+                            self.path = pathfinding.pathfind((self.x, self.y), random.choice(self.home_room))
+                    else:
+                        self.path = pathfinding.pathfind((self.x, self.y), self.home)
 
             if self.path:
                 self.stationary_ticks = 0
@@ -512,6 +550,9 @@ class Enemy(Drawable, Sprite):
                         self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
                     else:
                         del self.path[0]
+                        # Turn towards player when path finished
+                        if not self.path:
+                            self.wanted_angle = atan2(-delta_y, -delta_x)
 
             # Find the right spritesheet column
             angle = fixed_angle(-angle_from_player + self.angle) + pi  # +pi to get rid of negative values
@@ -523,7 +564,7 @@ class Enemy(Drawable, Sprite):
             if self.path:  # If movement
                 if self.row == 0 or self.row > 4:
                     self.row = 1
-                # Cycle through running animation
+                # Cycle through running animations
                 self.anim_ticks += 1
                 if self.anim_ticks == Enemy.animation_ticks:
                     self.anim_ticks = 0
@@ -586,7 +627,7 @@ def events():
             if event.key == K_ESCAPE:
                 RUNNING = False
 
-            elif event.key == K_r:
+            elif event.key == K_r and not weapon.melee:
                 # If magazine not full and weapon not shooting
                 if weapon.mag_ammo < weapon.mag_size and not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
                     if weapon.ammo_unlimited:
@@ -619,8 +660,9 @@ def events():
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
-                if WEAPON_MODEL.weapon.mag_ammo and not WEAPON_MODEL.reloading and not WEAPON_MODEL.switching:
-                    WEAPON_MODEL.shooting = True
+                if not WEAPON_MODEL.reloading and not WEAPON_MODEL.switching:
+                    if weapon.mag_ammo or weapon.melee:
+                        WEAPON_MODEL.shooting = True
             elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
                 if event.button == 4:  # Mousewheel up
                     if PLAYER.weapon_nr > 1:  # Can't go under 1
@@ -679,8 +721,10 @@ def load_enemies(tilemap, tile_values_info):
                 enemies.append(Enemy(spritesheet, pos))
                 tilemap[row][column] = 0  # Clears tile
 
+    # Process some stuff after enemies have been cleared from tilemap
     for e in enemies:
         e.get_look_angles()
+        e.get_home_room()
 
     return enemies
 
@@ -986,20 +1030,29 @@ def draw_hud():
 
     # Weapon model
     WEAPON_MODEL.draw(DISPLAY)
+    current_weapon = WEAPON_MODEL.weapon
 
-    # Weapon name
-    weapon_name = '{}: '.format(WEAPON_MODEL.weapon.name)
-    weapon_name_surface = GAME_FONT.render(weapon_name, False, (255, 255, 255))
-    DISPLAY.blit(weapon_name_surface, (4, D_H - 32))
+    # Weapon text HUD
+    if not current_weapon.melee:
+        # Weapon text
+        weapon_name = '{}: '.format(current_weapon.name)
+        weapon_name_surface = GAME_FONT.render(weapon_name, False, (255, 255, 255))
+        DISPLAY.blit(weapon_name_surface, (4, D_H - 32))
 
-    # Weapon ammo
-    if WEAPON_MODEL.weapon.ammo_unlimited:
-        total_ammo = 'Unlimited'
+        # Weapon ammo
+        if not WEAPON_MODEL.reloading:
+            if current_weapon.ammo_unlimited:
+                total_ammo = 'Unlimited'
+            else:
+                total_ammo = PLAYER.ammo
+            weapon_ammo = '{}/{}'.format(current_weapon.mag_ammo, total_ammo)
+            weapon_ammo_surface = GAME_FONT.render(weapon_ammo, False, dynamic_colour(current_weapon.mag_ammo, current_weapon.mag_size))
+        else:
+            weapon_ammo_surface = GAME_FONT.render('Reloading', False, (255, 0, 0))
+        DISPLAY.blit(weapon_ammo_surface, (4 + weapon_name_surface.get_width(), D_H - 32))
     else:
-        total_ammo = PLAYER.ammo
-    weapon_ammo = '{}/{}'.format(WEAPON_MODEL.weapon.mag_ammo, total_ammo)
-    weapon_ammo_surface = GAME_FONT.render(weapon_ammo, False, dynamic_colour(WEAPON_MODEL.weapon.mag_ammo, WEAPON_MODEL.weapon.mag_size))
-    DISPLAY.blit(weapon_ammo_surface, (4 + weapon_name_surface.get_width(), D_H - 32))
+        weapon_name_surface = GAME_FONT.render(str(current_weapon.name), False, (255, 255, 255))
+        DISPLAY.blit(weapon_name_surface, (4, D_H - 32))
 
     # Player hp
     hp_text_surface = GAME_FONT.render('HP: ', False, (255, 255, 255))
@@ -1051,7 +1104,7 @@ if __name__ == '__main__':
 
     # Game settings
     D_W = 1024
-    D_H = 768
+    D_H = 800
     FOV = pi / 2  # = 90 degrees
     RAYS_AMOUNT = int(D_W / 2)  # Drawing frequency across the screen / Rays casted each frame
     SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
@@ -1059,7 +1112,7 @@ if __name__ == '__main__':
     # Pygame stuff
     pygame.init()
     pygame.display.set_caption('Raycaster')
-    DISPLAY = pygame.display.set_mode((D_W, D_H), FULLSCREEN)
+    DISPLAY = pygame.display.set_mode((D_W, D_H))
     CLOCK = pygame.time.Clock()
     pygame.mouse.set_visible(False)
     pygame.event.set_grab(True)
@@ -1086,7 +1139,7 @@ if __name__ == '__main__':
     ENEMIES = load_enemies(TILEMAP, TILE_VALUES_INFO)
 
     WEAPON_MODEL = WeaponModel()
-    CROSSHAIR = Crosshair(2, 6, 6, (0, 255, 0))
+    CROSSHAIR = Crosshair(4, 6, 4, (0, 200, 200))
 
     # Make class constants
     Drawable.constant = 0.6 * D_H
