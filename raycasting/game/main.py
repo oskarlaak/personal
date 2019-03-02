@@ -1,6 +1,7 @@
 # TO DO:
-# Enemy attack
-# Enemies avoiding each other ; No enemies inside each other
+# Enemy hitscan
+# Enemy continuous shooting from point blank
+# Make bigger enemies easier to hit
 # Level end system
 
 # NOTES:
@@ -382,7 +383,7 @@ class Enemy(Drawable, Sprite):
 
     # Stationary enemy turning speed
     # Radians per tick as always
-    turning_speed = 0.08
+    turning_speed = 0.1
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = self.home = pos
@@ -394,12 +395,13 @@ class Enemy(Drawable, Sprite):
         self.column = 0  # Spritesheet column
 
         self.path = []  # Enemy running path
+        self.shooting = False
         self.dead = False
         self.hit = False
 
         # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
-        # What each attribute means see graphics.py enemy info dictionary description
-        self.name, self.hp, self.speed, self.memory, self.patience = ENEMY_INFO[self.sheet]
+        # What each attribute means see graphics.py get_enemy_info() enemy_info dictionary description
+        self.name, self.hp, self.speed, self.shooting_range, self.memory, self.patience = ENEMY_INFO[self.sheet]
 
         # Timed events tick (frames passed) variables
         self.anim_ticks = 0  # Time passed during animation
@@ -446,6 +448,7 @@ class Enemy(Drawable, Sprite):
 
     def hurt(self, damage=1):
         self.hp -= damage  # Take hp away from enemy
+        self.shooting = False  # Cancel shooting action
         if self.hp <= 0:  # If dead
             self.hit = True  # Mark as hit
             self.row = 5  # Choose death/hurt animation row
@@ -458,6 +461,11 @@ class Enemy(Drawable, Sprite):
             self.anim_ticks = 0
             self.last_hit_anim_ticks = 0
 
+    def shoot(self):
+        # Hitscan system stolen straight from Wolfenstein 3D source code
+        # Player shot hit and damage logic
+        pass
+
     def update(self):
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
@@ -465,7 +473,44 @@ class Enemy(Drawable, Sprite):
 
         self.dist_squared = delta_x**2 + delta_y**2  # Used in player's shot detection
 
-        if not self.hit:
+        if self.shooting:
+            self.row = 6
+            self.anim_ticks += 1
+            self.column = int(self.anim_ticks / Enemy.animation_ticks)
+            if self.anim_ticks == Enemy.animation_ticks * 2:
+                self.shoot()
+            if self.column > 2:
+                self.column = 2
+                self.shooting = False
+
+                self.anim_ticks = 0
+                self.last_saw_ticks = 0
+                self.stationary_ticks = 0
+
+        elif not self.hit:
+            can_see_player = can_see((self.x, self.y), (PLAYER.x, PLAYER.y), self.angle, FOV)
+            self.wanted_angle = atan2(-delta_y, -delta_x)
+
+            if can_see_player:
+                self.last_saw_ticks = 0
+            elif self.last_saw_ticks < self.memory:
+                self.last_saw_ticks += 1
+            else:  # Don't know player location
+                self.wanted_angle = self.angle
+
+            # Turn towards player
+            if self.angle != self.wanted_angle:
+                self.stationary_ticks = 0
+                if self.angle < self.wanted_angle:
+                    self.angle += Enemy.turning_speed
+                else:
+                    self.angle -= Enemy.turning_speed
+
+                # If self.angle close enough:
+                # Finish turning
+                if abs(self.angle - self.wanted_angle) < Enemy.turning_speed:
+                    self.angle = self.wanted_angle
+
             # Update last hit animation ticks
             if self.last_hit_anim_ticks != Enemy.animation_ticks:
                 self.last_hit_anim_ticks += 1
@@ -485,37 +530,15 @@ class Enemy(Drawable, Sprite):
                     d.state = 1
                     DOORS.append(d)
 
-            can_see_player = can_see((self.x, self.y), (PLAYER.x, PLAYER.y), self.angle, FOV)
-
-            # Update last_saw_ticks
-            if can_see_player:
-                self.last_saw_ticks = 0
-            elif self.last_saw_ticks < self.memory:  # Prevents variable getting unnecessarily big
-                self.last_saw_ticks += 1
-
             if not self.path:
                 # Scope logic:
                 #   If enemy can see player:
                 #       Set path to player
-                #   Elif wanted looking angle not reached:
-                #       Turn towards that angle
                 #   Elif enemy's been stationary for a while:
                 #       Choose a new action
                 self.stationary_ticks += 1
-                if can_see_player:
+                if can_see_player or self.last_saw_ticks < self.memory:
                     self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
-
-                elif self.angle != self.wanted_angle:
-                    self.stationary_ticks = 0
-                    if self.angle < self.wanted_angle:
-                        self.angle += Enemy.turning_speed
-                    else:
-                        self.angle -= Enemy.turning_speed
-
-                    # If self.angle close enough:
-                    # Finish turning
-                    if abs(self.angle - self.wanted_angle) < Enemy.turning_speed:
-                        self.angle = self.wanted_angle
 
                 elif self.stationary_ticks > self.patience:
                     if (self.x, self.y) == self.home:
@@ -531,28 +554,41 @@ class Enemy(Drawable, Sprite):
 
             if self.path:
                 self.stationary_ticks = 0
-
                 step_x, step_y = self.path[0]
-                step_x += 0.5  # Centers tile pos
-                step_y += 0.5
 
-                self.angle = atan2(step_y - self.y, step_x - self.x)
-                self.x += cos(self.angle) * self.speed
-                self.y += sin(self.angle) * self.speed
+                # If other enemy(s) in step tile:
+                # Empty path and don't step
+                # Else:
+                # Make a step
+                for e in ENEMIES:
+                    if not e.dead and e.home != self.home and (int(e.x), int(e.y)) == (step_x, step_y):
+                        self.path = []
+                        break
+                else:
+                    step_x += 0.5  # Centers tile pos
+                    step_y += 0.5
 
-                # Could recalculate delta_x/delta_y here but it makes next to no difference
+                    self.angle = self.wanted_angle = atan2(step_y - self.y, step_x - self.x)
+                    self.x += cos(self.angle) * self.speed
+                    self.y += sin(self.angle) * self.speed
 
-                # If enemy close enough to the path step
-                if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
-                    self.x = step_x
-                    self.y = step_y
-                    if can_see_player or self.last_saw_ticks < self.memory:
-                        self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
-                    else:
-                        del self.path[0]
-                        # Turn towards player when path finished
-                        if not self.path:
-                            self.wanted_angle = atan2(-delta_y, -delta_x)
+                    # Could recalculate delta_x/delta_y here but it makes next to no difference
+
+                    # If enemy close enough to the path step
+                    if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
+                        self.x = step_x
+                        self.y = step_y
+                        # If close enough to player, start shooting in next frame
+                        if can_see_player and self.dist_squared < self.shooting_range ** 2:
+                            self.shooting = True
+                            self.path = []
+                        elif can_see_player or self.last_saw_ticks < self.memory:
+                            self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
+                        else:
+                            del self.path[0]
+                            # Turn towards player when path finished
+                            if not self.path:
+                                self.wanted_angle = atan2(-delta_y, -delta_x)
 
             # Find the right spritesheet column
             angle = fixed_angle(-angle_from_player + self.angle) + pi  # +pi to get rid of negative values
@@ -590,8 +626,11 @@ class Enemy(Drawable, Sprite):
                     self.hit = False
                     self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
 
+        # Calculate perpendicular distance
+        # If it's more than 0 ; If enemy is going to be drawn:
+        # Update image for drawing
         self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
-        if self.perp_dist > 0:  # If enemy is going to be drawn, update image for drawing
+        if self.perp_dist > 0:
             self.image = self.sheet.subsurface(self.column * TEXTURE_SIZE, self.row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
 
             self.height = self.width = int(Drawable.constant / self.perp_dist)
@@ -1021,6 +1060,12 @@ def draw_hud():
 
         return (red, green, 0)
 
+    # Simulates blinking effect
+    global ALPHA
+    ALPHA -= 15
+    if ALPHA == -255:
+        ALPHA = 255
+
     # FPS counter
     text_surface = GAME_FONT.render(str(round(CLOCK.get_fps())), False, (0, 255, 0))
     DISPLAY.blit(text_surface, (4, 4))
@@ -1045,10 +1090,20 @@ def draw_hud():
                 total_ammo = 'Unlimited'
             else:
                 total_ammo = PLAYER.ammo
+
             weapon_ammo = '{}/{}'.format(current_weapon.mag_ammo, total_ammo)
-            weapon_ammo_surface = GAME_FONT.render(weapon_ammo, False, dynamic_colour(current_weapon.mag_ammo, current_weapon.mag_size))
+
+            if current_weapon.mag_ammo:
+                ALPHA = 255  # Resets blinking
+                weapon_ammo_surface = GAME_FONT.render(weapon_ammo, False, dynamic_colour(current_weapon.mag_ammo, current_weapon.mag_size))
+            else:
+                weapon_ammo_surface = GAME_FONT.render(weapon_ammo, False, (255, 0, 0), (0, 0, 0))  # Set background to black
+                weapon_ammo_surface.set_colorkey((0, 0, 0))  # Tell program to treat black as transparent
+                weapon_ammo_surface.set_alpha(abs(ALPHA))
         else:
-            weapon_ammo_surface = GAME_FONT.render('Reloading', False, (255, 0, 0))
+            weapon_ammo_surface = GAME_FONT.render('Reloading', False, (255, 0, 0), (0, 0, 0))  # Set background to black
+            weapon_ammo_surface.set_colorkey((0, 0, 0))  # Tell program to treat black as transparent
+            weapon_ammo_surface.set_alpha(abs(ALPHA))
         DISPLAY.blit(weapon_ammo_surface, (4 + weapon_name_surface.get_width(), D_H - 32))
     else:
         weapon_name_surface = GAME_FONT.render(str(current_weapon.name), False, (255, 255, 255))
@@ -1119,6 +1174,7 @@ if __name__ == '__main__':
 
     # Font
     GAME_FONT = pygame.font.Font('../LCD_Solid.ttf', 32)
+    ALPHA = 255  # Text transparency value used to create blinking texts in draw_hud()
 
     TEXTURE_SIZE = 64
 

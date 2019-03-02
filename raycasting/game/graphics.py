@@ -32,10 +32,10 @@ def get_weapons(sys_module, pygame_module):
 
     else:
         weapons = [None]  # Makes it so first weapon is index 1 insted of 0
-        weapons.append(Weapon('Knife', knife, 3, 9, False, False, False, True, True))
-        weapons.append(Weapon('Pistol', pistol, 4, 8, 50, 12, False, True))
-        weapons.append(Weapon('Machinegun', machinegun, 4, 4, 60, 30, True, False))
-        weapons.append(Weapon('Chaingun', chaingun, 3, 3, 120, 50, True, False))
+        weapons.append(Weapon(     'Knife',      knife, 3, 9, False, False, False,  True, True))
+        weapons.append(Weapon(    'Pistol',     pistol, 4, 8,    50,    12, False,  True))
+        weapons.append(Weapon('Machinegun', machinegun, 4, 4,    60,    30,  True, False))
+        weapons.append(Weapon(  'Chaingun',   chaingun, 3, 3,   120,    50,  True, False))
         return weapons
 
 
@@ -67,15 +67,16 @@ def get_enemy_info(sys_module, pygame_module):
 
     else:
         enemy_info = {
-            # spritesheet: name, hp, speed, memory, patience
+            # spritesheet: name, hp, speed, shooting_range, memory, patience
             #
             # Attributes description:
+            # shooting_range = maximum distance in units where enemy can shoot player from
             # memory = the time (in ticks) enemy knows player position after he has disappeared from his vision
             #          (also the time in which enemy's path will be updated towards player)
             # patience = the maximum time enemy stays standing still without an action
-            guard: ('Guard', 3, 0.04, 90, 120),
-            ss: ('SS', 9, 0.05, 150, 120),
-            officer: ('Officer', 6, 0.06, 150, 90)
+            guard:   (  'Guard', 3, 0.04, 10,  90, 120),
+            ss:      (     'SS', 9, 0.05, 20, 150, 120),
+            officer: ('Officer', 6, 0.06, 15, 150,  90)
         }
         return enemy_info
 
