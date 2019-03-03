@@ -1,8 +1,11 @@
 # TO DO:
 # Enemy hitscan
 # Enemy continuous shooting from point blank
-# Make bigger enemies easier to hit
 # Level end system
+# Projectile rifle - plasma gun - mingi põhjus miks mitte tavalist wolfi mängida
+# Add one plasma type projectile and try to add it to certain weapons
+# Resizeable resolution (1024x800 and 800x600)
+# Level editor sky texture choosing
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -13,6 +16,8 @@
 # bc raycast() is going to pick one based on the side of the interception
 # All timed events are tick based,
 # meaning that changing fps will change timer time
+# Every level folder can be equipped with a sky.png texture,
+# which will then be drawn dynamically instead of drawing just a plain ceiling colour
 
 
 class Player:
@@ -45,13 +50,13 @@ class Player:
 
         for e in shottable_enemies:
             enemy_center_display_x = e.display_x + (e.width / 2)
-            x_offset = abs((D_W / 2) - enemy_center_display_x)
-            hittable_offset = e.width / 6  # Assuming that 1/3 of enemy's spritesheet cells are their bodies
+            x_offset = abs(H_W - enemy_center_display_x)
+            hittable_offset = e.hittable_amount / 2 * e.width
             if hittable_offset > x_offset:  # If crosshair more or less on enemy
                 if not weapon.melee:
                     e.hurt()
                 elif e.dist_squared <= 2:  # Assuming that melee weapons don't hit enemies more than sqrt(2) = 1.4 units away
-                    e.hurt(4)  # Assuming that melee weapons deal 4 damage
+                    e.hurt(3)  # Assuming that melee weapons deal 3 damage
                 break
 
     def reload(self, weapon):
@@ -244,7 +249,7 @@ class Door:
                     self.opened_state = 1
                     self.state += 1
 
-            if self.state == 2:  # Staying open
+            elif self.state == 2:  # Staying open
                 self.ticks += 1
                 if self.ticks >= Door.open_ticks:  # If time for door to close
                     # Checking if player is not in door's way
@@ -254,7 +259,7 @@ class Door:
                         self.ticks = 0
                         self.state += 1
 
-            if self.state == 3:  # Closing
+            elif self.state == 3:  # Closing
                 self.opened_state -= Door.speed
                 if self.opened_state < 0:
                     self.opened_state = 0
@@ -401,7 +406,7 @@ class Enemy(Drawable, Sprite):
 
         # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
         # What each attribute means see graphics.py get_enemy_info() enemy_info dictionary description
-        self.name, self.hp, self.speed, self.shooting_range, self.memory, self.patience = ENEMY_INFO[self.sheet]
+        self.name, self.hp, self.speed, self.shooting_range, self.memory, self.patience, self.hittable_amount = ENEMY_INFO[self.sheet]
 
         # Timed events tick (frames passed) variables
         self.anim_ticks = 0  # Time passed during animation
@@ -467,6 +472,22 @@ class Enemy(Drawable, Sprite):
         pass
 
     def update(self):
+
+        # Enemy door opening system
+        # If door underneath enemy,
+        # create a door obj in that location if it isn't there already
+        # and start opening it immediately
+        tile_value = TILEMAP[int(self.y)][int(self.x)]
+        if TILE_VALUES_INFO[tile_value][0][0] == 'Door':
+            for d in DOORS:
+                if (d.x, d.y) == (int(self.x), int(self.y)):
+                    d.state = 1
+                    break
+            else:
+                d = Door((int(self.x), int(self.y)), tile_value)
+                d.state = 1
+                DOORS.append(d)
+
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
         angle_from_player = atan2(delta_y, delta_x)
@@ -498,10 +519,15 @@ class Enemy(Drawable, Sprite):
             else:  # Don't know player location
                 self.wanted_angle = self.angle
 
-            # Turn towards player
+            # Turn towards wanted angle
             if self.angle != self.wanted_angle:
                 self.stationary_ticks = 0
-                if self.angle < self.wanted_angle:
+
+                difference = (self.wanted_angle + pi) - (self.angle + pi)
+                if difference < 0:
+                    difference += 2*pi
+
+                if difference < pi:
                     self.angle += Enemy.turning_speed
                 else:
                     self.angle -= Enemy.turning_speed
@@ -514,21 +540,6 @@ class Enemy(Drawable, Sprite):
             # Update last hit animation ticks
             if self.last_hit_anim_ticks != Enemy.animation_ticks:
                 self.last_hit_anim_ticks += 1
-
-            # Enemy door opening system
-            # If door underneath enemy,
-            # create a door obj in that location if it isn't there already
-            # and start opening it immediately
-            tile_value = TILEMAP[int(self.y)][int(self.x)]
-            if TILE_VALUES_INFO[tile_value][0][0] == 'Door':
-                for d in DOORS:
-                    if (d.x, d.y) == (int(self.x), int(self.y)):
-                        d.state = 1
-                        break
-                else:
-                    d = Door((int(self.x), int(self.y)), tile_value)
-                    d.state = 1
-                    DOORS.append(d)
 
             if not self.path:
                 # Scope logic:
@@ -588,7 +599,7 @@ class Enemy(Drawable, Sprite):
                             del self.path[0]
                             # Turn towards player when path finished
                             if not self.path:
-                                self.wanted_angle = atan2(-delta_y, -delta_x)
+                                self.angle = atan2(-delta_y, -delta_x)
 
             # Find the right spritesheet column
             angle = fixed_angle(-angle_from_player + self.angle) + pi  # +pi to get rid of negative values
@@ -648,12 +659,10 @@ class Crosshair:
         self.colour = colour
 
     def draw(self, surface):
-        h_w = D_W / 2  # Half width
-        h_h = D_H / 2  # Half height
-        pygame.draw.line(surface, self.colour, (h_w + self.gap, h_h), (h_w + self.gap + self.len, h_h), self.width)
-        pygame.draw.line(surface, self.colour, (h_w - self.gap, h_h), (h_w - self.gap - self.len, h_h), self.width)
-        pygame.draw.line(surface, self.colour, (h_w, h_h + self.gap), (h_w, h_h + self.gap + self.len), self.width)
-        pygame.draw.line(surface, self.colour, (h_w, h_h - self.gap), (h_w, h_h - self.gap - self.len), self.width)
+        pygame.draw.line(surface, self.colour, (H_W + self.gap, H_H), (H_W + self.gap + self.len, H_H), self.width)
+        pygame.draw.line(surface, self.colour, (H_W - self.gap, H_H), (H_W - self.gap - self.len, H_H), self.width)
+        pygame.draw.line(surface, self.colour, (H_W, H_H + self.gap), (H_W, H_H + self.gap + self.len), self.width)
+        pygame.draw.line(surface, self.colour, (H_W, H_H - self.gap), (H_W, H_H - self.gap - self.len), self.width)
 
 
 def events():
@@ -781,6 +790,14 @@ def load_level(level_nr, tile_values_info):
             row = [int(i) for i in row]  # Turn all number strings to an int
             background_colours.append(tuple(row))
 
+        # Get sky texture if there is one
+        try:
+            sky_texture = pygame.image.load('../levels/{}/sky.png'.format(level_nr)).convert()
+        except pygame.error:
+            sky_texture = None
+        else:
+            sky_texture = pygame.transform.scale(sky_texture, (int(2 * pi / FOV) * D_W, H_H))
+
         tilemap = []
         for line in f:
             row = line.replace('\n', '')  # Get rid of newline (\n)
@@ -792,7 +809,7 @@ def load_level(level_nr, tile_values_info):
     # Run pathfinding setup function
     pathfinding.setup(tilemap, tile_values_info)
 
-    return player, background_colours, tilemap, []  # <-- empty doors list
+    return player, background_colours, sky_texture, tilemap, []  # <-- empty doors list
 
 
 def send_rays():
@@ -811,10 +828,10 @@ def send_rays():
     if tile_value < 0:  # If anything under player
         tile_id = TILE_VALUES_INFO[tile_value][0]
         if tile_id[1] == 'Ammo':
-            if PLAYER.ammo < 99:
-                PLAYER.ammo += 6
-                if PLAYER.ammo > 99:
-                    PLAYER.ammo = 99
+            if PLAYER.ammo < 999:
+                PLAYER.ammo += 10
+                if PLAYER.ammo > 999:
+                    PLAYER.ammo = 999
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0  # "Deletes" object
         elif tile_id[1] == 'Health':
             if PLAYER.hp < 100:
@@ -1043,8 +1060,24 @@ def movement():
 
 
 def draw_background():
-    pygame.draw.rect(DISPLAY, BACKGROUND_COLOURS[0], ((0,       0), (D_W, D_H / 2)))  # Ceiling
-    pygame.draw.rect(DISPLAY, BACKGROUND_COLOURS[1], ((0, D_H / 2), (D_W, D_H / 2)))  # Floor
+    if SKY_TEXTURE:
+        # x_offset is a value ranging from 0 to 1
+        x_offset = (PLAYER.viewangle + pi) / (2*pi)
+        x = x_offset * SKY_TEXTURE.get_width()
+
+        if x_offset <= 0.75:
+            # Sky texture can be drawn as one image
+            sky = SKY_TEXTURE.subsurface(x, 0, D_W, H_H)
+            DISPLAY.blit(sky, (0, 0))
+        else:
+            # Sky texture needs to be drawn as two separate parts
+            sky_left = SKY_TEXTURE.subsurface(x, 0, SKY_TEXTURE.get_width() - x, H_H)
+            sky_right = SKY_TEXTURE.subsurface(0, 0, D_W - sky_left.get_width(), H_H)
+            DISPLAY.blit(sky_left, (0, 0))
+            DISPLAY.blit(sky_right, (sky_left.get_width(), 0))
+    else:
+        pygame.draw.rect(DISPLAY, BACKGROUND_COLOURS[0], ((0, 0), (D_W, H_H)))  # Ceiling
+    pygame.draw.rect(DISPLAY, BACKGROUND_COLOURS[1], ((0, H_H), (D_W, H_H)))  # Floor
 
 
 def draw_hud():
@@ -1160,8 +1193,10 @@ if __name__ == '__main__':
     # Game settings
     D_W = 1024
     D_H = 800
+    H_W = int(D_W / 2)  # Half width
+    H_H = int(D_H / 2)  # Half height
     FOV = pi / 2  # = 90 degrees
-    RAYS_AMOUNT = int(D_W / 2)  # Drawing frequency across the screen / Rays casted each frame
+    RAYS_AMOUNT = H_W  # Drawing frequency across the screen / Rays casted each frame
     SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
 
     # Pygame stuff
@@ -1189,6 +1224,7 @@ if __name__ == '__main__':
 
     PLAYER,\
     BACKGROUND_COLOURS,\
+    SKY_TEXTURE,\
     TILEMAP,\
     DOORS = load_level(1, TILE_VALUES_INFO)
 

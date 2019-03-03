@@ -22,10 +22,10 @@ def get_weapons(sys_module, pygame_module):
         def scale(image, times):
             return pygame.transform.scale(image, (image.get_width() * times, image.get_height() * times))
 
-        knife = scale(pygame.image.load('../textures/weapons/knife.png'), 8)
-        pistol = scale(pygame.image.load('../textures/weapons/pistol.png'), 8)
-        machinegun = scale(pygame.image.load('../textures/weapons/machinegun.png'), 8)
-        chaingun = scale(pygame.image.load('../textures/weapons/chaingun.png'), 8)
+        knife = scale(pygame.image.load('../textures/weapons/knife.png').convert_alpha(), 8)
+        pistol = scale(pygame.image.load('../textures/weapons/pistol.png').convert_alpha(), 8)
+        machinegun = scale(pygame.image.load('../textures/weapons/machinegun.png').convert_alpha(), 8)
+        chaingun = scale(pygame.image.load('../textures/weapons/chaingun.png').convert_alpha(), 8)
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -67,16 +67,18 @@ def get_enemy_info(sys_module, pygame_module):
 
     else:
         enemy_info = {
-            # spritesheet: name, hp, speed, shooting_range, memory, patience
+            # spritesheet: name, hp, speed, shooting_range, memory, patience, hittable_amount
             #
             # Attributes description:
             # shooting_range = maximum distance in units where enemy can shoot player from
             # memory = the time (in ticks) enemy knows player position after he has disappeared from his vision
             #          (also the time in which enemy's path will be updated towards player)
             # patience = the maximum time enemy stays standing still without an action
-            guard:   (  'Guard', 3, 0.04, 10,  90, 120),
-            ss:      (     'SS', 9, 0.05, 20, 150, 120),
-            officer: ('Officer', 6, 0.06, 15, 150,  90)
+            # hittable_amount = "average amount enemy" in each enemy's spritesheets cells
+            #                   (basicly how much of average cell is non-transparent)
+            guard:   (  'Guard', 3, 0.04, 10,  90, 120, 1/3),
+            ss:      (     'SS', 9, 0.05, 20, 150, 120, 1/2),
+            officer: ('Officer', 6, 0.06, 15, 150,  90, 1/3)
         }
         return enemy_info
 
