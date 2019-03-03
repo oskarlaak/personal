@@ -2,9 +2,6 @@
 # Enemy hitscan
 # Enemy continuous shooting from point blank
 # Level end system
-# Projectile rifle - plasma gun - mingi põhjus miks mitte tavalist wolfi mängida
-# Add one plasma type projectile and try to add it to certain weapons
-# Resizeable resolution (1024x800 and 800x600)
 # Level editor sky texture choosing
 
 # NOTES:
@@ -18,6 +15,7 @@
 # meaning that changing fps will change timer time
 # Every level folder can be equipped with a sky.png texture,
 # which will then be drawn dynamically instead of drawing just a plain ceiling colour
+# DOORS list contains all doors currently visible or in motion
 
 
 class Player:
@@ -35,10 +33,9 @@ class Player:
     def rotate(self, radians):
         self.viewangle = fixed_angle(self.viewangle + radians)
 
-    def shoot(self, weapon):
-        # When player sends out a bullet
-        if not weapon.melee:
-            weapon.mag_ammo -= 1
+    def hitscan(self, weapon):
+        # An instant shot detection system
+        # Applies to everything but projectile weapons
 
         # Find all shottable enemies in ENEMIES list
         shottable_enemies = []
@@ -164,6 +161,7 @@ class WeaponModel:
         self.switching = 0
 
         self.draw_y = 0
+        self.update()
 
     def shoot(self, weapon):
         # Shooting animation system
@@ -182,7 +180,14 @@ class WeaponModel:
                     self.shooting = False
 
             if self.column == 1:
-                PLAYER.shoot(weapon)
+                # Time to shoot
+                if not weapon.melee:
+                    weapon.mag_ammo -= 1
+                if not weapon.projectile:
+                    PLAYER.hitscan(weapon)
+                else:
+                    p = Projectile((PLAYER.x, PLAYER.y), PLAYER.viewangle, weapon.projectile_speed, weapon.projectile)
+                    PROJECTILES.append(p)
 
     def reload(self, weapon):
         self.ticks += 1
@@ -318,6 +323,11 @@ class Wall(Drawable):
 
 
 class Sprite:
+
+    # Amount of ticks that every image of animation is going to be shown
+    # The delay of which images are going to change
+    animation_ticks = 5
+
     def draw(self, surface):
         # Optimized sprite drawing function made for Enemies and Objects
 
@@ -346,14 +356,69 @@ class Sprite:
                     except pygame.error:  # If scaling size is too big (happens rarely if player too close to enemy)
                         break  # End drawing sprite
 
-    def calc_display_xy(self, angle_from_player):
+    def calc_display_xy(self, angle_from_player, y_multiplier=1.0):
         # In order to calculate sprite's correct display x/y position, we need to calculate it's camera plane position
         # NOTE: atan2(delta_y, delta_x) is the angle from player to sprite
 
         camera_plane_pos = CAMERA_PLANE_LEN / 2 + tan(angle_from_player - PLAYER.viewangle) * CAMERA_PLANE_DIST
 
         self.display_x = D_W * camera_plane_pos - self.width / 2
-        self.display_y = (D_H - self.height) / 2
+        self.display_y = (D_H  - self.height * y_multiplier) / 2
+
+
+class Projectile(Drawable, Sprite):
+    def __init__(self, pos, angle, speed, images):
+        self.angle = angle
+        self.speed = speed
+        self.x, self.y = pos
+        self.x += cos(self.angle) * 0.25
+        self.y += sin(self.angle) * 0.25
+        self.images = images
+
+        self.column = random.randint(0, 3)
+        self.ticks = 0
+        self.y_multiplier = 0.7  # Makes projectile draw at gun level
+        self.hit = False
+
+        self.update()
+
+    def update(self):
+        # Check wall collision
+        if TILEMAP[int(self.y)][int(self.x)] > 0:
+            self.hit = True
+
+        else:
+            for e in ENEMIES:  # Check enemy collision
+                if not e.dead:
+                    squared_dist = (e.x - self.x)**2 + (e.y - self.y)**2
+                    if squared_dist < 0.03:
+                        self.hit = True
+                        e.hurt()
+                        break
+            else:
+                self.ticks += 1
+                if self.ticks == Sprite.animation_ticks:
+                    self.ticks = 0
+                    self.column += 1
+                    if self.column > 3:
+                        self.column = 0
+                self.x += cos(self.angle) * self.speed
+                self.y += sin(self.angle) * self.speed
+
+        # Update image for drawing
+        delta_x = self.x - PLAYER.x
+        delta_y = self.y - PLAYER.y
+        angle_from_player = atan2(delta_y, delta_x)
+
+        self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
+        if self.perp_dist > 0:
+            self.image = self.images.subsurface(self.column * TEXTURE_SIZE, 0, TEXTURE_SIZE, TEXTURE_SIZE)
+
+            self.height = self.width = int(Drawable.constant / self.perp_dist)
+            if self.height > D_H:
+                self.adjust_image_height()
+
+            self.calc_display_xy(angle_from_player, self.y_multiplier)
 
 
 class Object(Drawable, Sprite):
@@ -382,10 +447,6 @@ class Object(Drawable, Sprite):
 
 class Enemy(Drawable, Sprite):
 
-    # Amount of ticks that every image of animation is going to be shown
-    # The delay of which images are going to change
-    animation_ticks = 5
-
     # Stationary enemy turning speed
     # Radians per tick as always
     turning_speed = 0.1
@@ -412,7 +473,7 @@ class Enemy(Drawable, Sprite):
         self.anim_ticks = 0  # Time passed during animation
         self.last_saw_ticks = self.memory  # Time passed when the enemy last saw the player
         self.stationary_ticks = 0  # Time enemy has stayed stationary/without moving (turning counts as moving)
-        self.last_hit_anim_ticks = Enemy.animation_ticks  # Makes enemies not freeze when they're shot very often
+        self.last_hit_anim_ticks = Sprite.animation_ticks  # Makes enemies not freeze when they're shot very often
 
     def get_look_angles(self):
         # Creates a list of angles that are going to be chosen by random when stationary every once in a while
@@ -460,7 +521,7 @@ class Enemy(Drawable, Sprite):
             self.anim_ticks = 0  # Reset animation ticks
             self.dead = True  # Mark as dead
             self.column = 0  # Choose first death animation frame
-        elif self.last_hit_anim_ticks >= Enemy.animation_ticks - 2:  # If not dead and enough time passed to show new hit animation
+        elif self.last_hit_anim_ticks >= Sprite.animation_ticks - 2:  # If not dead and enough time passed to show new hit animation
             self.hit = True
             self.row = 5
             self.anim_ticks = 0
@@ -497,8 +558,8 @@ class Enemy(Drawable, Sprite):
         if self.shooting:
             self.row = 6
             self.anim_ticks += 1
-            self.column = int(self.anim_ticks / Enemy.animation_ticks)
-            if self.anim_ticks == Enemy.animation_ticks * 2:
+            self.column = int(self.anim_ticks / Sprite.animation_ticks)
+            if self.anim_ticks == Sprite.animation_ticks * 2:
                 self.shoot()
             if self.column > 2:
                 self.column = 2
@@ -538,7 +599,7 @@ class Enemy(Drawable, Sprite):
                     self.angle = self.wanted_angle
 
             # Update last hit animation ticks
-            if self.last_hit_anim_ticks != Enemy.animation_ticks:
+            if self.last_hit_anim_ticks != Sprite.animation_ticks:
                 self.last_hit_anim_ticks += 1
 
             if not self.path:
@@ -613,7 +674,7 @@ class Enemy(Drawable, Sprite):
                     self.row = 1
                 # Cycle through running animations
                 self.anim_ticks += 1
-                if self.anim_ticks == Enemy.animation_ticks:
+                if self.anim_ticks == Sprite.animation_ticks:
                     self.anim_ticks = 0
                     self.row += 1
                     if self.row == 5:
@@ -626,13 +687,13 @@ class Enemy(Drawable, Sprite):
             if self.dead:  # If dead/dying
                 if self.column < 4:  # 4 is the final death animation frame ; If death animation not completed
                     self.anim_ticks += 1
-                    if self.anim_ticks == Enemy.animation_ticks:
+                    if self.anim_ticks == Sprite.animation_ticks:
                         self.anim_ticks = 0
                         self.column += 1
             else:  # If hit
                 self.column = 7
                 self.anim_ticks += 1
-                if self.anim_ticks == Enemy.animation_ticks:
+                if self.anim_ticks == Sprite.animation_ticks:
                     self.anim_ticks = 0
                     self.hit = False
                     self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
@@ -657,12 +718,14 @@ class Crosshair:
         self.gap = gap
         self.len = len
         self.colour = colour
+        self.visible = False
 
     def draw(self, surface):
-        pygame.draw.line(surface, self.colour, (H_W + self.gap, H_H), (H_W + self.gap + self.len, H_H), self.width)
-        pygame.draw.line(surface, self.colour, (H_W - self.gap, H_H), (H_W - self.gap - self.len, H_H), self.width)
-        pygame.draw.line(surface, self.colour, (H_W, H_H + self.gap), (H_W, H_H + self.gap + self.len), self.width)
-        pygame.draw.line(surface, self.colour, (H_W, H_H - self.gap), (H_W, H_H - self.gap - self.len), self.width)
+        if self.visible:
+            pygame.draw.line(surface, self.colour, (H_W + self.gap, H_H), (H_W + self.gap + self.len, H_H), self.width)
+            pygame.draw.line(surface, self.colour, (H_W - self.gap, H_H), (H_W - self.gap - self.len, H_H), self.width)
+            pygame.draw.line(surface, self.colour, (H_W, H_H + self.gap), (H_W, H_H + self.gap + self.len), self.width)
+            pygame.draw.line(surface, self.colour, (H_W, H_H - self.gap), (H_W, H_H - self.gap - self.len), self.width)
 
 
 def events():
@@ -674,6 +737,9 @@ def events():
         if event.type == pygame.KEYDOWN:
             if event.key == K_ESCAPE:
                 RUNNING = False
+
+            elif event.key == K_F1:
+                CROSSHAIR.visible = not CROSSHAIR.visible
 
             elif event.key == K_r and not weapon.melee:
                 # If magazine not full and weapon not shooting
@@ -741,16 +807,22 @@ def can_see(from_, to, viewangle, fov):
 
 def update_gameobjects():
     # Function made for updating dynamic game objects every frame
-    for d in DOORS:
+    for c, d in enumerate(DOORS):
         d.move()
+        if d.state == 0:
+            del DOORS[c]
     for e in ENEMIES:
         e.update()
+    for c, p in enumerate(PROJECTILES):
+        p.update()
+        if p.hit:
+            del PROJECTILES[c]
     WEAPON_MODEL.update()
 
 
 def draw_frame():
     # Sorting objects by perp_dist so those further away are drawn first
-    to_draw = WALLS + ENEMIES + OBJECTS
+    to_draw = WALLS + ENEMIES + OBJECTS + PROJECTILES
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
     for obj in to_draw:
         obj.draw(DISPLAY)
@@ -796,7 +868,7 @@ def load_level(level_nr, tile_values_info):
         except pygame.error:
             sky_texture = None
         else:
-            sky_texture = pygame.transform.scale(sky_texture, (int(2 * pi / FOV) * D_W, H_H))
+            sky_texture = pygame.transform.scale(sky_texture, (D_W * 4, H_H))
 
         tilemap = []
         for line in f:
@@ -809,7 +881,7 @@ def load_level(level_nr, tile_values_info):
     # Run pathfinding setup function
     pathfinding.setup(tilemap, tile_values_info)
 
-    return player, background_colours, sky_texture, tilemap, []  # <-- empty doors list
+    return player, background_colours, sky_texture, tilemap, [], []  # <-- empty doors and projectiles lists, need to reset these if level changes
 
 
 def send_rays():
@@ -818,10 +890,6 @@ def send_rays():
 
     global OBJECTS
     OBJECTS = []
-
-    for c, d in enumerate(DOORS):
-        if d.state == 0:  # If door not in motion
-            del DOORS[c]
 
     # Checking if player is standing on an object
     tile_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
@@ -1093,6 +1161,8 @@ def draw_hud():
 
         return (red, green, 0)
 
+    x_safezone = 6  # In pixels
+
     # Simulates blinking effect
     global ALPHA
     ALPHA -= 15
@@ -1101,23 +1171,19 @@ def draw_hud():
 
     # FPS counter
     text_surface = GAME_FONT.render(str(round(CLOCK.get_fps())), False, (0, 255, 0))
-    DISPLAY.blit(text_surface, (4, 4))
+    DISPLAY.blit(text_surface, (3, 3))
 
     # Crosshair
     CROSSHAIR.draw(DISPLAY)
 
-    # Weapon model
+    # Weapon HUD
     WEAPON_MODEL.draw(DISPLAY)
     current_weapon = WEAPON_MODEL.weapon
 
-    # Weapon text HUD
-    if not current_weapon.melee:
-        # Weapon text
-        weapon_name = '{}: '.format(current_weapon.name)
-        weapon_name_surface = GAME_FONT.render(weapon_name, False, (255, 255, 255))
-        DISPLAY.blit(weapon_name_surface, (4, D_H - 32))
-
-        # Weapon ammo
+    weapon_name_surface = GAME_FONT.render(str(current_weapon.name), False, (255, 255, 255))
+    if current_weapon.melee:
+        weapon_ammo_surface = GAME_FONT.render('--/--', False, (0, 255, 0))
+    else:
         if not WEAPON_MODEL.reloading:
             if current_weapon.ammo_unlimited:
                 total_ammo = 'Unlimited'
@@ -1137,17 +1203,15 @@ def draw_hud():
             weapon_ammo_surface = GAME_FONT.render('Reloading', False, (255, 0, 0), (0, 0, 0))  # Set background to black
             weapon_ammo_surface.set_colorkey((0, 0, 0))  # Tell program to treat black as transparent
             weapon_ammo_surface.set_alpha(abs(ALPHA))
-        DISPLAY.blit(weapon_ammo_surface, (4 + weapon_name_surface.get_width(), D_H - 32))
-    else:
-        weapon_name_surface = GAME_FONT.render(str(current_weapon.name), False, (255, 255, 255))
-        DISPLAY.blit(weapon_name_surface, (4, D_H - 32))
 
-    # Player hp
-    hp_text_surface = GAME_FONT.render('HP: ', False, (255, 255, 255))
-    DISPLAY.blit(hp_text_surface, (4, D_H - 64))
+    DISPLAY.blit(weapon_name_surface, (D_W - weapon_name_surface.get_width() - x_safezone, D_H - 64))
+    DISPLAY.blit(weapon_ammo_surface, (D_W - weapon_ammo_surface.get_width() - x_safezone, D_H - 32))
 
+    # Player hp HUD
+    hp_text_surface = GAME_FONT.render('HP:', False, (255, 255, 255))
     hp_amount_surface = GAME_FONT.render(str(PLAYER.hp), False, dynamic_colour(PLAYER.hp, 100))
-    DISPLAY.blit(hp_amount_surface, (4 + hp_text_surface.get_width(), D_H - 64))
+    DISPLAY.blit(hp_text_surface, (x_safezone, D_H - 64))
+    DISPLAY.blit(hp_amount_surface, (x_safezone, D_H - 32))
 
 
 def get_rayangles(rays_amount):
@@ -1191,8 +1255,8 @@ if __name__ == '__main__':
     import raycasting.game.pathfinding as pathfinding
 
     # Game settings
-    D_W = 1024
-    D_H = 800
+    D_W = 800
+    D_H = 600
     H_W = int(D_W / 2)  # Half width
     H_H = int(D_H / 2)  # Half height
     FOV = pi / 2  # = 90 degrees
@@ -1226,7 +1290,8 @@ if __name__ == '__main__':
     BACKGROUND_COLOURS,\
     SKY_TEXTURE,\
     TILEMAP,\
-    DOORS = load_level(1, TILE_VALUES_INFO)
+    DOORS,\
+    PROJECTILES = load_level(1, TILE_VALUES_INFO)
 
     ENEMIES = load_enemies(TILEMAP, TILE_VALUES_INFO)
 
@@ -1242,8 +1307,8 @@ if __name__ == '__main__':
         PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
         PLAYER.dir_x, PLAYER.dir_y = movement()
 
-        update_gameobjects()
         events()
+        update_gameobjects()
 
         draw_background()
         send_rays()
