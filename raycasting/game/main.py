@@ -3,6 +3,7 @@
 # Enemy continuous shooting from point blank
 # Level end system
 # Level editor sky texture choosing
+# Make enemies alert other enemies in the same room
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -179,7 +180,7 @@ class WeaponModel:
                     self.column = 0  # End animation
                     self.shooting = False
 
-            if self.column == 1:
+            if self.column == weapon.shot_column:
                 # Time to shoot
                 if not weapon.melee:
                     weapon.mag_ammo -= 1
@@ -375,9 +376,10 @@ class Projectile(Drawable, Sprite):
         self.y += sin(self.angle) * 0.25
         self.images = images
 
-        self.column = random.randint(0, 3)
+        self.column = random.randint(0, 2)
+        self.damage = self.column + 1
         self.ticks = 0
-        self.y_multiplier = 0.7  # Makes projectile draw at gun level
+        self.y_multiplier = 0.55  # Makes projectile draw at gun level
         self.hit = False
 
         self.update()
@@ -393,14 +395,14 @@ class Projectile(Drawable, Sprite):
                     squared_dist = (e.x - self.x)**2 + (e.y - self.y)**2
                     if squared_dist < 0.03:
                         self.hit = True
-                        e.hurt()
+                        e.hurt(self.damage)
                         break
             else:
                 self.ticks += 1
                 if self.ticks == Sprite.animation_ticks:
                     self.ticks = 0
                     self.column += 1
-                    if self.column > 3:
+                    if self.column > 2:
                         self.column = 0
                 self.x += cos(self.angle) * self.speed
                 self.y += sin(self.angle) * self.speed
@@ -577,8 +579,8 @@ class Enemy(Drawable, Sprite):
                 self.last_saw_ticks = 0
             elif self.last_saw_ticks < self.memory:
                 self.last_saw_ticks += 1
-            else:  # Don't know player location
-                self.wanted_angle = self.angle
+            elif self.dist_squared > 2:  # If dist more than sqrt(2) == 1.4
+                self.wanted_angle = self.angle  # Reset wanted_angle ; Don't look at player
 
             # Turn towards wanted angle
             if self.angle != self.wanted_angle:
@@ -1272,7 +1274,7 @@ if __name__ == '__main__':
     pygame.event.set_grab(True)
 
     # Font
-    GAME_FONT = pygame.font.Font('../LCD_Solid.ttf', 32)
+    GAME_FONT = pygame.font.Font('../font/LCD_Solid.ttf', 32)
     ALPHA = 255  # Text transparency value used to create blinking texts in draw_hud()
 
     TEXTURE_SIZE = 64

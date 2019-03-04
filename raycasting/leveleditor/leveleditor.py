@@ -509,7 +509,7 @@ CLOCK = pygame.time.Clock()
 
 # Font stuff
 FONT_SIZE = 16
-LEVELEDITOR_FONT = pygame.font.Font('../LCD_Solid.ttf', FONT_SIZE)
+LEVELEDITOR_FONT = pygame.font.Font('../font/LCD_Solid.ttf', FONT_SIZE)
 
 TILEMAP = Tilemap()
 ACTIVE_VALUE = 0

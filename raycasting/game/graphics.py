@@ -1,10 +1,11 @@
 def get_weapons(sys_module, pygame_module):
     class Weapon:
-        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, reload_time, mag_size, automatic, ammo_unlimited, projectile=False, projectile_speed=0.25):
+        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column, reload_time, mag_size, automatic, ammo_unlimited, projectile=False, projectile_speed=0.25):
             self.name = name
             self.weapon_sheet = weapon_sheet
             self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
             self.fire_delay = fire_delay  # Has to be dividable by animation frames
+            self.shot_column = shot_column  # Weapon sheet column that shoots
 
             self.reload_time = reload_time  # Reloading time in ticks, has to be even number
             self.mag_size = mag_size  # Mag's total capacity
@@ -18,11 +19,12 @@ def get_weapons(sys_module, pygame_module):
                 self.projectile_speed = projectile_speed  # Units per tick
 
     class Melee:
-        def __init__(self, name, weapon_sheet, animation_frames, fire_delay):
+        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column):
             self.name = name
             self.weapon_sheet = weapon_sheet
             self.animation_frames = animation_frames
             self.fire_delay = fire_delay
+            self.shot_column = shot_column
 
             self.mag_ammo = False
             self.automatic = False
@@ -41,6 +43,7 @@ def get_weapons(sys_module, pygame_module):
         pistol = scale(pygame.image.load('../textures/weapons/pistol.png').convert_alpha(), 8)
         machinegun = scale(pygame.image.load('../textures/weapons/machinegun.png').convert_alpha(), 8)
         chaingun = scale(pygame.image.load('../textures/weapons/chaingun.png').convert_alpha(), 8)
+        plasmagun = scale(pygame.image.load('../textures/weapons/plasmagun.png').convert_alpha(), 8)
 
         plasma = pygame.image.load('../textures/projectiles/plasma.png').convert_alpha()
 
@@ -49,10 +52,11 @@ def get_weapons(sys_module, pygame_module):
 
     else:
         weapons = [None]  # Makes it so first weapon is index 1 insted of 0
-        weapons.append(Melee('Knife', knife, 3, 9))
-        weapons.append(Weapon('Pistol', pistol, 4, 8, 50, 12, False, True))
-        weapons.append(Weapon('Machinegun', machinegun, 4, 4, 60, 30, True, False, plasma))
-        weapons.append(Weapon('Chaingun', chaingun, 3, 3, 120, 50, True, False))
+        weapons.append(Melee('Knife', knife, 3, 9, 2))
+        weapons.append(Weapon('Pistol', pistol, 4, 8, 2, 50, 12, False, True))
+        weapons.append(Weapon('Machinegun', machinegun, 4, 4, 2, 60, 25, True, False))
+        weapons.append(Weapon('Chaingun', chaingun, 3, 3, 1, 120, 50, True, False))
+        weapons.append(Weapon('Plasmagun', plasmagun, 2, 4, 2, 80, 35, True, True, plasma))
         return weapons
 
 
