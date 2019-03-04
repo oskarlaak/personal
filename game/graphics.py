@@ -98,7 +98,7 @@ def get_enemy_info(sys_module, pygame_module):
             # hittable_amount = "average amount enemy" in each enemy's spritesheets cells
             #                   (basicly how much of average cell is non-transparent)
             guard:   (  'Guard', 3, 0.04, 10,  90, 120, 1/3),
-            ss:      (     'SS', 9, 0.05, 20, 150, 120, 1/2),
+            ss:      (     'SS', 19, 0.05, 20, 150, 120, 1/2),
             officer: ('Officer', 6, 0.06, 15, 150,  90, 1/3)
         }
         return enemy_info
