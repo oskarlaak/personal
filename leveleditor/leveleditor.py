@@ -489,7 +489,7 @@ def get_texturegroups():
 
 
 import math
-import raycasting.game.graphics as graphics
+import game.graphics as graphics
 import pygame
 import sys
 import os

@@ -212,7 +212,7 @@ def pathfind(start, end):
 
 
 if __name__ == '__main__':
-    import raycasting.game.graphics as graphics
+    import game.graphics as graphics
     import sys
     import pygame
     from pygame.locals import *

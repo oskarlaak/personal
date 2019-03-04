@@ -1253,8 +1253,8 @@ if __name__ == '__main__':
     import pygame
     from pygame.locals import *
 
-    import raycasting.game.graphics as graphics
-    import raycasting.game.pathfinding as pathfinding
+    import game.graphics as graphics
+    import game.pathfinding as pathfinding
 
     # Game settings
     D_W = 800
