@@ -8,8 +8,8 @@ def get_neighbour_doors(pos):
     # Returns a list of doors that can be reached from given location
     def get_unvisited(pos):
         all_points = visited + unvisited
-        for x in range(-1, 2):  # -1, 0, 1
-            for y in range(-1, 2):  # -1, 0, 1
+        for x in (-1, 0, 1):
+            for y in (-1, 0, 1):
                 pos_x, pos_y = (pos[0] + x, pos[1] + y)
                 if (pos_x, pos_y) not in all_points:
                     if TILEMAP[pos_y][pos_x] <= 0:
@@ -78,8 +78,8 @@ def a_star(start, end):
             while True:
                 point_x, point_y = path[-1]
                 neighbours = []
-                for x in range(-1, 2):  # -1, 0, 1
-                    for y in range(-1, 2):  # -1, 0, 1
+                for x in (-1, 0, 1):
+                    for y in (-1, 0, 1):
                         pos = (point_x + x, point_y + y)
                         if pos in visited and pos not in path:
                             neighbours.append(pos)
@@ -106,8 +106,8 @@ def a_star(start, end):
 
     def get_unvisited(pos):
         all_points = visited + unvisited
-        for x in range(-1, 2):  # -1, 0, 1
-            for y in range(-1, 2):  # -1, 0, 1
+        for x in (-1, 0, 1):
+            for y in (-1, 0, 1):
                 pos_x, pos_y = (pos[0] + x, pos[1] + y)
                 if (pos_x, pos_y) not in all_points and TILEMAP[pos_y][pos_x] <= 0:
                     unvisited.append((pos_x, pos_y))

@@ -1,6 +1,7 @@
 # TO DO:
 # Enemy hitscan
-# Enemy shooting when seeing enemy but standing
+# Make projectiles go through semi-open doors
+# Grenades
 # Level end system
 # Level editor sky texture choosing
 
@@ -450,7 +451,7 @@ class Enemy(Drawable, Sprite):
 
     # Stationary enemy turning speed
     # Radians per tick as always
-    turning_speed = 0.1
+    turning_speed = 0.08
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = self.home = pos
@@ -485,7 +486,7 @@ class Enemy(Drawable, Sprite):
         rayangles = [x/10*pi for x in range(10, -10, -1)]  # 20 different viewangles should be enough
         for rayangle in rayangles:
 
-            ray_x, ray_y = raycast(rayangle, (self.x, self.y))[1:3]  # <-- Only selects ray_x/ray_y
+            ray_x, ray_y = simple_raycast(rayangle, (self.x, self.y))
             ray_dist = sqrt((ray_x - self.x)**2 + (ray_y - self.y)**2)
 
             for _ in range(int(ray_dist)):
@@ -559,6 +560,31 @@ class Enemy(Drawable, Sprite):
                     return True
         return False
 
+    def ready_to_shoot(self):
+        #return self.alerted and self.dist_squared < self.shooting_range ** 2 and can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
+        if self.alerted and self.dist_squared < self.shooting_range ** 2 and can_see((self.x, self.y), (PLAYER.x, PLAYER.y)):
+            return True
+        return False
+
+    def strafe(self):
+        # Gets new path to a random empty neighbour tile (if possible)
+        avaivable_tiles = []
+        for x in (-1, 0 ,1):
+            for y in (-1, 0, 1):
+                tile_x = int(self.x) + x
+                tile_y = int(self.y) + y
+                if TILEMAP[tile_y][tile_x] <= 0:  # If tile steppable
+                    for e in ENEMIES:  # Check if no enemies standing there
+                        if (int(e.x), int(e.y)) == (tile_x, tile_y):
+                            break
+                    else:
+                        avaivable_tiles.append((tile_x, tile_y))
+
+        if avaivable_tiles:
+            self.path = pathfinding.pathfind((self.x, self.y), random.choice(avaivable_tiles))
+        else:
+            self.path = []
+
     def update(self):
 
         # Enemy door opening system
@@ -581,6 +607,10 @@ class Enemy(Drawable, Sprite):
         angle_from_player = atan2(delta_y, delta_x)
         self.dist_squared = delta_x**2 + delta_y**2
 
+        # Make enemy shoot when he's in player's tile
+        if not self.hit and (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
+            if random.randint(0, 10) == 0:
+                self.shooting = True
         if self.shooting:
             self.row = 6
             self.anim_ticks += 1
@@ -647,7 +677,14 @@ class Enemy(Drawable, Sprite):
                 step_x, step_y = self.path[0]
                 for e in ENEMIES:
                     if not e.dead and e.home != self.home and (int(e.x), int(e.y)) == (step_x, step_y):
-                        self.path = []  # Needed to draw enemy standing
+                        # Enemy has path but can't move --> either shoot (if possible) or move position
+                        if random.randint(0, 1) == 0:
+                            if self.ready_to_shoot():
+                                self.shooting = True
+                                self.angle = atan2(-delta_y, -delta_x)
+                                self.path = []  # Need to draw enemy standing
+                        else:
+                            self.strafe()  # Gets new path to a random neighbour tile
                         break
                 else:
                     self.stationary_ticks = 0
@@ -665,8 +702,9 @@ class Enemy(Drawable, Sprite):
                         self.x = step_x
                         self.y = step_y
                         # If alerted, close enough to player and possible for the shot to make it
-                        if self.alerted and self.dist_squared < self.shooting_range ** 2 and can_see((self.x, self.y), (PLAYER.x, PLAYER.y)):
+                        if self.ready_to_shoot():
                             self.shooting = True
+                            self.angle = atan2(-delta_y, -delta_x)
                             self.path = []  # Needed to draw enemy standing
                         elif self.alerted:
                             self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
@@ -815,7 +853,7 @@ def can_see(from_, to, viewangle=0.0, fov=0.0):
             return False
 
     # Check if there is something between end and start point
-    ray_x, ray_y = raycast(angle_to_end, from_)[1:3]  # [1:3] only selects ray_x/ray_y
+    ray_x, ray_y = simple_raycast(angle_to_end, from_)
     ray_dist_squared = (start_x - ray_x) ** 2 + (start_y - ray_y) ** 2
     end_dist_squared = (start_x - end_x) ** 2 + (start_y - end_y) ** 2
     return ray_dist_squared > end_dist_squared  # Returns True if interception farther than end point
@@ -1022,7 +1060,6 @@ def raycast(rayangle, start_pos):
 
         tile_value = TILEMAP[map_y][map_x]
         if tile_value != 0:  # If ray touching something
-
             tile_id = TILE_VALUES_INFO[tile_value][0]
 
             if tile_id[0] == 'Object':
@@ -1084,6 +1121,92 @@ def raycast(rayangle, start_pos):
                 column += TEXTURE_SIZE  # Makes block sides different
 
             return tile_value, ray_x, ray_y, column
+
+
+def simple_raycast(rayangle, start_pos):
+    # Used to only get the ray interception point without creating objects that are in the way
+
+    if abs(rayangle) > pi / 2:
+        A = 0
+    else:
+        A = 1
+    if rayangle < 0:
+        B = 0
+    else:
+        B = 1
+
+    ray_x, ray_y = start_pos
+    tan_rayangle = tan(rayangle)
+
+    while True:
+        x_offset = ray_x - int(ray_x)
+        if x_offset == A:
+            x_offset = 1
+
+        y_offset = ray_y - int(ray_y)
+        if y_offset == B:
+            y_offset = 1
+
+        interception_y = (A - x_offset) * tan_rayangle
+        if int(ray_y - y_offset) == int(ray_y + interception_y):
+            # Hitting vertical gridline ( | )
+            interception_x = A - x_offset
+
+            ray_x += interception_x
+            ray_y += interception_y
+            map_y = int(ray_y)
+            map_x = int(ray_x) + (A - 1)
+            side = 0
+
+        else:
+            # Hitting horizontal gridline ( -- )
+            interception_x = (B - y_offset) / tan_rayangle
+            interception_y = B - y_offset
+
+            ray_x += interception_x
+            ray_y += interception_y
+            map_y = int(ray_y) + (B - 1)
+            map_x = int(ray_x)
+            side = 1
+
+        tile_value = TILEMAP[map_y][map_x]
+        if tile_value != 0:  # If ray touching something
+            tile_id = TILE_VALUES_INFO[tile_value][0]
+
+            if tile_id[0] == 'Object':
+                continue
+
+            if tile_id[0] == 'Door':
+                # Update (x/y)_offset values
+                x_offset = ray_x - int(ray_x)
+                if x_offset == A:
+                    x_offset = 1
+
+                y_offset = ray_y - int(ray_y)
+                if y_offset == B:
+                    y_offset = 1
+
+                door = Door((map_x, map_y), tile_value)
+
+                if side == 0:  # If vertical ( | )
+                    interception_y = (-0.5 + A) * tan_rayangle
+                    offset = ray_y + interception_y - int(ray_y + interception_y)
+                    if int(ray_y - y_offset) == int(ray_y + interception_y) and offset > door.opened_state:
+                        ray_x += (-0.5 + A)
+                        ray_y += interception_y
+                    else:
+                        continue
+
+                else:  # If horizontal ( -- )
+                    interception_x = (-0.5 + B) / tan_rayangle
+                    offset = ray_x + interception_x - int(ray_x + interception_x)
+                    if int(ray_x - x_offset) == int(ray_x + interception_x) and offset > door.opened_state:
+                        ray_x += interception_x
+                        ray_y += (-0.5 + B)
+                    else:
+                        continue
+
+            return ray_x, ray_y
 
 
 def fixed_angle(angle):
