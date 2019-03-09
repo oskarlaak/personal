@@ -1,9 +1,9 @@
 # TO DO:
 # Enemy hitscan
-# Make projectiles go through semi-open doors
 # Grenades
 # Level end system
 # Level editor sky texture choosing
+# Visit all warnings and typos
 
 # NOTES:
 # Movement keys are handled in movement() and other keys in events()
@@ -132,7 +132,11 @@ class Player:
                 x_collision, y_collision = one_point_collision(up, left)
 
         elif down_left:
-            x_collision, y_collision = one_point_collision(down, left)
+            if up_right:
+                x_collision = True
+                y_collision = True
+            else:
+                x_collision, y_collision = one_point_collision(down, left)
 
         elif up_right:
             x_collision, y_collision = one_point_collision(up, right)
@@ -187,7 +191,7 @@ class WeaponModel:
                 if not weapon.projectile:
                     PLAYER.hitscan(weapon)
                 else:
-                    p = Projectile((PLAYER.x, PLAYER.y), PLAYER.viewangle, weapon.projectile_speed, weapon.projectile)
+                    p = Projectile((PLAYER.x, PLAYER.y), PLAYER.viewangle, weapon.projectile)
                     PROJECTILES.append(p)
 
     def reload(self, weapon):
@@ -368,44 +372,89 @@ class Sprite:
 
 
 class Projectile(Drawable, Sprite):
-    def __init__(self, pos, angle, speed, images):
+    def __init__(self, pos, angle, projectile):
+        # projectile is a Projectile object made in graphics.py get_weapons()
+        self.sheet = projectile.sheet
+        self.columns = projectile.columns
+        self.column = random.randint(0, self.columns - 1)
+        self.row = 0
+        self.y_multiplier = projectile.y_multiplier  # Makes projectile draw at gun level
+
         self.angle = angle
-        self.speed = speed
+        self.speed = projectile.speed
+        self.x_step = cos(self.angle) * self.speed
+        self.y_step = sin(self.angle) * self.speed
         self.x, self.y = pos
-        self.x += cos(self.angle) * 0.25
-        self.y += sin(self.angle) * 0.25
-        self.images = images
 
-        self.column = random.randint(0, 2)
-        self.damage = self.column + 1
         self.ticks = 0
-        self.y_multiplier = 0.55  # Makes projectile draw at gun level
+        self.to_delete = False
         self.hit = False
+        self.hit_radius = projectile.hit_radius
+        self.damage = projectile.damage
+        self.exploding = projectile.exploding
 
-        self.update()
+        self.update()  # One update is needed to get self.perp_dist
+        self.update()  # Second is to avoid drawing projectile too close to player
 
     def update(self):
-        # Check wall collision
-        if TILEMAP[int(self.y)][int(self.x)] > 0:
-            self.hit = True
+        if not self.hit:
+            self.x += self.x_step
+            self.y += self.y_step
 
-        else:
-            for e in ENEMIES:  # Check enemy collision
+            # Check for collision
+            for e in ENEMIES:
                 if not e.dead:
-                    squared_dist = (e.x - self.x)**2 + (e.y - self.y)**2
-                    if squared_dist < 0.03:
+                    squared_dist = (e.x - self.x) ** 2 + (e.y - self.y) ** 2
+                    if squared_dist < self.hit_radius ** 2:
                         self.hit = True
-                        e.hurt(self.damage)
+                        if not self.exploding:
+                            e.hurt(self.damage)
                         break
             else:
-                self.ticks += 1
-                if self.ticks == Sprite.animation_ticks:
-                    self.ticks = 0
-                    self.column += 1
-                    if self.column > 2:
-                        self.column = 0
-                self.x += cos(self.angle) * self.speed
-                self.y += sin(self.angle) * self.speed
+                tile_value = TILEMAP[int(self.y)][int(self.x)]
+                if tile_value != 0:
+                    tile_id = TILE_VALUES_INFO[tile_value][0]
+                    if tile_id[0] == 'Wall':
+                        self.hit = True
+                        # Cancel step
+                        self.x -= self.x_step
+                        self.y -= self.y_step
+                        # Get the exact contact point
+                        self.x, self.y = simple_raycast(self.angle, (self.x, self.y))
+
+                    elif tile_id[0] == 'Door':
+                        came_from = simple_raycast(fixed_angle(self.angle + pi), (self.x, self.y))
+                        max_travel_point = simple_raycast(self.angle, came_from)
+                        max_travel_dist_squared = (came_from[0] - max_travel_point[0])**2 +\
+                                                  (came_from[1] - max_travel_point[1])**2
+                        projectile_dist_squared = (came_from[0] - self.x)**2 + (came_from[1] - self.y)**2
+                        if max_travel_dist_squared < projectile_dist_squared:
+                            self.hit = True
+                            # Get the exact contact point
+                            self.x, self.y = max_travel_point
+
+            if self.hit:
+                # Trace back position a little bit
+                self.x -= self.x_step * 0.3
+                self.y -= self.y_step * 0.3
+                self.column = 0
+                self.row = 1
+                self.ticks = 0
+                if self.exploding:
+                    for e in ENEMIES:
+                        squared_dist = (self.x - e.x)**2 + (self.y - e.y)**2
+                        if squared_dist < 1:  # If enemy in 1 unit distance
+                            e.hurt(self.damage)
+                self.update()
+
+        self.ticks += 1
+        if self.ticks == Sprite.animation_ticks:
+            self.ticks = 0
+            self.column += 1
+            if self.column >= self.columns:
+                self.column = 0
+                if self.hit:
+                    self.to_delete = True
 
         # Update image for drawing
         delta_x = self.x - PLAYER.x
@@ -414,13 +463,18 @@ class Projectile(Drawable, Sprite):
 
         self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
         if self.perp_dist > 0:
-            self.image = self.images.subsurface(self.column * TEXTURE_SIZE, 0, TEXTURE_SIZE, TEXTURE_SIZE)
+            self.image = self.sheet.subsurface(self.column * TEXTURE_SIZE, self.row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
 
             self.height = self.width = int(Drawable.constant / self.perp_dist)
             if self.height > D_H:
                 self.adjust_image_height()
 
             self.calc_display_xy(angle_from_player, self.y_multiplier)
+
+
+class Grenade:
+    def __init__(self):
+        pass
 
 
 class Object(Drawable, Sprite):
@@ -869,7 +923,7 @@ def update_gameobjects():
         e.update()
     for c, p in enumerate(PROJECTILES):
         p.update()
-        if p.hit:
+        if p.to_delete:
             del PROJECTILES[c]
     WEAPON_MODEL.update()
 
@@ -1063,12 +1117,11 @@ def raycast(rayangle, start_pos):
             tile_id = TILE_VALUES_INFO[tile_value][0]
 
             if tile_id[0] == 'Object':
-                obj = Object((map_x, map_y), tile_value)
-                for o in OBJECTS:
-                    if o == obj:
+                for obj in OBJECTS:
+                    if (obj.x - 0.5, obj.y - 0.5) == (map_x, map_y):
                         break
                 else:
-                    OBJECTS.append(obj)
+                    OBJECTS.append(Object((map_x, map_y), tile_value))
                 continue
 
             if tile_id[0] == 'Door':
@@ -1082,12 +1135,12 @@ def raycast(rayangle, start_pos):
                     y_offset = 1
 
                 # Add door to DOORS if it's not in it already
-                door = Door((map_x, map_y), tile_value)
                 for d in DOORS:
-                    if d == door:
+                    if (d.x, d.y) == (map_x, map_y):
                         door = d
                         break
                 else:
+                    door = Door((map_x, map_y), tile_value)
                     DOORS.append(door)
 
                 if side == 0:  # If vertical ( | )
@@ -1186,7 +1239,13 @@ def simple_raycast(rayangle, start_pos):
                 if y_offset == B:
                     y_offset = 1
 
-                door = Door((map_x, map_y), tile_value)
+                for d in DOORS:
+                    if (d.x, d.y) == (map_x, map_y):
+                        door = d
+                        break
+                else:
+                    # Create a closed door
+                    door = Door((map_x, map_y), tile_value)
 
                 if side == 0:  # If vertical ( | )
                     interception_y = (-0.5 + A) * tan_rayangle

@@ -1,6 +1,6 @@
 def get_weapons(sys_module, pygame_module):
     class Weapon:
-        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column, reload_time, mag_size, automatic, ammo_unlimited, projectile=False, projectile_speed=0.25):
+        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column, reload_time, mag_size, automatic, ammo_unlimited, projectile=False):
             self.name = name
             self.weapon_sheet = weapon_sheet
             self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
@@ -15,8 +15,6 @@ def get_weapons(sys_module, pygame_module):
 
             self.melee = False
             self.projectile = projectile
-            if projectile:
-                self.projectile_speed = projectile_speed  # Units per tick
 
     class Melee:
         def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column):
@@ -31,6 +29,16 @@ def get_weapons(sys_module, pygame_module):
 
             self.melee = True
             self.projectile = False
+
+    class Projectile:
+        def __init__(self, sheet, columns, y_multiplier, speed, hit_radius, damage, exploding):
+            self.sheet = sheet
+            self.columns = columns
+            self.y_multiplier = y_multiplier
+            self.speed = speed
+            self.hit_radius = hit_radius
+            self.damage = damage
+            self.exploding = exploding
 
     sys = sys_module
     pygame = pygame_module
@@ -51,6 +59,8 @@ def get_weapons(sys_module, pygame_module):
         sys.exit(loading_error)
 
     else:
+        plasma = Projectile(plasma, 4, 0.55, 0.25, 0.2, 2, False)
+
         weapons = [None]  # Makes it so first weapon is index 1 insted of 0
         weapons.append(Melee('Knife', knife, 3, 9, 2))
         weapons.append(Weapon('Pistol', pistol, 4, 8, 2, 50, 12, False, True))
