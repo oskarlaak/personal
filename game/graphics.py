@@ -228,4 +228,4 @@ if __name__ == '__main__':
 
     for value in sorted(tile_values_info):
         tile_obj = tile_values_info[value]
-        print(f'{value}: texture: {tile_obj.texture}, type: {tile_obj.type}, description: {tile_obj.desc}')
+        print('{}: texture: {}, type: {}, description: {}'.format(value, tile_obj.texture, tile_obj.type, tile_obj.desc))

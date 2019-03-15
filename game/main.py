@@ -1,7 +1,6 @@
 # TO DO:
 # Enemy hitscan
 # Level end system
-# Simplify level folders
 # Visit all warnings and typos
 
 # NOTES:
@@ -961,26 +960,8 @@ def load_enemies(tilemap, tile_values_info):
 
 
 def load_level(level_nr, tile_values_info):
-    # Decoding tilemap
+    # Create tilemap
     with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
-        row = f.readline().replace('\n', '').split(',')
-        row = [float(i) for i in row]
-        player = Player((row[0], row[1]), row[2])  # Creates player
-
-        background_colours = []
-        for _ in range(2):
-            row = f.readline().replace('\n', '').split(',')  # Split the line to a list and get rid of newline (\n)
-            row = [int(i) for i in row]  # Turn all number strings to an int
-            background_colours.append(tuple(row))
-
-        # Get sky texture if there is one
-        try:
-            sky_texture = pygame.image.load('../levels/{}/sky.png'.format(level_nr)).convert()
-        except pygame.error:
-            sky_texture = None
-        else:
-            sky_texture = pygame.transform.scale(sky_texture, (D_W * 4, H_H))
-
         tilemap = []
         for line in f:
             row = line.replace('\n', '')  # Get rid of newline (\n)
@@ -989,10 +970,36 @@ def load_level(level_nr, tile_values_info):
             row = [int(i) for i in row]  # Turn all number strings to an int
             tilemap.append(row)
 
+    # Create player
+    with open('../levels/{}/player.txt'.format(level_nr), 'r') as f:
+        player_pos = f.readline().replace('\n', '').split(',')
+        player_pos = [float(i) for i in player_pos]
+        player_angle = float(f.readline().replace('\n', ''))
+        player = Player(player_pos, player_angle)
+
+    # Background
+    with open('../levels/{}/background.txt'.format(level_nr), 'r') as f:
+        background_colours = []
+        for _ in range(2):
+            colour = f.readline().replace('\n', '').split(',')
+            colour = [int(i) for i in colour]
+            background_colours.append(tuple(colour))
+
+        skytexture = None
+        value = int(f.readline().replace('\n', ''))
+        if value > 0:
+            skytextures = os.listdir('../textures/skies')
+            try:
+                skytexture = pygame.image.load('../textures/skies/{}'.format(skytextures[value - 1])).convert()
+            except pygame.error:
+                pass
+            else:
+                skytexture = pygame.transform.scale(skytexture, (D_W * 4, H_H))
+
     # Run pathfinding setup function
     pathfinding.setup(tilemap, tile_values_info)
 
-    return player, background_colours, sky_texture, tilemap, [], []  # <-- empty doors and projectiles lists, need to reset these if level changes
+    return player, background_colours, skytexture, tilemap, [], []  # <-- empty doors and projectiles lists, need to reset these if level changes
 
 
 def send_rays():
@@ -1331,19 +1338,19 @@ def movement():
 
 
 def draw_background():
-    if SKY_TEXTURE:
+    if SKYTEXTURE:
         # x_offset is a value ranging from 0 to 1
         x_offset = (PLAYER.viewangle + pi) / (2*pi)
-        x = x_offset * SKY_TEXTURE.get_width()
+        x = x_offset * SKYTEXTURE.get_width()
 
         if x_offset <= 0.75:
             # Sky texture can be drawn as one image
-            sky = SKY_TEXTURE.subsurface(x, 0, D_W, H_H)
+            sky = SKYTEXTURE.subsurface(x, 0, D_W, H_H)
             DISPLAY.blit(sky, (0, 0))
         else:
             # Sky texture needs to be drawn as two separate parts
-            sky_left = SKY_TEXTURE.subsurface(x, 0, SKY_TEXTURE.get_width() - x, H_H)
-            sky_right = SKY_TEXTURE.subsurface(0, 0, D_W - sky_left.get_width(), H_H)
+            sky_left = SKYTEXTURE.subsurface(x, 0, SKYTEXTURE.get_width() - x, H_H)
+            sky_right = SKYTEXTURE.subsurface(0, 0, D_W - sky_left.get_width(), H_H)
             DISPLAY.blit(sky_left, (0, 0))
             DISPLAY.blit(sky_right, (sky_left.get_width(), 0))
     else:
@@ -1444,6 +1451,7 @@ def get_rayangles(rays_amount):
 
 if __name__ == '__main__':
     import sys
+    import os
 
     from math import *
     import random
@@ -1491,10 +1499,10 @@ if __name__ == '__main__':
 
     PLAYER,\
     BACKGROUND_COLOURS,\
-    SKY_TEXTURE,\
+    SKYTEXTURE,\
     TILEMAP,\
     DOORS,\
-    PROJECTILES = load_level(1, TILE_VALUES_INFO)
+    PROJECTILES = load_level(5, TILE_VALUES_INFO)
 
     ENEMIES = load_enemies(TILEMAP, TILE_VALUES_INFO)
 

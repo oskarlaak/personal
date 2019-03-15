@@ -162,23 +162,24 @@ class Tilemap:
             else:  # If rgb-s fine
                 if LEVEL_NR.text != '':  # If level number box not empty
 
-                    # Creates filepath directory if it's not there already
                     filepath = '../levels/{}/tilemap.txt'.format(LEVEL_NR.text)
                     os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
-                    # Start writing the file
                     with open(filepath, 'w') as f:
-                        f.write('{},{},{}\n'.format(start_x, start_y, ANGLEBOX.angle))  # Player x, y, starting angle
+                        for row in self.list:
+                            f.write('{}\n'.format(row))
+
+                    filepath = '../levels/{}/player.txt'.format(LEVEL_NR.text)
+                    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                    with open(filepath, 'w') as f:
+                        f.write('{},{}\n'.format(start_x, start_y))
+                        f.write(str(ANGLEBOX.angle))
+
+                    filepath = '../levels/{}/background.txt'.format(LEVEL_NR.text)
+                    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+                    with open(filepath, 'w') as f:
                         f.write('{},{},{}\n'.format(RGBS[0].text, RGBS[1].text, RGBS[2].text))  # Ceiling colour
                         f.write('{},{},{}\n'.format(RGBS[3].text, RGBS[4].text, RGBS[5].text))  # Floor colour
-                        for row in self.list:
-                            f.write('{}\n'.format(row))  # Tilemap rows
-
-                    save_path = '../levels/{}/sky.png'.format(LEVEL_NR.text)
-                    if SKYTEXTURE.value > 0:
-                        pygame.image.save(SKYTEXTURE.textures[SKYTEXTURE.value], save_path)  # Saves sky texture
-                    elif os.path.exists(save_path):
-                        os.remove(save_path)
+                        f.write(str(SKYTEXTURE.value))
 
                     self.saved = True  # Saved without errors
 
@@ -190,29 +191,6 @@ class Tilemap:
         self.saved = None
         try:
             with open('../levels/{}/tilemap.txt'.format(LEVEL_NR.text), 'r') as f:
-                player_x, player_y, player_angle = [float(i) for i in f.readline().replace('\n', '').split(',')]
-                # Update anglebox angle
-                ANGLEBOX.angle = player_angle
-
-                # Level nr
-                LEVEL_NR.text = str(LEVEL_NR.text)
-                # Ceiling colour
-                RGBS[0].text, RGBS[1].text, RGBS[2].text = f.readline().replace('\n', '').split(',')
-                # Floor colour
-                RGBS[3].text, RGBS[4].text, RGBS[5].text = f.readline().replace('\n', '').split(',')
-
-                # Update SKYTEXTURE value
-                try:
-                    sky_texture = pygame.image.load('../levels/{}/sky.png'.format(LEVEL_NR.text)).convert()
-                except pygame.error:
-                    SKYTEXTURE.value = 0
-                else:
-                    for value, st in enumerate(SKYTEXTURE.textures):
-                        if st == sky_texture:
-                            SKYTEXTURE.value = value
-                            break
-
-                # Update the tilemap
                 self.list = []
                 for line in f:
                     row = line.replace('\n', '')  # Get rid of newline (\n)
@@ -220,8 +198,23 @@ class Tilemap:
                     row = row.split(',')  # Split line into list
                     row = [int(i) for i in row]  # Turn all number strings to an int
                     self.list.append(row)
+
+            with open('../levels/{}/player.txt'.format(LEVEL_NR.text), 'r') as f:
+                player_pos = f.readline().replace('\n', '').split(',')
+                player_x, player_y = [float(i) for i in player_pos]
+                ANGLEBOX.angle = float(f.readline().replace('\n', ''))
+
                 # Add player start tile to tilemap
                 self.list[int(player_y)][int(player_x)] = START_VALUE
+
+            with open('../levels/{}/background.txt'.format(LEVEL_NR.text), 'r') as f:
+                # Ceiling colour
+                RGBS[0].text, RGBS[1].text, RGBS[2].text = f.readline().replace('\n', '').split(',')
+                # Floor colour
+                RGBS[3].text, RGBS[4].text, RGBS[5].text = f.readline().replace('\n', '').split(',')
+
+                SKYTEXTURE.value = int(f.readline().replace('\n', ''))
+
             self.loaded = True
 
         except FileNotFoundError:
