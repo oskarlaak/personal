@@ -1,8 +1,7 @@
 # TO DO:
 # Enemy hitscan
-# Grenades
 # Level end system
-# Level editor sky texture choosing
+# Simplify level folders
 # Visit all warnings and typos
 
 # NOTES:
@@ -183,6 +182,8 @@ class WeaponModel:
                 else:
                     self.column = 0  # End animation
                     self.shooting = False
+                    if weapon.auto_reload:
+                        self.reloading = True
 
             if self.column == weapon.shot_column:
                 # Time to shoot
@@ -384,7 +385,7 @@ class Projectile(Drawable, Sprite):
         self.speed = projectile.speed
         self.x_step = cos(self.angle) * self.speed
         self.y_step = sin(self.angle) * self.speed
-        self.x, self.y = pos
+        self.x, self.y = self.came_from = pos
 
         self.ticks = 0
         self.to_delete = False
@@ -395,6 +396,30 @@ class Projectile(Drawable, Sprite):
 
         self.update()  # One update is needed to get self.perp_dist
         self.update()  # Second is to avoid drawing projectile too close to player
+
+    def wall_collision(self):
+        # Sets x/y to contact point if there is a collision
+
+        tile_value = TILEMAP[int(self.y)][int(self.x)]
+        if tile_value != 0:
+            tile_id = TILE_VALUES_INFO[tile_value].type
+            if tile_id == 'Wall':
+                # Cancel step
+                self.x -= self.x_step
+                self.y -= self.y_step
+                # Get the exact contact point
+                self.x, self.y = simple_raycast(self.angle, (self.x, self.y))
+                return True
+            elif tile_id == 'Door':
+                max_travel_point = simple_raycast(self.angle, self.came_from)
+                max_travel_dist_squared = (self.came_from[0] - max_travel_point[0])**2 + \
+                                          (self.came_from[1] - max_travel_point[1])**2
+                projectile_dist_squared = (self.came_from[0] - self.x)**2 + (self.came_from[1] - self.y)**2
+                if max_travel_dist_squared < projectile_dist_squared:
+                    # Get the exact contact point
+                    self.x, self.y = max_travel_point
+                    return True
+        return False
 
     def update(self):
         if not self.hit:
@@ -411,27 +436,8 @@ class Projectile(Drawable, Sprite):
                             e.hurt(self.damage)
                         break
             else:
-                tile_value = TILEMAP[int(self.y)][int(self.x)]
-                if tile_value != 0:
-                    tile_id = TILE_VALUES_INFO[tile_value][0]
-                    if tile_id[0] == 'Wall':
-                        self.hit = True
-                        # Cancel step
-                        self.x -= self.x_step
-                        self.y -= self.y_step
-                        # Get the exact contact point
-                        self.x, self.y = simple_raycast(self.angle, (self.x, self.y))
-
-                    elif tile_id[0] == 'Door':
-                        came_from = simple_raycast(fixed_angle(self.angle + pi), (self.x, self.y))
-                        max_travel_point = simple_raycast(self.angle, came_from)
-                        max_travel_dist_squared = (came_from[0] - max_travel_point[0])**2 +\
-                                                  (came_from[1] - max_travel_point[1])**2
-                        projectile_dist_squared = (came_from[0] - self.x)**2 + (came_from[1] - self.y)**2
-                        if max_travel_dist_squared < projectile_dist_squared:
-                            self.hit = True
-                            # Get the exact contact point
-                            self.x, self.y = max_travel_point
+                if self.wall_collision():
+                    self.hit = True
 
             if self.hit:
                 # Trace back position a little bit
@@ -442,9 +448,10 @@ class Projectile(Drawable, Sprite):
                 self.ticks = 0
                 if self.exploding:
                     for e in ENEMIES:
-                        squared_dist = (self.x - e.x)**2 + (self.y - e.y)**2
-                        if squared_dist < 1:  # If enemy in 1 unit distance
-                            e.hurt(self.damage)
+                        if not e.dead:
+                            squared_dist = (self.x - e.x)**2 + (self.y - e.y)**2
+                            if squared_dist < 1:  # If enemy in 1 unit distance
+                                e.hurt(self.damage)
                 self.update()
 
         self.ticks += 1
@@ -472,11 +479,6 @@ class Projectile(Drawable, Sprite):
             self.calc_display_xy(angle_from_player, self.y_multiplier)
 
 
-class Grenade:
-    def __init__(self):
-        pass
-
-
 class Object(Drawable, Sprite):
     def __init__(self, map_pos, tilevalue):
         self.x = map_pos[0] + 0.5
@@ -487,7 +489,7 @@ class Object(Drawable, Sprite):
         self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
         if self.perp_dist > 0:
-            self.image = TILE_VALUES_INFO[tilevalue][1]  # Name needs to be self.image for it to work in adjust_image_height()
+            self.image = TILE_VALUES_INFO[tilevalue].texture  # Name needs to be self.image for it to work in adjust_image_height()
 
             self.height = self.width = int(Drawable.constant / self.perp_dist)
             if self.height > D_H:
@@ -646,7 +648,7 @@ class Enemy(Drawable, Sprite):
         # create a door obj in that location if it isn't there already
         # and start opening it immediately
         tile_value = TILEMAP[int(self.y)][int(self.x)]
-        if TILE_VALUES_INFO[tile_value][0][0] == 'Door':
+        if TILE_VALUES_INFO[tile_value].type == 'Door':
             for d in DOORS:
                 if (d.x, d.y) == (int(self.x), int(self.y)):
                     d.state = 1
@@ -837,14 +839,14 @@ class Crosshair:
 
 
 def events():
-    global RUNNING
+    global QUIT
 
     weapon = WEAPON_MODEL.weapon
 
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
             if event.key == K_ESCAPE:
-                RUNNING = False
+                QUIT = True
 
             elif event.key == K_F1:
                 CROSSHAIR.visible = not CROSSHAIR.visible
@@ -860,14 +862,16 @@ def events():
             elif event.key == K_e:
                 x = int(PLAYER.x + PLAYER.dir_x)
                 y = int(PLAYER.y + PLAYER.dir_y)
-                tile_id = TILE_VALUES_INFO[TILEMAP[y][x]][0]
-                if tile_id[0] == 'Door' and tile_id[1] == 'Dynamic':
+                tile_value = TILEMAP[y][x]
+                tile_type = TILE_VALUES_INFO[tile_value].type
+                tile_desc = TILE_VALUES_INFO[tile_value].desc
+                if tile_type == 'Door' and tile_desc == 'Dynamic':
                     for d in DOORS:
                         # If found the right door and it's not in motion already
                         if x == d.x and y == d.y:
                             d.state = 1
                             break
-                elif tile_id[0] == 'Wall' and tile_id[1] == 'End-trigger':
+                elif tile_type == 'Wall' and tile_desc == 'End-trigger':
                     TILEMAP[y][x] += 1  # Change trigger block texture
                     #level_end()
 
@@ -942,9 +946,8 @@ def load_enemies(tilemap, tile_values_info):
     enemies = []
     for row in range(len(tilemap)):
         for column in range(len(tilemap[row])):
-            tile_id = tile_values_info[tilemap[row][column]][0]
-            if tile_id[0] == 'Enemy':
-                spritesheet = tile_values_info[tilemap[row][column]][1]
+            if tile_values_info[tilemap[row][column]].type == 'Enemy':
+                spritesheet = tile_values_info[tilemap[row][column]].texture
                 pos = (column + 0.5, row + 0.5)
                 enemies.append(Enemy(spritesheet, pos))
                 tilemap[row][column] = 0  # Clears tile
@@ -1002,14 +1005,14 @@ def send_rays():
     # Checking if player is standing on an object
     tile_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
     if tile_value < 0:  # If anything under player
-        tile_id = TILE_VALUES_INFO[tile_value][0]
-        if tile_id[1] == 'Ammo':
+        tile_id = TILE_VALUES_INFO[tile_value].desc
+        if tile_id == 'Ammo':
             if PLAYER.ammo < 999:
                 PLAYER.ammo += 10
                 if PLAYER.ammo > 999:
                     PLAYER.ammo = 999
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0  # "Deletes" object
-        elif tile_id[1] == 'Health':
+        elif tile_id == 'Health':
             if PLAYER.hp < 100:
                 PLAYER.hp += 20
                 if PLAYER.hp > 100:
@@ -1039,7 +1042,7 @@ def send_rays():
                 texture = DOOR_SIDE_TEXTURE
                 break
         else:
-            texture = TILE_VALUES_INFO[tile_value][1]
+            texture = TILE_VALUES_INFO[tile_value].texture
 
         # Create Wall object
         WALLS.append(Wall(perp_dist, texture, column, i))
@@ -1114,9 +1117,9 @@ def raycast(rayangle, start_pos):
 
         tile_value = TILEMAP[map_y][map_x]
         if tile_value != 0:  # If ray touching something
-            tile_id = TILE_VALUES_INFO[tile_value][0]
+            tile_id = TILE_VALUES_INFO[tile_value].type
 
-            if tile_id[0] == 'Object':
+            if tile_id == 'Object':
                 for obj in OBJECTS:
                     if (obj.x - 0.5, obj.y - 0.5) == (map_x, map_y):
                         break
@@ -1124,7 +1127,7 @@ def raycast(rayangle, start_pos):
                     OBJECTS.append(Object((map_x, map_y), tile_value))
                 continue
 
-            if tile_id[0] == 'Door':
+            if tile_id == 'Door':
                 # Update (x/y)_offset values
                 x_offset = ray_x - int(ray_x)
                 if x_offset == A:
@@ -1176,7 +1179,7 @@ def raycast(rayangle, start_pos):
             return tile_value, ray_x, ray_y, column
 
 
-def simple_raycast(rayangle, start_pos):
+def simple_raycast(rayangle, start_pos, side_needed=False):
     # Used to only get the ray interception point without creating objects that are in the way
 
     if abs(rayangle) > pi / 2:
@@ -1224,12 +1227,12 @@ def simple_raycast(rayangle, start_pos):
 
         tile_value = TILEMAP[map_y][map_x]
         if tile_value != 0:  # If ray touching something
-            tile_id = TILE_VALUES_INFO[tile_value][0]
+            tile_id = TILE_VALUES_INFO[tile_value].type
 
-            if tile_id[0] == 'Object':
+            if tile_id == 'Object':
                 continue
 
-            if tile_id[0] == 'Door':
+            if tile_id == 'Door':
                 # Update (x/y)_offset values
                 x_offset = ray_x - int(ray_x)
                 if x_offset == A:
@@ -1264,8 +1267,10 @@ def simple_raycast(rayangle, start_pos):
                         ray_y += (-0.5 + B)
                     else:
                         continue
-
-            return ray_x, ray_y
+            if not side_needed:
+                return ray_x, ray_y
+            else:
+                return ray_x, ray_y, side
 
 
 def fixed_angle(angle):
@@ -1500,8 +1505,8 @@ if __name__ == '__main__':
     Drawable.constant = 0.6 * D_H
     Wall.width = int(D_W / RAYS_AMOUNT)
 
-    RUNNING = True
-    while RUNNING:
+    QUIT = False
+    while not QUIT:
         PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
         PLAYER.dir_x, PLAYER.dir_y = movement()
 

@@ -2,73 +2,101 @@
 # Level editor README file describing how to use it
 
 
-class TextureGroup:
-    def __init__(self, pos, value):
-        self.x, self.y = pos
-        self.active = False
-        self.rect = pygame.Rect((self.x, self.y), (64, 64))
-        self.value = value
-        self.values = [value]
-
-    def draw(self, surface):
-        texture = TILE_VALUES_INFO[self.value][1]
-        surface.blit(texture, (self.x, self.y))
-
-        # If active, draw the rectangle around block red
+class TextureBox:
+    def draw_box_outline_and_arrows(self):
         if self.active:
-            color = (255, 0, 0)
+            outline_color = RED
+            arrow_w, arrow_h = ARROW_UP.get_size()
             if self.value - 1 in self.values:
-                surface.blit(ARROW_UP, (self.x + 16, self.y - 24))
+                DISPLAY.blit(ARROW_UP, (self.rect.x + (self.rect.w - arrow_w) / 2,
+                                        self.rect.y - arrow_h - 8))
             if self.value + 1 in self.values:
-                surface.blit(ARROW_DOWN, (self.x + 16, self.y + 72))
+                DISPLAY.blit(ARROW_DOWN, (self.rect.x + (self.rect.w - arrow_w) / 2,
+                                          self.rect.y + self.rect.h + 8))
         else:
-            color = (255, 255, 255)
-        pygame.draw.rect(surface, color, self.rect, 1)
+            outline_color = WHITE
+        pygame.draw.rect(DISPLAY, outline_color, self.rect, 1)
+
+
+class TextureGroup(TextureBox):
+    def __init__(self, pos, value):
+        self.rect = pygame.Rect(pos, (64, 64))
+        self.value = value  # Current texturegroup value
+        self.values = [value]  # All possible texturegroup values
+
+        self.active = False
+
+    def draw(self):
+        texture = TILE_VALUES_INFO[self.value].texture
+        DISPLAY.blit(texture, (self.rect.x, self.rect.y))
+
+        self.draw_box_outline_and_arrows()
+
+
+class SkyTexture(TextureBox):
+    def __init__(self, pos, textures):
+        self.rect = pygame.Rect(pos, (512, 50))
+        self.value = 0
+        self.values = [x for x in range(len(textures))]
+
+        self.textures = textures
+        self.text_surface = FONT.render('SKY TEXTURE:', False, WHITE)
+
+        self.active = False
+
+    def draw(self):
+        # Draw text
+        DISPLAY.blit(self.text_surface, (1024 + 32, self.rect.y - 16))
+        # Draw sky texture
+        DISPLAY.blit(pygame.transform.scale(self.textures[self.value], (512, 50)), (self.rect.x, self.rect.y))
+
+        self.draw_box_outline_and_arrows()
 
 
 class InputBox:
-    def __init__(self, rect, caption, limit=999):
-        self.caption = LEVELEDITOR_FONT.render(caption, False, WHITE)
-        self.active = False
+    def __init__(self, pos, caption, limit=999):
+        self.rect = pygame.Rect(pos, (40, FONT_SIZE))
+
+        self.caption = FONT.render(caption, False, WHITE)
         self.limit = limit
-        self.rect = pygame.Rect(rect)
         self.text = ''
 
-    def draw(self, surface):
+        self.active = False
+
+    def draw(self):
         # Draw inputbox background
         if self.text == '' or int(self.text) <= self.limit:
             if self.active:
                 background_color = WHITE
             else:
                 background_color = GREY
-        else:  # if self.text > 255:
+        else:  # if self.text > limit:
             background_color = RED
-        pygame.draw.rect(surface, background_color, self.rect)
+        pygame.draw.rect(DISPLAY, background_color, self.rect)
 
         # Draw inputbox text
-        text_surface = LEVELEDITOR_FONT.render(self.text, False, InputBox.text_color)
-        text_offset = ((self.rect.w - text_surface.get_width())  / 2,
-                       (self.rect.h - text_surface.get_height()) / 2)
+        text_surface = FONT.render(self.text, False, InputBox.text_color)
+        text_offset = (self.rect.w - text_surface.get_width()) / 2
 
-        surface.blit(text_surface, (self.rect.x + text_offset[0], self.rect.y + text_offset[1]))
+        DISPLAY.blit(text_surface, (self.rect.x + text_offset, self.rect.y))
 
         # Draw caption text
-        surface.blit(self.caption, (self.rect.x - self.caption.get_width(), self.rect.y + text_offset[1]))
+        DISPLAY.blit(self.caption, (self.rect.x - self.caption.get_width(), self.rect.y))
 
 
 class AngleBox:
-    def __init__(self, rect, image):
-        self.rect = pygame.Rect(rect)
-        self.angle = 0
+    def __init__(self, pos, image):
+        self.rect = pygame.Rect(pos, image.get_size())
         self.image = image
+        self.angle = 0
 
     def rotate(self, radians):
         self.angle += radians
         if self.angle <= -math.pi:
             self.angle += math.pi * 2
 
-    def draw(self, surface):
-        surface.blit(pygame.transform.rotate(self.image, math.degrees(self.angle)), (self.rect.x, self.rect.y))
+    def draw(self):
+        DISPLAY.blit(pygame.transform.rotate(self.image, math.degrees(self.angle)), (self.rect.x, self.rect.y))
 
 
 class Tilemap:
@@ -94,6 +122,8 @@ class Tilemap:
         # Reset rgb values
         for rgb in RGBS:
             rgb.text = ''
+        # Reset sky texture
+        SKYTEXTURE.value = 0
         # Set level nr to smallest number from 1 that's not in levels folder
         level_nr = 1
         while str(level_nr) in os.listdir('../levels'):
@@ -118,7 +148,7 @@ class Tilemap:
                         return column + 0.5, row + 0.5
             return None, None
 
-        self.ticks = 90
+        self.message_ticks = 90
         self.loaded = None
         self.saved = False
 
@@ -144,26 +174,43 @@ class Tilemap:
                         for row in self.list:
                             f.write('{}\n'.format(row))  # Tilemap rows
 
+                    save_path = '../levels/{}/sky.png'.format(LEVEL_NR.text)
+                    if SKYTEXTURE.value > 0:
+                        pygame.image.save(SKYTEXTURE.textures[SKYTEXTURE.value], save_path)  # Saves sky texture
+                    elif os.path.exists(save_path):
+                        os.remove(save_path)
+
                     self.saved = True  # Saved without errors
 
             # Add player start item back to editor
             self.list[int(start_y)][int(start_x)] = START_VALUE
 
-    def load(self, level_nr):
-        self.ticks = 90
+    def load(self):
+        self.message_ticks = 90
         self.saved = None
         try:
-            with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
+            with open('../levels/{}/tilemap.txt'.format(LEVEL_NR.text), 'r') as f:
                 player_x, player_y, player_angle = [float(i) for i in f.readline().replace('\n', '').split(',')]
                 # Update anglebox angle
                 ANGLEBOX.angle = player_angle
 
                 # Level nr
-                LEVEL_NR.text = str(level_nr)
+                LEVEL_NR.text = str(LEVEL_NR.text)
                 # Ceiling colour
                 RGBS[0].text, RGBS[1].text, RGBS[2].text = f.readline().replace('\n', '').split(',')
                 # Floor colour
                 RGBS[3].text, RGBS[4].text, RGBS[5].text = f.readline().replace('\n', '').split(',')
+
+                # Update SKYTEXTURE value
+                try:
+                    sky_texture = pygame.image.load('../levels/{}/sky.png'.format(LEVEL_NR.text)).convert()
+                except pygame.error:
+                    SKYTEXTURE.value = 0
+                else:
+                    for value, st in enumerate(SKYTEXTURE.textures):
+                        if st == sky_texture:
+                            SKYTEXTURE.value = value
+                            break
 
                 # Update the tilemap
                 self.list = []
@@ -181,30 +228,34 @@ class Tilemap:
             self.loaded = False
 
     def status_update(self):
-        message_pos = (1024 + 64, 1024 - 128)
+        def scale(image, times):
+            image_w, image_h = image.get_size()
+            return pygame.transform.scale(image, (int(image_w * times), int(image_h * times)))
+
+        message_pos = (1024 + 290, 16)
 
         if self.saved != None:
             if self.saved:
-                message_text = LEVELEDITOR_FONT.render('SAVED', False, GREEN)
-                DISPLAY.blit(message_text, message_pos)
+                message_text = FONT.render('SAVED', False, GREEN)
+                DISPLAY.blit(scale(message_text, 1.5), message_pos)
             else:
-                message_text = LEVELEDITOR_FONT.render('SAVE FAILED', False, RED)
-                DISPLAY.blit(message_text, message_pos)
+                message_text = FONT.render('SAVE FAILED', False, RED)
+                DISPLAY.blit(scale(message_text, 1.5), message_pos)
 
-            self.ticks -= 1
-            if self.ticks == 0:
+            self.message_ticks -= 1
+            if self.message_ticks == 0:
                 self.saved = None
 
         elif self.loaded != None:
             if self.loaded:
-                message_text = LEVELEDITOR_FONT.render('LOAD SUCCESSFUL', False, GREEN)
-                DISPLAY.blit(message_text, message_pos)
+                message_text = FONT.render('LOAD SUCCESSFUL', False, GREEN)
+                DISPLAY.blit(scale(message_text, 1.5), message_pos)
             else:
-                message_text = LEVELEDITOR_FONT.render('LOAD FAILED', False, RED)
-                DISPLAY.blit(message_text, message_pos)
+                message_text = FONT.render('LOAD FAILED', False, RED)
+                DISPLAY.blit(scale(message_text, 1.5), message_pos)
 
-            self.ticks -= 1
-            if self.ticks == 0:
+            self.message_ticks -= 1
+            if self.message_ticks == 0:
                 self.loaded = None
 
 
@@ -222,7 +273,7 @@ def draw_tilemap():
         for x, column in enumerate(range(TILEMAP.offset[0], TILEMAP.offset[0] + TILEMAP.size)):
             tile_value = TILEMAP.list[row][column]
             if tile_value != 0:
-                texture = TILE_VALUES_INFO[tile_value][1]  # Get the texture
+                texture = TILE_VALUES_INFO[tile_value].texture  # Get the texture
                 texture = pygame.transform.scale(texture, (TILEMAP.tile_size, TILEMAP.tile_size))  # Scale it to tile size
                 DISPLAY.blit(texture, (x * TILEMAP.tile_size, y * TILEMAP.tile_size))
 
@@ -245,13 +296,13 @@ def apply_texture():
 
 def draw_sidebar():
     # Active value texture
-    active_texture = TILE_VALUES_INFO[ACTIVE_VALUE][1]
+    active_texture = TILE_VALUES_INFO[ACTIVE_VALUE].texture
     DISPLAY.blit(pygame.transform.scale(active_texture, (128, 128)), (1024 + 32, 0 + 16))
 
     # Active value description
-    activeitem_text = LEVELEDITOR_FONT.render('ACTIVE ITEM:', False, WHITE)
-    item_type = LEVELEDITOR_FONT.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE][0][0]), False, WHITE)
-    item_description = LEVELEDITOR_FONT.render(TILE_VALUES_INFO[ACTIVE_VALUE][0][1], False, WHITE)
+    activeitem_text = FONT.render('ACTIVE ITEM:', False, WHITE)
+    item_type = FONT.render('{}:'.format(TILE_VALUES_INFO[ACTIVE_VALUE].type), False, WHITE)
+    item_description = FONT.render(TILE_VALUES_INFO[ACTIVE_VALUE].desc, False, WHITE)
 
     DISPLAY.blit(activeitem_text, (1152 + 32, 0 + 16))
     DISPLAY.blit(item_type, (1152 + 32,  20 + 16))
@@ -259,23 +310,25 @@ def draw_sidebar():
 
     # Draw texturegroups
     for tg in TEXTUREGROUPS:
-        tg.draw(DISPLAY)
+        tg.draw()
 
     # Draw rgb boxes
-    ceiling_text = LEVELEDITOR_FONT.render('CEILING COLOUR', False, WHITE)
-    floor_text = LEVELEDITOR_FONT.render('FLOOR COLOUR', False, WHITE)
+    ceiling_text = FONT.render('CEILING COLOUR', False, WHITE)
+    floor_text = FONT.render('FLOOR COLOUR', False, WHITE)
     DISPLAY.blit(ceiling_text, (RGBS[0].rect.x, RGBS[0].rect.y - FONT_SIZE))
     DISPLAY.blit(  floor_text, (RGBS[3].rect.x, RGBS[3].rect.y - FONT_SIZE))
     for ib in RGBS:
-        ib.draw(DISPLAY)
+        ib.draw()
 
     # Draw level number box
-    LEVEL_NR.draw(DISPLAY)
+    LEVEL_NR.draw()
 
     # Draw starting angle box
-    starting_angle_text = LEVELEDITOR_FONT.render('STARTING ANGLE:', False, WHITE)
+    starting_angle_text = FONT.render('STARTING ANGLE:', False, WHITE)
     DISPLAY.blit(starting_angle_text, (ANGLEBOX.rect.x, ANGLEBOX.rect.y - FONT_SIZE))
-    ANGLEBOX.draw(DISPLAY)
+    ANGLEBOX.draw()
+
+    SKYTEXTURE.draw()
 
 
 def zoom(in_):
@@ -315,7 +368,7 @@ def zoom(in_):
 
 
 def events():
-    global DONE
+    global QUIT
     global ACTIVE_VALUE
 
     # Event handling that checks mouse and keyboard inputs
@@ -323,24 +376,18 @@ def events():
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
-            DONE = True
+            QUIT = True
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
                 if MOUSE_X > 1024:
-                    # Activate/deactivate texturegroups
-                    for tg in TEXTUREGROUPS:
-                        if tg.rect.collidepoint(MOUSE_X, MOUSE_Y):
-                            tg.active = True
-                            ACTIVE_VALUE = tg.value
+                    # Activate/deactivate sidebar objects
+                    for sidebar_obj in TEXTUREGROUPS + [SKYTEXTURE] + INPUTBOXES:
+                        if sidebar_obj.rect.collidepoint(MOUSE_X, MOUSE_Y):
+                            sidebar_obj.active = True
+                            if sidebar_obj in TEXTUREGROUPS:
+                                ACTIVE_VALUE = sidebar_obj.value
                         else:
-                            tg.active = False
-
-                    # Activate/deactivate inputboxes
-                    for ib in INPUTBOXES:
-                        if ib.rect.collidepoint(MOUSE_X, MOUSE_Y):
-                            ib.active = True
-                        else:
-                            ib.active = False
+                            sidebar_obj.active = False
 
                     if ANGLEBOX.rect.collidepoint(MOUSE_X, MOUSE_Y):
                         ANGLEBOX.rotate(-math.pi / 2)
@@ -352,11 +399,12 @@ def events():
 
                 # If control not pressed down
                 else:
-                    for tg in TEXTUREGROUPS:
-                        if tg.active:
-                            if ACTIVE_VALUE - 1 in tg.values:
-                                tg.value -= 1
-                                ACTIVE_VALUE = tg.value
+                    for scrollable_obj in TEXTUREGROUPS + [SKYTEXTURE]:
+                        if scrollable_obj.active:
+                            if scrollable_obj.value - 1 in scrollable_obj.values:
+                                scrollable_obj.value -= 1
+                                if scrollable_obj in TEXTUREGROUPS:
+                                    ACTIVE_VALUE = scrollable_obj.value
                             break
 
             elif event.button == 5:  # Scroll wheel down
@@ -366,11 +414,12 @@ def events():
 
                 # If control not pressed down
                 else:
-                    for tg in TEXTUREGROUPS:
-                        if tg.active:
-                            if ACTIVE_VALUE + 1 in tg.values:
-                                tg.value += 1
-                                ACTIVE_VALUE = tg.value
+                    for scrollable_obj in TEXTUREGROUPS + [SKYTEXTURE]:
+                        if scrollable_obj.active:
+                            if scrollable_obj.value + 1 in scrollable_obj.values:
+                                scrollable_obj.value += 1
+                                if scrollable_obj in TEXTUREGROUPS:
+                                    ACTIVE_VALUE = scrollable_obj.value
                             break
 
         elif event.type == pygame.KEYDOWN:
@@ -381,7 +430,7 @@ def events():
                 TILEMAP.save()
 
             elif event.key == pygame.K_l and pygame.key.get_mods() & pygame.KMOD_CTRL:
-                TILEMAP.load(LEVEL_NR.text)
+                TILEMAP.load()
 
             else:
                 for ib in INPUTBOXES:
@@ -397,26 +446,69 @@ def events():
         if MOUSE_X < 1024:
             apply_texture()
 
+def create_sidebar_objects():
+    def create_texturegroups():
+        tg_heights = {  # Texturegroup heights
+            'Enemy': 192,
+            'Object': 288,
+            'Door': 384,
+            'Wall': 480,
+            'Special': 576
+        }
 
-def create_inputboxes():
-    rgbs = []
-    # Ceiling colour
-    rgbs.append(InputBox((1024 +  64, 1024 - 256, 40, FONT_SIZE), 'R:', 255))
-    rgbs.append(InputBox((1024 + 128, 1024 - 256, 40, FONT_SIZE), 'G:', 255))
-    rgbs.append(InputBox((1024 + 192, 1024 - 256, 40, FONT_SIZE), 'B:', 255))
-    # Floor colour
-    rgbs.append(InputBox((1024 +  64, 1024 - 192, 40, FONT_SIZE), 'R:', 255))
-    rgbs.append(InputBox((1024 + 128, 1024 - 192, 40, FONT_SIZE), 'G:', 255))
-    rgbs.append(InputBox((1024 + 192, 1024 - 192, 40, FONT_SIZE), 'B:', 255))
-    # Level number
-    level_nr = InputBox((1024 + 384, 1024 - 192, 40, FONT_SIZE), 'LEVEL NR:')
+        texturegroups = []
+        infos = []
+        start_x = 1024 + 32
 
-    # Create starting angle "box" on sidebar
-    anglebox = AngleBox((1024 + 288, 1024 - 256, 32, 32), RED_ARROW)
-    return rgbs, level_nr, anglebox
+        for value in TILE_VALUES_INFO:
+            info = (TILE_VALUES_INFO[value].type, TILE_VALUES_INFO[value].desc)
+            if info not in infos:  # If the need to create a new texturegroup
+                x = start_x
+                for i in infos:  # For every texturegroup with same tpye, add 80 to x
+                    if i[0] == info[0]:
+                        x += 80
+                texturegroups.append(TextureGroup((x, tg_heights[info[0]]), value))
+                infos.append(info)
+            else:
+                texturegroups[-1].values.append(value)
+                if value < 0:
+                    texturegroups[-1].value = value
+
+        return texturegroups
+
+    def create_skytexturebox():
+        skytextures = [pygame.image.load('defaultskytexture.png').convert()]
+        for skytexture_name in os.listdir('../textures/skies'):
+            skytextures.append(pygame.image.load('../textures/skies/{}'.format(skytexture_name)).convert())
+        skytexture = SkyTexture((1024 + 8, 1024 - 96), skytextures)
+        return skytexture
+
+    def create_inputboxes():
+        rgbs = []
+        # Ceiling colour
+        rgbs.append(InputBox((1024 +  64, 1024 - 256), 'R:', 255))
+        rgbs.append(InputBox((1024 + 128, 1024 - 256), 'G:', 255))
+        rgbs.append(InputBox((1024 + 192, 1024 - 256), 'B:', 255))
+        # Floor colour
+        rgbs.append(InputBox((1024 +  64, 1024 - 192), 'R:', 255))
+        rgbs.append(InputBox((1024 + 128, 1024 - 192), 'G:', 255))
+        rgbs.append(InputBox((1024 + 192, 1024 - 192), 'B:', 255))
+        # Level number
+        level_nr = InputBox((1024 + 384, 1024 - 192), 'LEVEL NR:')
+
+        return rgbs, level_nr
+
+    def create_anglebox():
+        return AngleBox((1024 + 288, 1024 - 256), RED_ARROW)
+
+    texturegroups = create_texturegroups()
+    skytexture = create_skytexturebox()
+    rgbs, level_nr = create_inputboxes()
+    anglebox = create_anglebox()
+    return texturegroups, skytexture, rgbs, level_nr, anglebox
 
 
-def get_leveleditor_images():
+def get_arrow_images():
     try:
         return pygame.image.load('redarrow.png').convert_alpha(),\
                pygame.image.load('arrow.png').convert()
@@ -427,9 +519,9 @@ def get_leveleditor_images():
 
 def get_tilevaluesinfo():
     try:
-        eraser = pygame.transform.scale(pygame.image.load('eraser.png').convert(), (64, 64))
-        start = pygame.transform.scale(pygame.image.load('start.png').convert(), (64, 64))
-        end = pygame.transform.scale(pygame.image.load('end.png').convert(), (64, 64))
+        eraser_texture = pygame.transform.scale(pygame.image.load('eraser.png').convert(), (64, 64))
+        start_texture = pygame.transform.scale(pygame.image.load('start.png').convert(), (64, 64))
+        end_texture = pygame.transform.scale(pygame.image.load('end.png').convert(), (64, 64))
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -442,50 +534,26 @@ def get_tilevaluesinfo():
         # Replace all textures in it with 64x64 pixel textures
         for value in tile_values_info:
             if value != 0:
-                texture = tile_values_info[value][1]
-                tile_values_info[value] = tile_values_info[value][0], texture.subsurface(0, 0, 64, 64)
+                tile_values_info[value].texture = tile_values_info[value].texture.subsurface(0, 0, 64, 64)
 
         # Replace two end-trigger textures with start and end texture
-        for value, (info, _) in tile_values_info.items():
-            if info == ('Wall', 'End-trigger'):
-                tile_values_info[value] = ('Special', 'End-trigger'), end
+        for value in tile_values_info:
+            if tile_values_info[value].desc  == 'End-trigger':
+                tile_values_info[value].texture = end_texture
+                tile_values_info[value].type = 'Special'
+
                 start_block_value = value + 1
-                tile_values_info[start_block_value] = ('Special', 'Start'), start
+                tile_values_info[start_block_value].texture = start_texture
+                tile_values_info[start_block_value].type = 'Special'
+                tile_values_info[start_block_value].desc = 'Start'
                 break
 
         # Add eraser texture to value 0
-        tile_values_info[0] = ('Special', 'Eraser'), eraser
+        tile_values_info[0].texture = eraser_texture
+        tile_values_info[0].type = 'Special'
+        tile_values_info[0].desc = 'Eraser'
 
         return tile_values_info, start_block_value
-
-
-def get_texturegroups():
-    heights = {
-        'Enemy': 192,
-        'Object': 288,
-        'Door': 384,
-        'Wall': 480,
-        'Special': 576
-    }
-
-    texturegroups = []
-    infos = []
-    start_x = 1024 + 32
-
-    for value, (info, _) in TILE_VALUES_INFO.items():
-        if info not in infos:  # If the need to create a new texturegroup
-            x = start_x
-            for i in infos:  # For every texturegroup with same tpye, add 80 to x
-                if i[0] == info[0]:
-                    x += 80
-            texturegroups.append(TextureGroup((x, heights[info[0]]), value))
-            infos.append(info)
-        else:
-            texturegroups[-1].values.append(value)
-            if value < 0:
-                texturegroups[-1].value = value
-
-    return texturegroups
 
 
 import math
@@ -507,25 +575,21 @@ pygame.display.set_caption('Raycaster level editor')
 DISPLAY = pygame.display.set_mode((1024 + 528, 1024))  # 528 is the sidebar width
 CLOCK = pygame.time.Clock()
 
-# Font stuff
 FONT_SIZE = 16
-LEVELEDITOR_FONT = pygame.font.Font('../font/LCD_Solid.ttf', FONT_SIZE)
+FONT = pygame.font.Font('../font/LCD_Solid.ttf', FONT_SIZE)
 
+TILE_VALUES_INFO, START_VALUE = get_tilevaluesinfo()
 TILEMAP = Tilemap()
 ACTIVE_VALUE = 0
 
-TILE_VALUES_INFO, START_VALUE = get_tilevaluesinfo()
-TEXTUREGROUPS = get_texturegroups()
-
-# Level editor images
-RED_ARROW, ARROW_UP = get_leveleditor_images()
+RED_ARROW, ARROW_UP = get_arrow_images()
 ARROW_DOWN = pygame.transform.flip(ARROW_UP, False, True)
 
-RGBS, LEVEL_NR, ANGLEBOX = create_inputboxes()
+TEXTUREGROUPS, SKYTEXTURE, RGBS, LEVEL_NR, ANGLEBOX = create_sidebar_objects()
 INPUTBOXES = RGBS + [LEVEL_NR]
 
-DONE = False
-while not DONE:
+QUIT = False
+while not QUIT:
     DISPLAY.fill(BLACK)
     MOUSE_X, MOUSE_Y = pygame.mouse.get_pos()
 

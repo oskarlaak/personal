@@ -14,7 +14,8 @@ def get_neighbour_doors(pos):
                 if (pos_x, pos_y) not in all_points:
                     if TILEMAP[pos_y][pos_x] <= 0:
                         unvisited.append((pos_x, pos_y))
-                    elif TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]][0] == ('Door', 'Dynamic'):
+                    elif TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].type == 'Door' and \
+                            TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].desc == 'Dynamic':
                         visited.append((pos_x, pos_y))
                         doors_found.append((pos_x, pos_y))
 
@@ -47,7 +48,8 @@ def setup(tilemap, tile_values_info):
     DOORS = []
     for row in range(len(TILEMAP)):
         for column in range(len(TILEMAP[row])):
-            if TILE_VALUES_INFO[TILEMAP[row][column]][0] == ('Door', 'Dynamic'):
+            if TILE_VALUES_INFO[TILEMAP[row][column]].type == 'Door'\
+                    and TILE_VALUES_INFO[TILEMAP[row][column]].desc == 'Dynamic':
                 DOORS.append(Door((column, row)))
 
     # Getting all door neighbours
@@ -221,8 +223,6 @@ if __name__ == '__main__':
     DISPLAY = pygame.display.set_mode((1024, 1024))
     CLOCK = pygame.time.Clock()
 
-    enemy_info = graphics.get_enemy_info(sys, pygame)
-    tile_values_info = graphics.get_tile_values_info(sys, pygame, 64, enemy_info)
     tilemap = []
     with open('../levels/2/tilemap.txt', 'r') as f:
         row = f.readline().replace('\n', '').split(',')
@@ -238,7 +238,10 @@ if __name__ == '__main__':
             row = [int(i) for i in row]  # Turn all number strings to an int
             tilemap.append(row)
 
-    setup(tilemap, tile_values_info)
+    # enemy_info needed for tile_values_info
+    # tile_values_info needed for setup
+    enemy_info = graphics.get_enemy_info(sys, pygame)
+    setup(tilemap, graphics.get_tile_values_info(sys, pygame, 64, enemy_info))
 
     end_x, end_y = 0, 0
     running = True
@@ -258,7 +261,7 @@ if __name__ == '__main__':
             for column in range(64):
                 tile_value = TILEMAP[row][column]
                 if tile_value != 0:
-                    texture = TILE_VALUES_INFO[tile_value][1]
+                    texture = TILE_VALUES_INFO[tile_value].texture
                     texture = texture.subsurface(0, 0, 64, 64)
                     texture = pygame.transform.scale(texture, (16, 16))
                     DISPLAY.blit(texture, (column * 16, row * 16))

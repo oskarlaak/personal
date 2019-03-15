@@ -5,11 +5,15 @@ def get_weapons(sys_module, pygame_module):
             self.weapon_sheet = weapon_sheet
             self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
             self.fire_delay = fire_delay  # Has to be dividable by animation frames
-            self.shot_column = shot_column  # Weapon sheet column that shoots
+            self.shot_column = shot_column  # Weapon sheet column that shoots (1 would mean 1st shot animation frame)
 
             self.reload_time = reload_time  # Reloading time in ticks, has to be even number
             self.mag_size = mag_size  # Mag's total capacity
             self.mag_ammo = self.mag_size  # Currently ammo in weapon's mag
+            if self.mag_size == 1:
+                self.auto_reload = True  # Automatically reloads one shot weapons
+            else:
+                self.auto_reload = False
             self.automatic = automatic
             self.ammo_unlimited = ammo_unlimited
 
@@ -25,6 +29,7 @@ def get_weapons(sys_module, pygame_module):
             self.shot_column = shot_column
 
             self.mag_ammo = False
+            self.auto_reload = False
             self.automatic = False
 
             self.melee = True
@@ -52,21 +57,25 @@ def get_weapons(sys_module, pygame_module):
         machinegun = scale(pygame.image.load('../textures/weapons/machinegun.png').convert_alpha(), 8)
         chaingun = scale(pygame.image.load('../textures/weapons/chaingun.png').convert_alpha(), 8)
         plasmagun = scale(pygame.image.load('../textures/weapons/plasmagun.png').convert_alpha(), 8)
+        rocketlauncher = scale(pygame.image.load('../textures/weapons/rocketlauncher.png').convert_alpha(), 8)
 
         plasma = pygame.image.load('../textures/projectiles/plasma.png').convert_alpha()
+        rocket = pygame.image.load('../textures/projectiles/rocket.png').convert_alpha()
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
 
     else:
         plasma = Projectile(plasma, 4, 0.55, 0.25, 0.2, 2, False)
+        rocket = Projectile(rocket, 3, 0.75, 0.3, 0.3, 10, True)
 
         weapons = [None]  # Makes it so first weapon is index 1 insted of 0
         weapons.append(Melee('Knife', knife, 3, 9, 2))
         weapons.append(Weapon('Pistol', pistol, 4, 8, 2, 50, 12, False, True))
         weapons.append(Weapon('Machinegun', machinegun, 4, 4, 2, 60, 25, True, False))
         weapons.append(Weapon('Chaingun', chaingun, 3, 3, 1, 120, 50, True, False))
-        weapons.append(Weapon('Plasmagun', plasmagun, 2, 4, 2, 80, 35, True, True, plasma))
+        weapons.append(Weapon('Plasmagun', plasmagun, 2, 4, 2, 80, 20, True, False, plasma))
+        weapons.append(Weapon('Rocket launcher', rocketlauncher, 5, 10, 1, 40, 1, False, False, rocket))
         return weapons
 
 
@@ -108,20 +117,25 @@ def get_enemy_info(sys_module, pygame_module):
             # hittable_amount = "average amount enemy" in each enemy's spritesheets cells
             #                   (basicly how much of average cell is non-transparent)
             guard:   (  'Guard', 3, 0.04, 10,  90, 120, 1/3),
-            ss:      (     'SS', 19, 0.05, 20, 150, 120, 1/2),
+            ss:      (     'SS', 10, 0.05, 20, 150, 120, 1/2),
             officer: ('Officer', 6, 0.06, 15, 150,  90, 1/3)
         }
         return enemy_info
 
 
 def get_tile_values_info(sys_module, pygame_module, texture_size, enemy_info):
+    class Tile:
+        def __init__(self, texture, type, description):
+            self.texture = texture
+            self.type = type
+            self.desc = description
 
-    def assign_texture_sheet(cell_w, cell_h, index_step, description, texture_sheet):
+    def assign_texture_sheet(cell_w, cell_h, index_step, texture_sheet, type, description):
         global index  # Sets current index as staring index
         for row in range(int(texture_sheet.get_height() / cell_h)):
             for column in range(int(texture_sheet.get_width() / cell_w)):
                 texture = texture_sheet.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
-                tile_values_info[index] = (description, texture)  # Update tile_values_info with texture
+                tile_values_info[index] = Tile(texture, type, description)  # Update tile_values_info with Tile object
                 index += index_step
 
     sys = sys_module
@@ -159,44 +173,44 @@ def get_tile_values_info(sys_module, pygame_module, texture_size, enemy_info):
         index = 0
 
         # ---Negative values---
-        tile_values_info[index] = 'Empty', None
+        tile_values_info[index] = Tile(None, 'Empty', '')
 
         # Ammo
         index -= 1
-        tile_values_info[index] = ('Object', 'Ammo'), ammo_sprite
+        tile_values_info[index] = Tile(ammo_sprite, 'Object', 'Ammo')
 
         # Health
         index -= 1
-        tile_values_info[index] = ('Object', 'Health'), health_sprite
+        tile_values_info[index] = Tile(health_sprite, 'Object', 'Health')
 
         # Other non-solid objects
         index -= 1
-        assign_texture_sheet(texture_size, texture_size, -1, ('Object', 'Non-solid'), nonsolid_sprites)
+        assign_texture_sheet(texture_size, texture_size, -1, nonsolid_sprites, 'Object', 'Non-solid')
 
         # ---Positive values---
         # Solid objects
         index = 1
-        assign_texture_sheet(texture_size, texture_size, 1, ('Object', 'Solid'), solid_sprites)
+        assign_texture_sheet(texture_size, texture_size, 1, solid_sprites, 'Object', 'Solid')
 
         # Doors
-        assign_texture_sheet(texture_size * 2, texture_size, 1, ('Door', 'Dynamic'), dynamic_door_textures)
-        assign_texture_sheet(texture_size * 2, texture_size, 1, ('Door', 'Static'), static_door_textures)
+        assign_texture_sheet(texture_size * 2, texture_size, 1, dynamic_door_textures, 'Door', 'Dynamic')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, static_door_textures, 'Door', 'Static')
 
         # Walls
-        assign_texture_sheet(texture_size * 2, texture_size, 1, ('Wall', 'Bloodycave'), bloodycave_textures)
-        assign_texture_sheet(texture_size * 2, texture_size, 1, ('Wall', 'Bluecellar'), bluecellar_textures)
-        assign_texture_sheet(texture_size * 2, texture_size, 1, ('Wall', 'Elevator'), elevator_textures)
-        assign_texture_sheet(texture_size * 2, texture_size, 1, ('Wall', 'Redbrick'), redbrick_textures)
-        assign_texture_sheet(texture_size * 2, texture_size, 1, ('Wall', 'Stone'), stone_textures)
-        assign_texture_sheet(texture_size * 2, texture_size, 1, ('Wall', 'Wood'), wood_textures)
+        assign_texture_sheet(texture_size * 2, texture_size, 1, bloodycave_textures, 'Wall', 'Bloodycave')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, bluecellar_textures, 'Wall', 'Bluecellar')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, elevator_textures, 'Wall', 'Elevator')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, redbrick_textures, 'Wall', 'Redbrick')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, stone_textures, 'Wall', 'Stone')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, wood_textures, 'Wall', 'Wood')
 
         # Both end trigger texture variants
-        assign_texture_sheet(texture_size * 2, texture_size, 1, ('Wall', 'End-trigger'), end_trigger_textures)
+        assign_texture_sheet(texture_size * 2, texture_size, 1, end_trigger_textures, 'Wall', 'End-trigger')
 
         # For every enemy type in enemy_info, add value to tile_values_info
-        for spritesheet in enemy_info:
-            enemy_name = enemy_info[spritesheet][0]
-            tile_values_info[index] = ('Enemy', enemy_name), spritesheet
+        for enemy_sheet in enemy_info:
+            enemy_name = enemy_info[enemy_sheet][0]
+            tile_values_info[index] = Tile(enemy_sheet, 'Enemy', enemy_name)
             index += 1
 
         return tile_values_info
@@ -213,4 +227,5 @@ if __name__ == '__main__':
     tile_values_info = get_tile_values_info(sys, pygame, 64, enemy_info)
 
     for value in sorted(tile_values_info):
-        print('{}: {}'.format(value, tile_values_info[value]))
+        tile_obj = tile_values_info[value]
+        print(f'{value}: texture: {tile_obj.texture}, type: {tile_obj.type}, description: {tile_obj.desc}')
