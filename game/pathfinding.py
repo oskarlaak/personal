@@ -214,6 +214,7 @@ def pathfind(start, end):
 
 
 if __name__ == '__main__':
+    # When executed directly, visualizes paths being created by algorithm
     import game.graphics as graphics
     import sys
     import pygame

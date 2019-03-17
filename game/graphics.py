@@ -21,12 +21,15 @@ def get_weapons(sys_module, pygame_module):
             self.projectile = projectile
 
     class Melee:
-        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column):
+        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column, hit_radius, damage):
             self.name = name
             self.weapon_sheet = weapon_sheet
             self.animation_frames = animation_frames
             self.fire_delay = fire_delay
             self.shot_column = shot_column
+
+            self.hit_radius = hit_radius
+            self.damage = damage
 
             self.mag_ammo = False
             self.auto_reload = False
@@ -70,7 +73,7 @@ def get_weapons(sys_module, pygame_module):
         rocket = Projectile(rocket, 3, 0.75, 0.3, 0.3, 10, True)
 
         weapons = [None]  # Makes it so first weapon is index 1 insted of 0
-        weapons.append(Melee('Knife', knife, 3, 9, 2))
+        weapons.append(Melee('Knife', knife, 3, 9, 2, 1.3, 3))
         weapons.append(Weapon('Pistol', pistol, 4, 8, 2, 50, 12, False, True))
         weapons.append(Weapon('Machinegun', machinegun, 4, 4, 2, 60, 25, True, False))
         weapons.append(Weapon('Chaingun', chaingun, 3, 3, 1, 120, 50, True, False))
@@ -107,18 +110,19 @@ def get_enemy_info(sys_module, pygame_module):
 
     else:
         enemy_info = {
-            # spritesheet: name, hp, speed, shooting_range, memory, patience, hittable_amount
+            # spritesheet: name, hp, speed, shooting_range, instant_alert_dist, memory, patience, hittable_amount
             #
             # Attributes description:
             # shooting_range = maximum distance in units where enemy can shoot player from
+            # instant_alert_dist = distance in which enemy automatically starts chasing player even if he can't see him
             # memory = the time (in ticks) enemy knows player position after he has disappeared from his vision
             #          (also the time in which enemy's path will be updated towards player)
             # patience = the maximum time enemy stays standing still without an action
             # hittable_amount = "average amount enemy" in each enemy's spritesheets cells
             #                   (basicly how much of average cell is non-transparent)
-            guard:   (  'Guard', 3, 0.04, 10,  90, 120, 1/3),
-            ss:      (     'SS', 10, 0.05, 20, 150, 120, 1/2),
-            officer: ('Officer', 6, 0.06, 15, 150,  90, 1/3)
+            guard:   (  'Guard',  3, 0.04, 10, 1.4,  90, 120, 1/3),
+            ss:      (     'SS', 10, 0.05, 20, 1.4, 150, 120, 1/2),
+            officer: ('Officer',  6, 0.06, 15, 1.4, 150,  90, 1/3)
         }
         return enemy_info
 
