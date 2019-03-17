@@ -227,7 +227,7 @@ class Tilemap:
 
         message_pos = (1024 + 290, 16)
 
-        if self.saved != None:
+        if self.saved is not None:
             if self.saved:
                 message_text = FONT.render('SAVED', False, GREEN)
                 DISPLAY.blit(scale(message_text, 1.5), message_pos)
@@ -239,7 +239,7 @@ class Tilemap:
             if self.message_ticks == 0:
                 self.saved = None
 
-        elif self.loaded != None:
+        elif self.loaded is not None:
             if self.loaded:
                 message_text = FONT.render('LOAD SUCCESSFUL', False, GREEN)
                 DISPLAY.blit(scale(message_text, 1.5), message_pos)
@@ -267,7 +267,7 @@ def draw_tilemap():
             tile_value = TILEMAP.list[row][column]
             if tile_value != 0:
                 texture = TILE_VALUES_INFO[tile_value].texture  # Get the texture
-                texture = pygame.transform.scale(texture, (TILEMAP.tile_size, TILEMAP.tile_size))  # Scale it to tile size
+                texture = pygame.transform.scale(texture, (TILEMAP.tile_size, TILEMAP.tile_size))  # Scale to tile size
                 DISPLAY.blit(texture, (x * TILEMAP.tile_size, y * TILEMAP.tile_size))
 
 
@@ -430,14 +430,15 @@ def events():
                     if ib.active:
                         if event.key == pygame.K_BACKSPACE:
                             ib.text = ib.text[:-1]
-                        elif pygame.key.name(event.key).isdigit() and len(ib.text) < 3:  # rgb values cannot be < 3 digits
+                        elif pygame.key.name(event.key).isdigit() and len(ib.text) < 3:
                             ib.text += event.unicode
                         break
 
     # If mouse left button pressed down and mouse inside tilemap area
-    if pygame.mouse.get_pressed()[0] == True:
+    if pygame.mouse.get_pressed()[0]:
         if MOUSE_X < 1024:
             apply_texture()
+
 
 def create_sidebar_objects():
     def create_texturegroups():
@@ -531,7 +532,7 @@ def get_tilevaluesinfo():
 
         # Replace two end-trigger textures with start and end texture
         for value in tile_values_info:
-            if tile_values_info[value].desc  == 'End-trigger':
+            if tile_values_info[value].desc == 'End-trigger':
                 tile_values_info[value].texture = end_texture
                 tile_values_info[value].type = 'Special'
 

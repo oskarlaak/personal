@@ -34,19 +34,19 @@ class Player:
         # An instant shot detection system
         # Applies to everything but projectile weapons
 
-        # Find all shottable enemies in ENEMIES list
-        shottable_enemies = []
+        # Find all shootable enemies in ENEMIES list
+        shootable_enemies = []
         for e in ENEMIES:
             # If enemy not dead and player can see him
             if not e.dead and can_see((PLAYER.x, PLAYER.y), (e.x, e.y), PLAYER.viewangle, FOV):
-                shottable_enemies.append(e)
-        shottable_enemies.sort(key=lambda x: x.dist_squared)  # Makes hit register for closest enemy
+                shootable_enemies.append(e)
+        shootable_enemies.sort(key=lambda x: x.dist_squared)  # Makes hit register for closest enemy
 
-        for e in shottable_enemies:
+        for e in shootable_enemies:
             enemy_center_display_x = e.display_x + (e.width / 2)
             x_offset = abs(H_W - enemy_center_display_x)
             hittable_offset = e.hittable_amount / 2 * e.width
-            if hittable_offset > x_offset:  # If crosshair more or less on enemy
+            if hittable_offset > x_offset:  # If theoretical crosshair more or less on enemy
                 if not weapon.melee:
                     e.hurt()
                 elif e.dist_squared <= weapon.hit_radius**2:
@@ -111,9 +111,9 @@ class Player:
             y_offset = y - int(y)
 
             # Distance to closest round(x/y)
-            deltax = abs(round(x_offset) - x_offset)
-            deltay = abs(round(y_offset) - y_offset)
-            if deltax < deltay:
+            delta_x = abs(round(x_offset) - x_offset)
+            delta_y = abs(round(y_offset) - y_offset)
+            if delta_x < delta_y:
                 return True, False
             else:
                 return False, True
@@ -314,6 +314,7 @@ class WeaponModel:
 
 class CameraPlane:
     len = 1
+
     def __init__(self, rays_amount, fov):
         # Creates a list of rayangle offsets which will be added to player's viewangle to send rays every frame
         # Bc these angle offsets do not change during the game, they are calculated before the game loop starts
@@ -414,7 +415,7 @@ class Sprite:
         camera_plane_pos = CAMERA_PLANE.len / 2 + tan(angle_from_player - PLAYER.viewangle) * CAMERA_PLANE.dist
 
         self.display_x = D_W * camera_plane_pos - self.width / 2
-        self.display_y = (D_H  - self.height * y_multiplier) / 2
+        self.display_y = (D_H - self.height * y_multiplier) / 2
 
 
 class Object(Drawable, Sprite):
@@ -598,8 +599,8 @@ class Enemy(Drawable, Sprite):
         def get_unvisited(pos):
             # Gets new unvisited points
             all_points = visited + unvisited
-            for x in range(-1, 2):  # -1, 0, 1
-                for y in range(-1, 2):  # -1, 0, 1
+            for x in (-1, 0, 1):  # -1, 0, 1
+                for y in (-1, 0, 1):  # -1, 0, 1
                     pos_x, pos_y = (pos[0] + x, pos[1] + y)
                     if (pos_x, pos_y) not in all_points and TILEMAP[pos_y][pos_x] <= 0:
                         unvisited.append((pos_x, pos_y))
@@ -608,7 +609,7 @@ class Enemy(Drawable, Sprite):
         unvisited = []
         get_unvisited((int(self.x), int(self.y)))
 
-        while unvisited:  # While there is unscanned points
+        while unvisited:  # While there is unscanned/unvisited points
             current = unvisited[0]  # Get new point
             del unvisited[0]  # Delete it from unvisited bc it's about to get visited
             visited.append(current)  # Add point to visited
@@ -650,8 +651,8 @@ class Enemy(Drawable, Sprite):
 
     def strafe(self):
         # Gets new path to a random empty neighbour tile (if possible)
-        avaivable_tiles = []
-        for x in (-1, 0 ,1):
+        available_tiles = []
+        for x in (-1, 0, 1):
             for y in (-1, 0, 1):
                 tile_x = int(self.x) + x
                 tile_y = int(self.y) + y
@@ -660,10 +661,10 @@ class Enemy(Drawable, Sprite):
                         if (int(e.x), int(e.y)) == (tile_x, tile_y):
                             break
                     else:
-                        avaivable_tiles.append((tile_x, tile_y))
+                        available_tiles.append((tile_x, tile_y))
 
-        if avaivable_tiles:
-            self.path = pathfinding.pathfind((self.x, self.y), random.choice(avaivable_tiles))
+        if available_tiles:
+            self.path = pathfinding.pathfind((self.x, self.y), random.choice(available_tiles))
         else:
             self.path = []
 
@@ -954,7 +955,7 @@ def raycast(rayangle, start_pos):
 
         # Very simple system
         # Every loop it blindly calculates vertical* gridline interception_y and checks it's distance
-        # to determine the interception type and to calculate other varibles depending on that interception type
+        # to determine the interception type and to calculate other variables depending on that interception type
         #
         # *It calculates vertical gridline interception by default bc in those calculations
         # there are no divisions which could bring up ZeroDivisionError
@@ -1334,8 +1335,8 @@ def draw_frame():
 
 
 def draw_hud():
-    def dynamic_colour(current, max):
-        ratio = current / max  # 1 is completely green, 0 completely red
+    def dynamic_colour(current, maximum):
+        ratio = current / maximum  # 1 is completely green, 0 completely red
         if ratio < 0.5:
             red = 255
             green = int(ratio * 2 * 255)
@@ -1344,7 +1345,7 @@ def draw_hud():
             green = 255
             red = int(ratio * 2 * 255)
 
-        return (red, green, 0)
+        return red, green, 0
 
     x_safezone = 6  # In pixels
 

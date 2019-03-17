@@ -1,6 +1,7 @@
 def get_weapons(sys_module, pygame_module):
     class Weapon:
-        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column, reload_time, mag_size, automatic, ammo_unlimited, projectile=False):
+        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column,
+                     reload_time, mag_size, automatic, ammo_unlimited, projectile=False):
             self.name = name
             self.weapon_sheet = weapon_sheet
             self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
@@ -72,7 +73,7 @@ def get_weapons(sys_module, pygame_module):
         plasma = Projectile(plasma, 4, 0.55, 0.25, 0.2, 2, False)
         rocket = Projectile(rocket, 3, 0.75, 0.3, 0.3, 10, True)
 
-        weapons = [None]  # Makes it so first weapon is index 1 insted of 0
+        weapons = [None]  # Makes it so first weapon is index 1 instead of 0
         weapons.append(Melee('Knife', knife, 3, 9, 2, 1.3, 3))
         weapons.append(Weapon('Pistol', pistol, 4, 8, 2, 50, 12, False, True))
         weapons.append(Weapon('Machinegun', machinegun, 4, 4, 2, 60, 25, True, False))
@@ -119,7 +120,7 @@ def get_enemy_info(sys_module, pygame_module):
             #          (also the time in which enemy's path will be updated towards player)
             # patience = the maximum time enemy stays standing still without an action
             # hittable_amount = "average amount enemy" in each enemy's spritesheets cells
-            #                   (basicly how much of average cell is non-transparent)
+            #                   (basically how much of average cell is non-transparent)
             guard:   (  'Guard',  3, 0.04, 10, 1.4,  90, 120, 1/3),
             ss:      (     'SS', 10, 0.05, 20, 1.4, 150, 120, 1/2),
             officer: ('Officer',  6, 0.06, 15, 1.4, 150,  90, 1/3)
@@ -169,7 +170,7 @@ def get_tile_values_info(sys_module, pygame_module, texture_size, enemy_info):
 
     else:
         # tile_values_info texture assigning can happen manually and via assign_texture_sheet()
-        # Last on is used to assign whole texture sheets (usually same themed textures) at once with same decription
+        # Last on is used to assign whole texture sheets (usually same themed textures) at once with same description
         tile_values_info = {}
 
         # Creates a global index var bc it's needed in assign_texture_sheet()
@@ -232,4 +233,5 @@ if __name__ == '__main__':
 
     for value in sorted(tile_values_info):
         tile_obj = tile_values_info[value]
-        print('{}: texture: {}, type: {}, description: {}'.format(value, tile_obj.texture, tile_obj.type, tile_obj.desc))
+        print('{}: texture: {}, type: {}, description: {}'
+              .format(value, tile_obj.texture, tile_obj.type, tile_obj.desc))

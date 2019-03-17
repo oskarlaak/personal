@@ -25,7 +25,7 @@ def get_neighbour_doors(pos):
     unvisited = []
     get_unvisited(pos)
 
-    while unvisited:  # While there is unscanned points
+    while unvisited:  # While there is unscanned/unvisted points
         current = unvisited[0]  # Get new point
         del unvisited[0]  # Delete it from unvisited bc it's about to get visited
         visited.append(current)  # Add point to visited
@@ -148,7 +148,7 @@ def a_star(start, end):
 def pathfind(start, end):
     # Main pathfinding system
 
-    # Turn start and end positons to ints
+    # Turn start and end positions to ints
     start = (int(start[0]), int(start[1]))
     end = (int(end[0]), int(end[1]))
 
