@@ -1,7 +1,7 @@
 # TO DO:
-# Enemy hitscan
 # Level end system
-# Visit all warnings and typos
+# Weapon items
+# Enemies dropping ammo
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -28,7 +28,59 @@ class Player:
 
         self.hp = 100
         self.ammo = 0
-        self.weapon_nr = 1
+        self.weapon_nr = 2
+
+    def death(self, enemy):
+        delta_x = enemy.x - self.x
+        delta_y = enemy.y - self.y
+        angle_to_enemy = atan2(delta_y, delta_x)
+
+        difference = (angle_to_enemy + pi) - (self.viewangle + pi)
+        if difference < 0:
+            difference += 2 * pi
+        if difference < pi:
+            turn_radians = 0.05
+        else:
+            turn_radians = -0.05
+
+        ratio = D_H / D_W
+        o_color = (255, 26, 26)  # Outline color
+        o_size = 0  # Outline thickness/size
+        done = False
+        while not done:
+            # Update enemies
+            for e in ENEMIES:
+                delta_x = e.x - self.x
+                delta_y = e.y - self.y
+                angle_from_player = atan2(delta_y, delta_x)
+                e.update_perp_dist(delta_x, delta_y, angle_from_player)
+
+            draw_background()
+            send_rays()
+            draw_frame()
+
+            if abs(self.viewangle - angle_to_enemy) > 0.05:
+                self.viewangle = fixed_angle(self.viewangle + turn_radians)
+                if abs(self.viewangle - angle_to_enemy) < 0.05:
+                    self.viewangle = angle_to_enemy
+                self.dir_x = cos(self.viewangle)
+                self.dir_y = sin(self.viewangle)
+            elif o_size < H_W:
+                o_size += 10
+                # Sides
+                pygame.draw.rect(DISPLAY, o_color, (0, 0, o_size, D_H))
+                pygame.draw.rect(DISPLAY, o_color, (D_W - o_size, 0, o_size, D_H))
+                # Top/bottom
+                pygame.draw.rect(DISPLAY, o_color, (o_size, 0, D_W - 2 * o_size, int(o_size * ratio)))
+                pygame.draw.rect(DISPLAY, o_color, (o_size, D_H - int(o_size * ratio),
+                                                    D_W - 2 * o_size, int(o_size * ratio)))
+            else:
+                done = True
+
+            pygame.display.flip()
+            CLOCK.tick(30)
+
+        load_level(LEVEL_NR)  # Restarts level
 
     def hitscan(self, weapon):
         # An instant shot detection system
@@ -69,8 +121,9 @@ class Player:
     def handle_movement(self):
         # Checks for movement (WASD)
         keys_pressed = pygame.key.get_pressed()
-        self.dir_x = cos(PLAYER.viewangle)
-        self.dir_y = sin(PLAYER.viewangle)
+        self.moving = False
+        self.dir_x = cos(self.viewangle)
+        self.dir_y = sin(self.viewangle)
 
         # Vector based movement, bc otherwise player could move faster diagonally
         if keys_pressed[K_w] or keys_pressed[K_a] or keys_pressed[K_s] or keys_pressed[K_d]:
@@ -94,11 +147,11 @@ class Player:
 
             movement_vector = numpy.asarray([[movement_x, movement_y]])  # Needed for normalize() function
             if abs(movement_vector[0][0]) + abs(movement_vector[0][1]) > 0.1:
-                normalized_vector = normalize(movement_vector)[
-                    0]  # [0] because vector is inside of list with one element
+                self.moving = True
+                normalized_vector = normalize(movement_vector)[0]  # [0] because vector is inside of list
 
-                PLAYER.move(normalized_vector[0] * PLAYER.speed,
-                            normalized_vector[1] * PLAYER.speed)
+                PLAYER.move(normalized_vector[0] * Player.speed,
+                            normalized_vector[1] * Player.speed)
 
     def move(self, x_move, y_move):
         def one_point_collision(y, x):
@@ -571,7 +624,7 @@ class Enemy(Drawable, Sprite):
 
         # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
         # What each attribute means see graphics.py get_enemy_info() enemy_info dictionary description
-        self.name, self.hp, self.speed, self.shooting_range, self.instant_alert_dist,\
+        self.name, self.hp, self.speed, self.shooting_range, self.accuracy, self.instant_alert_dist,\
         self.memory, self.patience, self.hittable_amount = ENEMY_INFO[self.sheet]
 
         # Timed events tick variables (frames passed since some action)
@@ -634,7 +687,31 @@ class Enemy(Drawable, Sprite):
 
     def shoot(self):
         # Player shot hit and damage logic / enemy hitscan
-        pass
+        # https://wolfenstein.fandom.com/wiki/Damage
+
+        dist = sqrt(self.dist_squared)
+        if PLAYER.moving:
+            speed = 160
+        else:
+            speed = 256
+        if can_see((PLAYER.x, PLAYER.y), (self.x, self.y), PLAYER.viewangle, FOV):
+            look = 16
+        else:
+            look = 8
+        rand = random.randint(0, 255)
+
+        player_hit = rand < speed - dist * self.accuracy * look
+        if player_hit:
+            rand = random.randint(0, 255)
+            if dist < 2:
+                damage = rand / 4
+            elif dist > 4:
+                damage = rand / 16
+            else:
+                damage = rand / 8
+            PLAYER.hp -= int(damage)
+            if PLAYER.hp <= 0:
+                PLAYER.death(self)
 
     def ready_to_shoot(self):
         return self.alerted and \
@@ -729,7 +806,7 @@ class Enemy(Drawable, Sprite):
             self.alerted = True
             self.wanted_angle = atan2(-delta_y, -delta_x)
 
-            can_see_player = can_see((self.x, self.y), (PLAYER.x, PLAYER.y), self.angle, FOV)
+            can_see_player = can_see((self.x, self.y), (PLAYER.x, PLAYER.y), self.angle, Enemy.fov)
             if can_see_player or self.could_see_alerted_enemies():
                 self.last_saw_ticks = 0
             elif self.last_saw_ticks < self.memory:
@@ -847,6 +924,9 @@ class Enemy(Drawable, Sprite):
                     self.last_saw_ticks = 0
                     self.stationary_ticks = 0
 
+        self.update_perp_dist(delta_x, delta_y, angle_from_player)
+
+    def update_perp_dist(self, delta_x, delta_y, angle_from_player):
         self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
         if self.perp_dist > 0:
             self.image = self.sheet.subsurface(self.column * TEXTURE_SIZE, self.row * TEXTURE_SIZE,
@@ -890,6 +970,10 @@ def can_see(from_, to, viewangle=0.0, fov=0.0):
 
 
 def send_rays():
+    global WALLS
+    WALLS = []
+    global OBJECTS
+    OBJECTS = []
     for c, rayangle_offset in enumerate(CAMERA_PLANE.rayangle_offsets):
         # Get the rayangle that's going to be raycasted
         rayangle = fixed_angle(PLAYER.viewangle + rayangle_offset)
@@ -1199,10 +1283,6 @@ def events():
 
 def update_gameobjects():
     # Function made for updating game objects every frame
-    global WALLS
-    WALLS = []
-    global OBJECTS
-    OBJECTS = []
 
     for c, d in enumerate(DOORS):
         d.move()
@@ -1238,63 +1318,46 @@ def update_gameobjects():
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
 
 
-def load_enemies(tilemap, tile_values_info):
-    enemies = []
-    for row in range(len(tilemap)):
-        for column in range(len(tilemap[row])):
-            if tile_values_info[tilemap[row][column]].type == 'Enemy':
-                spritesheet = tile_values_info[tilemap[row][column]].texture
-                pos = (column + 0.5, row + 0.5)
-                enemies.append(Enemy(spritesheet, pos))
-                tilemap[row][column] = 0  # Clears tile
-
-    # Process some stuff after enemies have been cleared from tilemap
-    for e in enemies:
-        e.get_look_angles()
-        e.get_home_room()
-
-    return enemies
-
-
-def load_level(level_nr, tile_values_info):
+def load_level(level_nr):
     # Create tilemap
     with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
-        tilemap = []
+        global TILEMAP
+        TILEMAP = []
         for line in f:
             row = line.replace('\n', '')  # Get rid of newline (\n)
             row = row[1:-1]  # Get rid of '[' and ']'
             row = row.split(',')  # Split line into list
             row = [int(i) for i in row]  # Turn all number strings to an int
-            tilemap.append(row)
+            TILEMAP.append(row)
 
     # Create player
     with open('../levels/{}/player.txt'.format(level_nr), 'r') as f:
         player_pos = f.readline().replace('\n', '').split(',')
         player_pos = [float(i) for i in player_pos]
         player_angle = float(f.readline().replace('\n', ''))
-        player = Player(player_pos, player_angle)
+        global PLAYER
+        PLAYER = Player(player_pos, player_angle)
 
     # Background
     with open('../levels/{}/background.txt'.format(level_nr), 'r') as f:
-        background_colours = []
+        global BACKGROUND_COLOURS
+        BACKGROUND_COLOURS = []
         for _ in range(2):
             colour = f.readline().replace('\n', '').split(',')
             colour = [int(i) for i in colour]
-            background_colours.append(tuple(colour))
+            BACKGROUND_COLOURS.append(tuple(colour))
 
-        skytexture = None
+        global SKYTEXTURE
+        SKYTEXTURE = None
         value = int(f.readline().replace('\n', ''))
         if value > 0:
             skytextures = os.listdir('../textures/skies')
             try:
-                skytexture = pygame.image.load('../textures/skies/{}'.format(skytextures[value - 1])).convert()
+                SKYTEXTURE = pygame.image.load('../textures/skies/{}'.format(skytextures[value - 1])).convert()
             except pygame.error:
                 pass
             else:
-                skytexture = pygame.transform.scale(skytexture, (D_W * 4, H_H))
-
-    # Run pathfinding setup function
-    pathfinding.setup(tilemap, tile_values_info)
+                SKYTEXTURE = pygame.transform.scale(SKYTEXTURE, (D_W * 4, H_H))
 
     # Empty projectiles and doors
     global DOORS
@@ -1302,7 +1365,32 @@ def load_level(level_nr, tile_values_info):
     global PROJECTILES
     PROJECTILES = []
 
-    return player, background_colours, skytexture, tilemap
+    global WEAPON_MODEL
+    WEAPON_MODEL = WeaponModel()
+
+    for w in WEAPONS[1:]:
+        if not w.melee:
+            w.mag_ammo = w.mag_size
+
+    # Enemies
+    global ENEMIES
+    ENEMIES = []
+    for row in range(len(TILEMAP)):
+        for column in range(len(TILEMAP[row])):
+            if TILE_VALUES_INFO[TILEMAP[row][column]].type == 'Enemy':
+                spritesheet = TILE_VALUES_INFO[TILEMAP[row][column]].texture
+                pos = (column + 0.5, row + 0.5)
+                ENEMIES.append(Enemy(spritesheet, pos))
+                TILEMAP[row][column] = 0  # Clears tile
+    # Process some stuff after enemies have been cleared from tilemap
+    for e in ENEMIES:
+        e.get_look_angles()
+        e.get_home_room()
+
+    # Run pathfinding setup function
+    pathfinding.setup(TILEMAP, TILE_VALUES_INFO)
+
+    game_loop()
 
 
 def draw_background():
@@ -1398,6 +1486,22 @@ def draw_hud():
     DISPLAY.blit(hp_amount_surface, (x_safezone, D_H - 32))
 
 
+def game_loop():
+    PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
+    PLAYER.handle_movement()
+
+    events()
+    update_gameobjects()
+
+    draw_background()
+    send_rays()
+    draw_frame()
+    draw_hud()
+
+    pygame.display.flip()
+    CLOCK.tick(30)
+
+
 if __name__ == '__main__':
     import sys
     import os
@@ -1420,6 +1524,7 @@ if __name__ == '__main__':
     H_W = int(D_W / 2)  # Half width
     H_H = int(D_H / 2)  # Half height
     FOV = pi / 2  # = 90 degrees
+    LEVEL_NR = 1
     RAYS_AMOUNT = H_W  # Drawing frequency across the screen / Rays casted each frame
     SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
     CAMERA_PLANE = CameraPlane(RAYS_AMOUNT, FOV)
@@ -1427,6 +1532,7 @@ if __name__ == '__main__':
     # Make class constants
     Drawable.constant = 0.6 * D_H
     Wall.width = int(D_W / RAYS_AMOUNT)
+    Enemy.fov = FOV  # Enemies share the same fov as player
 
     # Pygame stuff
     pygame.init()
@@ -1444,28 +1550,8 @@ if __name__ == '__main__':
     TILE_VALUES_INFO = graphics.get_tile_values_info(sys, pygame, TEXTURE_SIZE, ENEMY_INFO)
     WEAPONS = graphics.get_weapons(sys, pygame)
 
-    PLAYER,\
-    BACKGROUND_COLOURS,\
-    SKYTEXTURE,\
-    TILEMAP = load_level(2, TILE_VALUES_INFO)
-    ENEMIES = load_enemies(TILEMAP, TILE_VALUES_INFO)
-
-    WEAPON_MODEL = WeaponModel()
-
+    load_level(LEVEL_NR)
     QUIT = False
     while not QUIT:
-        PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
-        PLAYER.handle_movement()
-
-        events()
-        update_gameobjects()
-
-        draw_background()
-        send_rays()
-        draw_frame()
-        draw_hud()
-
-        pygame.display.flip()
-        CLOCK.tick(30)
-
+        game_loop()
     pygame.quit()

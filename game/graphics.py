@@ -83,6 +83,41 @@ def get_weapons(sys_module, pygame_module):
         return weapons
 
 
+def get_enemy_info(sys_module, pygame_module):
+    sys = sys_module
+    pygame = pygame_module
+    try:
+        # Enemy spritesheets
+        # Using original Wolfenstein 3D enemy names
+        guard = pygame.image.load('../textures/enemies/guard.png').convert_alpha()
+        ss = pygame.image.load('../textures/enemies/ss.png').convert_alpha()
+        officer = pygame.image.load('../textures/enemies/officer.png').convert_alpha()
+
+    except pygame.error as loading_error:
+        sys.exit(loading_error)
+
+    else:
+        enemy_info = {
+            # spritesheet: (name, hp, speed, shooting_range, accuracy,
+            #               instant_alert_dist, memory, patience, hittable_amount)
+            #
+            # Attributes description:
+            #     shooting_range = maximum distance in units where enemy can shoot player from
+            #           accuracy = var ranging from 0 to 1, 0 means distance doesn't matter to enemy at all,
+            #                      1 means he's completely average shooter
+            # instant_alert_dist = distance in which enemy automatically becomes alerted even if he can't see player
+            #             memory = the time in ticks enemy knows player's position,
+            #                      after player has disappeared from enemy's vision
+            #           patience = the maximum time enemy stays standing still without an action
+            #    hittable_amount = "average amount enemy" in each enemy's spritesheet cells
+            #                      (basically how much of enemy's average spritesheet cell is non-transparent)
+            guard:   (  'Guard',  3, 0.04, 10, 1.0, 1.4,  90, 120, 1/3),
+            ss:      (     'SS', 10, 0.05, 20, 1.0, 1.4, 150, 120, 1/2),
+            officer: ('Officer',  6, 0.06, 15, 0.7, 1.4, 150,  90, 1/3)
+        }
+        return enemy_info
+
+
 def get_door_side_texture(sys_module, pygame_module):
     sys = sys_module
     pygame = pygame_module
@@ -94,38 +129,6 @@ def get_door_side_texture(sys_module, pygame_module):
 
     else:
         return door_side_texture
-
-
-def get_enemy_info(sys_module, pygame_module):
-    sys = sys_module
-    pygame = pygame_module
-    try:
-        # Enemy spritesheets
-        # Using original Wolfenstein 3D enemy names
-        guard = pygame.image.load('../textures/enemies/Guard.png').convert_alpha()
-        ss = pygame.image.load('../textures/enemies/SS.png').convert_alpha()
-        officer = pygame.image.load('../textures/enemies/Officer.png').convert_alpha()
-
-    except pygame.error as loading_error:
-        sys.exit(loading_error)
-
-    else:
-        enemy_info = {
-            # spritesheet: name, hp, speed, shooting_range, instant_alert_dist, memory, patience, hittable_amount
-            #
-            # Attributes description:
-            # shooting_range = maximum distance in units where enemy can shoot player from
-            # instant_alert_dist = distance in which enemy automatically starts chasing player even if he can't see him
-            # memory = the time (in ticks) enemy knows player position after he has disappeared from his vision
-            #          (also the time in which enemy's path will be updated towards player)
-            # patience = the maximum time enemy stays standing still without an action
-            # hittable_amount = "average amount enemy" in each enemy's spritesheets cells
-            #                   (basically how much of average cell is non-transparent)
-            guard:   (  'Guard',  3, 0.04, 10, 1.4,  90, 120, 1/3),
-            ss:      (     'SS', 10, 0.05, 20, 1.4, 150, 120, 1/2),
-            officer: ('Officer',  6, 0.06, 15, 1.4, 150,  90, 1/3)
-        }
-        return enemy_info
 
 
 def get_tile_values_info(sys_module, pygame_module, texture_size, enemy_info):
