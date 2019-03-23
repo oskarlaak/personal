@@ -96,7 +96,7 @@ class AngleBox:
             self.angle += math.pi * 2
 
     def draw(self):
-        DISPLAY.blit(pygame.transform.rotate(self.image, math.degrees(self.angle)), (self.rect.x, self.rect.y))
+        DISPLAY.blit(pygame.transform.rotate(self.image, math.degrees(-self.angle)), (self.rect.x, self.rect.y))
 
 
 class Tilemap:

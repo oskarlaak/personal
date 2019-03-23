@@ -1,7 +1,5 @@
 # TO DO:
-# Level end system
-# Weapon items
-# Enemies dropping ammo
+# Level start/end system
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -29,6 +27,12 @@ class Player:
         self.hp = 100
         self.ammo = 0
         self.weapon_nr = 2
+
+    def hurt(self, damage, enemy):
+        EFFECTS.update((255, 0, 0))
+        self.hp -= damage
+        if self.hp <= 0:
+            self.death(enemy)
 
     def death(self, enemy):
         delta_x = enemy.x - self.x
@@ -363,6 +367,24 @@ class WeaponModel:
     def draw(self):
         weapon_image = self.weapon.weapon_sheet.subsurface(WeaponModel.w * self.column, 0, WeaponModel.w, WeaponModel.h)
         DISPLAY.blit(weapon_image, ((D_W - WeaponModel.w) / 2, D_H - WeaponModel.h + self.draw_y))
+
+
+class Effects:
+    def __init__(self):
+        self.colour = None
+        self.alpha = 0
+
+    def update(self, colour):
+        self.colour = colour
+        self.alpha = 128
+
+    def draw(self):
+        if self.alpha:
+            effect = pygame.Surface((D_W, D_H))
+            effect.set_alpha(self.alpha)
+            effect.fill(self.colour)
+            DISPLAY.blit(effect, (0, 0))
+            self.alpha -= 16
 
 
 class CameraPlane:
@@ -709,9 +731,7 @@ class Enemy(Drawable, Sprite):
                 damage = rand / 16
             else:
                 damage = rand / 8
-            PLAYER.hp -= int(damage)
-            if PLAYER.hp <= 0:
-                PLAYER.death(self)
+            PLAYER.hurt(int(damage), self)
 
     def ready_to_shoot(self):
         return self.alerted and \
@@ -1280,7 +1300,7 @@ def events():
                         switch = 1
                         while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
                             switch += 1
-                    except AttributeError:  # WEAPONS[0] is None, therefore it doesn't have in_loadout attribute
+                    except IndexError:
                         pass
                     else:
                         WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
@@ -1289,7 +1309,7 @@ def events():
                         switch = -1
                         while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
                             switch -= 1
-                    except IndexError:
+                    except AttributeError:  # WEAPONS[0] is None, therefore it doesn't have in_loadout attribute
                         pass
                     else:
                         WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
@@ -1350,6 +1370,7 @@ def update_gameobjects():
             elif tile_desc == 'Rocket launcher':
                 handle_weapon_pickup(6)
 
+            EFFECTS.update((0, 255, 0))
             TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
 
 
@@ -1402,6 +1423,8 @@ def load_level(level_nr):
 
     global WEAPON_MODEL
     WEAPON_MODEL = WeaponModel()
+    global EFFECTS
+    EFFECTS = Effects()
 
     for w in WEAPONS[1:]:
         if w.starting_weapon:
@@ -1523,6 +1546,8 @@ def draw_hud():
     hp_amount_surface = GAME_FONT.render(str(PLAYER.hp), False, dynamic_colour(PLAYER.hp, 100))
     DISPLAY.blit(hp_text_surface, (x_safezone, D_H - 64))
     DISPLAY.blit(hp_amount_surface, (x_safezone, D_H - 32))
+
+    EFFECTS.draw()
 
 
 def game_loop():
