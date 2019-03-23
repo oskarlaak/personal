@@ -525,15 +525,15 @@ class Projectile(Drawable, Sprite):
 
         tile_value = TILEMAP[int(self.y)][int(self.x)]
         if tile_value != 0:
-            tile_id = TILE_VALUES_INFO[tile_value].type
-            if tile_id == 'Wall':
+            tile_type = TILE_VALUES_INFO[tile_value].type
+            if tile_type == 'Wall':
                 # Cancel step
                 self.x -= self.x_step
                 self.y -= self.y_step
                 # Get the exact contact point
                 self.x, self.y = simple_raycast(self.angle, (self.x, self.y))
                 return True
-            elif tile_id == 'Door':
+            elif tile_type == 'Door':
                 max_travel_point = simple_raycast(self.angle, self.came_from)
                 max_travel_dist_squared = (self.came_from[0] - max_travel_point[0])**2 + \
                                           (self.came_from[1] - max_travel_point[1])**2
@@ -1068,9 +1068,9 @@ def raycast(rayangle, start_pos):
 
         tile_value = TILEMAP[map_y][map_x]
         if tile_value != 0:
-            tile_id = TILE_VALUES_INFO[tile_value].type
+            tile_type = TILE_VALUES_INFO[tile_value].type
 
-            if tile_id == 'Object':
+            if tile_type == 'Object' or tile_type == 'Object-dynamic':
                 for obj in OBJECTS:
                     if (obj.x - 0.5, obj.y - 0.5) == (map_x, map_y):
                         break
@@ -1078,7 +1078,7 @@ def raycast(rayangle, start_pos):
                     OBJECTS.append(Object((map_x, map_y), tile_value))
                 continue
 
-            if tile_id == 'Door':
+            if tile_type == 'Door':
                 # Update (x/y)_offset values
                 x_offset = ray_x - int(ray_x)
                 if x_offset == A:
@@ -1178,12 +1178,12 @@ def simple_raycast(rayangle, start_pos, side_needed=False):
 
         tile_value = TILEMAP[map_y][map_x]
         if tile_value != 0:
-            tile_id = TILE_VALUES_INFO[tile_value].type
+            tile_type = TILE_VALUES_INFO[tile_value].type
 
-            if tile_id == 'Object':
+            if tile_type == 'Object' or tile_type == 'Object-dynamic':
                 continue
 
-            if tile_id == 'Door':
+            if tile_type == 'Door':
                 # Update (x/y)_offset values
                 x_offset = ray_x - int(ray_x)
                 if x_offset == A:
@@ -1262,9 +1262,11 @@ def events():
                 numbers = (str(x) for x in range(1, 10))  # Skips 0 bc that can't be weapon slot
                 if key in numbers:
                     key = int(key)
-                    # If requested weapon not equipped already and key index in WEAPONS
+
                     if key != PLAYER.weapon_nr and key <= len(WEAPONS) - 1:
-                        WEAPON_MODEL.switching = key
+                        requested_weapon = WEAPONS[key]
+                        if requested_weapon.in_loadout:
+                            WEAPON_MODEL.switching = key
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
@@ -1274,16 +1276,26 @@ def events():
 
             elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
                 if event.button == 4:  # Mousewheel up
-                    if PLAYER.weapon_nr > 1:  # Can't go under 1
-                        WEAPON_MODEL.switching = PLAYER.weapon_nr - 1
+                    try:
+                        switch = 1
+                        while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
+                            switch += 1
+                    except AttributeError:  # WEAPONS[0] is None, therefore it doesn't have in_loadout attribute
+                        pass
+                    else:
+                        WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
                 if event.button == 5:  # Mousewheel down
-                    if PLAYER.weapon_nr < len(WEAPONS) - 1:
-                        WEAPON_MODEL.switching = PLAYER.weapon_nr + 1
+                    try:
+                        switch = -1
+                        while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
+                            switch -= 1
+                    except IndexError:
+                        pass
+                    else:
+                        WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
 
 
 def update_gameobjects():
-    # Function made for updating game objects every frame
-
     for c, d in enumerate(DOORS):
         d.move()
         if d.state == 0:
@@ -1301,21 +1313,44 @@ def update_gameobjects():
     tile_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
     if tile_value < 0:
         OBJECTS.append(Object((int(PLAYER.x), int(PLAYER.y)), tile_value))
-        tile_id = TILE_VALUES_INFO[tile_value].desc
+        if TILE_VALUES_INFO[tile_value].type == 'Object-dynamic':
+            def handle_weapon_pickup(weapon_nr):
+                weapon = WEAPONS[weapon_nr]
+                if weapon.in_loadout:
+                    PLAYER.ammo += weapon.mag_size
+                    if PLAYER.ammo > PLAYER.max_ammo:
+                        PLAYER.ammo = PLAYER.max_ammo
+                else:
+                    weapon.in_loadout = True
+                    if not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading and not WEAPON_MODEL.switching:
+                        WEAPON_MODEL.switching = weapon_nr
 
-        if tile_id == 'Ammo':
-            if PLAYER.ammo < PLAYER.max_ammo:
-                PLAYER.ammo += 10
-                if PLAYER.ammo > PLAYER.max_ammo:
-                    PLAYER.ammo = PLAYER.max_ammo
-                TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
+            tile_desc = TILE_VALUES_INFO[tile_value].desc
+            if tile_desc == 'Ammo':
+                if PLAYER.ammo < PLAYER.max_ammo:
+                    PLAYER.ammo += 10
+                    if PLAYER.ammo > PLAYER.max_ammo:
+                        PLAYER.ammo = PLAYER.max_ammo
+                else:
+                    return None  # Avoid deleting object
+            elif tile_desc == 'Health':
+                if PLAYER.hp < PLAYER.max_hp:
+                    PLAYER.hp += 20
+                    if PLAYER.hp > PLAYER.max_hp:
+                        PLAYER.hp = PLAYER.max_hp
+                else:
+                    return None  # Avoid deleting object
 
-        elif tile_id == 'Health':
-            if PLAYER.hp < PLAYER.max_hp:
-                PLAYER.hp += 20
-                if PLAYER.hp > PLAYER.max_hp:
-                    PLAYER.hp = PLAYER.max_hp
-                TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
+            elif tile_desc == 'Machinegun':
+                handle_weapon_pickup(3)
+            elif tile_desc == 'Chaingun':
+                handle_weapon_pickup(4)
+            elif tile_desc == 'Plasmagun':
+                handle_weapon_pickup(5)
+            elif tile_desc == 'Rocket launcher':
+                handle_weapon_pickup(6)
+
+            TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
 
 
 def load_level(level_nr):
@@ -1369,6 +1404,10 @@ def load_level(level_nr):
     WEAPON_MODEL = WeaponModel()
 
     for w in WEAPONS[1:]:
+        if w.starting_weapon:
+            w.in_loadout = True
+        else:
+            w.in_loadout = False
         if not w.melee:
             w.mag_ammo = w.mag_size
 

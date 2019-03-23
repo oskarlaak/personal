@@ -443,11 +443,12 @@ def events():
 def create_sidebar_objects():
     def create_texturegroups():
         tg_heights = {  # Texturegroup heights
-            'Enemy': 192,
-            'Object': 288,
-            'Door': 384,
-            'Wall': 480,
-            'Special': 576
+            'Enemy': 177,
+            'Object-dynamic': 273,
+            'Object': 369,
+            'Door': 465,
+            'Wall': 561,
+            'Special': 657
         }
 
         texturegroups = []
@@ -480,20 +481,20 @@ def create_sidebar_objects():
     def create_inputboxes():
         rgbs = []
         # Ceiling colour
-        rgbs.append(InputBox((1024 +  64, 1024 - 256), 'R:', 255))
-        rgbs.append(InputBox((1024 + 128, 1024 - 256), 'G:', 255))
-        rgbs.append(InputBox((1024 + 192, 1024 - 256), 'B:', 255))
+        rgbs.append(InputBox((1024 +  64, 1024 - 240), 'R:', 255))
+        rgbs.append(InputBox((1024 + 128, 1024 - 240), 'G:', 255))
+        rgbs.append(InputBox((1024 + 192, 1024 - 240), 'B:', 255))
         # Floor colour
-        rgbs.append(InputBox((1024 +  64, 1024 - 192), 'R:', 255))
-        rgbs.append(InputBox((1024 + 128, 1024 - 192), 'G:', 255))
-        rgbs.append(InputBox((1024 + 192, 1024 - 192), 'B:', 255))
+        rgbs.append(InputBox((1024 +  64, 1024 - 176), 'R:', 255))
+        rgbs.append(InputBox((1024 + 128, 1024 - 176), 'G:', 255))
+        rgbs.append(InputBox((1024 + 192, 1024 - 176), 'B:', 255))
         # Level number
-        level_nr = InputBox((1024 + 384, 1024 - 192), 'LEVEL NR:')
+        level_nr = InputBox((1024 + 384, 1024 - 176), 'LEVEL NR:')
 
         return rgbs, level_nr
 
     def create_anglebox():
-        return AngleBox((1024 + 288, 1024 - 256), RED_ARROW)
+        return AngleBox((1024 + 288, 1024 - 240), RED_ARROW)
 
     texturegroups = create_texturegroups()
     skytexture = create_skytexturebox()

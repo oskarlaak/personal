@@ -1,7 +1,7 @@
 def get_weapons(sys_module, pygame_module):
     class Weapon:
-        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column,
-                     reload_time, mag_size, automatic, ammo_unlimited, projectile=False):
+        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column, reload_time,
+                     mag_size, automatic, ammo_unlimited, starting_weapon, projectile=False):
             self.name = name
             self.weapon_sheet = weapon_sheet
             self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
@@ -17,12 +17,15 @@ def get_weapons(sys_module, pygame_module):
                 self.auto_reload = False
             self.automatic = automatic
             self.ammo_unlimited = ammo_unlimited
+            self.starting_weapon = starting_weapon
+            self.in_loadout = False
 
             self.melee = False
             self.projectile = projectile
 
     class Melee:
-        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column, hit_radius, damage):
+        def __init__(self, name, weapon_sheet, animation_frames, fire_delay,
+                     shot_column, hit_radius, damage, starting_weapon):
             self.name = name
             self.weapon_sheet = weapon_sheet
             self.animation_frames = animation_frames
@@ -35,6 +38,8 @@ def get_weapons(sys_module, pygame_module):
             self.mag_ammo = False
             self.auto_reload = False
             self.automatic = False
+            self.starting_weapon = starting_weapon
+            self.in_loadout = False
 
             self.melee = True
             self.projectile = False
@@ -74,12 +79,12 @@ def get_weapons(sys_module, pygame_module):
         rocket = Projectile(rocket, 3, 0.75, 0.3, 0.3, 10, True)
 
         weapons = [None]  # Makes it so first weapon is index 1 instead of 0
-        weapons.append(Melee('Knife', knife, 3, 9, 2, 1.3, 3))
-        weapons.append(Weapon('Pistol', pistol, 4, 8, 2, 50, 12, False, True))
-        weapons.append(Weapon('Machinegun', machinegun, 4, 4, 2, 60, 25, True, False))
-        weapons.append(Weapon('Chaingun', chaingun, 3, 3, 1, 120, 50, True, False))
-        weapons.append(Weapon('Plasmagun', plasmagun, 2, 4, 2, 80, 20, True, False, plasma))
-        weapons.append(Weapon('Rocket launcher', rocketlauncher, 5, 10, 1, 40, 1, False, False, rocket))
+        weapons.append(Melee('Knife', knife, 3, 9, 2, 1.3, 3, True))
+        weapons.append(Weapon('Pistol', pistol, 4, 8, 2, 50, 12, False, True, True))
+        weapons.append(Weapon('Machinegun', machinegun, 4, 4, 2, 60, 25, True, False, False))
+        weapons.append(Weapon('Chaingun', chaingun, 3, 3, 1, 120, 50, True, False, False))
+        weapons.append(Weapon('Plasmagun', plasmagun, 2, 4, 2, 80, 20, True, False, False, plasma))
+        weapons.append(Weapon('Rocket launcher', rocketlauncher, 5, 10, 1, 40, 1, False, False, False, rocket))
         return weapons
 
 
@@ -163,10 +168,16 @@ def get_tile_values_info(sys_module, pygame_module, texture_size, enemy_info):
         static_door_textures = pygame.image.load('../textures/doors/static.png').convert()
 
         # Object sprites
-        ammo_sprite = pygame.image.load('../textures/objects/ammo.png').convert_alpha()
-        health_sprite = pygame.image.load('../textures/objects/health.png').convert_alpha()
         nonsolid_sprites = pygame.image.load('../textures/objects/nonsolids.png').convert_alpha()
         solid_sprites = pygame.image.load('../textures/objects/solids.png').convert_alpha()
+
+        # Dynamic objects
+        ammo_sprite = pygame.image.load('../textures/objects/dynamic/ammo.png').convert_alpha()
+        health_sprite = pygame.image.load('../textures/objects/dynamic/health.png').convert_alpha()
+        machinegun = pygame.image.load('../textures/objects/dynamic/machinegun.png').convert_alpha()
+        chaingun = pygame.image.load('../textures/objects/dynamic/chaingun.png').convert_alpha()
+        plasmagun = pygame.image.load('../textures/objects/dynamic/plasmagun.png').convert_alpha()
+        rocketlauncher = pygame.image.load('../textures/objects/dynamic/rocketlauncher.png').convert_alpha()
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -183,13 +194,19 @@ def get_tile_values_info(sys_module, pygame_module, texture_size, enemy_info):
         # ---Negative values---
         tile_values_info[index] = Tile(None, 'Empty', '')
 
-        # Ammo
+        # Dynamic objects
         index -= 1
-        tile_values_info[index] = Tile(ammo_sprite, 'Object', 'Ammo')
-
-        # Health
+        tile_values_info[index] = Tile(ammo_sprite, 'Object-dynamic', 'Ammo')
         index -= 1
-        tile_values_info[index] = Tile(health_sprite, 'Object', 'Health')
+        tile_values_info[index] = Tile(health_sprite, 'Object-dynamic', 'Health')
+        index -= 1
+        tile_values_info[index] = Tile(machinegun, 'Object-dynamic', 'Machinegun')
+        index -= 1
+        tile_values_info[index] = Tile(chaingun, 'Object-dynamic', 'Chaingun')
+        index -= 1
+        tile_values_info[index] = Tile(plasmagun, 'Object-dynamic', 'Plasmagun')
+        index -= 1
+        tile_values_info[index] = Tile(rocketlauncher, 'Object-dynamic', 'Rocket launcher')
 
         # Other non-solid objects
         index -= 1
