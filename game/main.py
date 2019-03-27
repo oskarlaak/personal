@@ -1,5 +1,6 @@
 # TO DO:
-# Level start/end system
+# Level start animation
+# Player death animation
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -28,63 +29,11 @@ class Player:
         self.ammo = 0
         self.weapon_nr = 2
 
-    def hurt(self, damage, enemy):
+    def hurt(self, damage):
         EFFECTS.update((255, 0, 0))
         self.hp -= damage
         if self.hp <= 0:
-            self.death(enemy)
-
-    def death(self, enemy):
-        delta_x = enemy.x - self.x
-        delta_y = enemy.y - self.y
-        angle_to_enemy = atan2(delta_y, delta_x)
-
-        difference = (angle_to_enemy + pi) - (self.viewangle + pi)
-        if difference < 0:
-            difference += 2 * pi
-        if difference < pi:
-            turn_radians = 0.05
-        else:
-            turn_radians = -0.05
-
-        ratio = D_H / D_W
-        o_color = (255, 26, 26)  # Outline color
-        o_size = 0  # Outline thickness/size
-        done = False
-        while not done:
-            # Update enemies
-            for e in ENEMIES:
-                delta_x = e.x - self.x
-                delta_y = e.y - self.y
-                angle_from_player = atan2(delta_y, delta_x)
-                e.update_perp_dist(delta_x, delta_y, angle_from_player)
-
-            draw_background()
-            send_rays()
-            draw_frame()
-
-            if abs(self.viewangle - angle_to_enemy) > 0.05:
-                self.viewangle = fixed_angle(self.viewangle + turn_radians)
-                if abs(self.viewangle - angle_to_enemy) < 0.05:
-                    self.viewangle = angle_to_enemy
-                self.dir_x = cos(self.viewangle)
-                self.dir_y = sin(self.viewangle)
-            elif o_size < H_W:
-                o_size += 10
-                # Sides
-                pygame.draw.rect(DISPLAY, o_color, (0, 0, o_size, D_H))
-                pygame.draw.rect(DISPLAY, o_color, (D_W - o_size, 0, o_size, D_H))
-                # Top/bottom
-                pygame.draw.rect(DISPLAY, o_color, (o_size, 0, D_W - 2 * o_size, int(o_size * ratio)))
-                pygame.draw.rect(DISPLAY, o_color, (o_size, D_H - int(o_size * ratio),
-                                                    D_W - 2 * o_size, int(o_size * ratio)))
-            else:
-                done = True
-
-            pygame.display.flip()
-            CLOCK.tick(30)
-
-        load_level(LEVEL_NR)  # Restarts level
+            LEVEL.restart()
 
     def hitscan(self, weapon):
         # An instant shot detection system
@@ -387,6 +336,80 @@ class Effects:
             self.alpha -= 16
 
 
+class Hud:
+    safezone_w = 5
+    safezone_h = 5
+    font_h = 28
+
+    def __init__(self):
+        self.alpha = 255
+
+    def draw(self):
+        def dynamic_colour(current, maximum):
+            ratio = current / maximum  # 1 is completely green, 0 completely red
+            if ratio < 0.5:
+                r = 255
+                g = int(ratio * 2 * 255)
+            else:
+                ratio = 1 - ratio
+                g = 255
+                r = int(ratio * 2 * 255)
+            b = 0
+            return r, g, b
+
+        def render_text(text, colour, background=None):
+            return GAME_FONT.render(text, False, colour, background)
+
+        # Simulates blinking effect
+        self.alpha -= 15
+        if self.alpha == -255:
+            self.alpha = 255
+
+        # FPS counter
+        fps_counter = render_text(str(ceil(CLOCK.get_fps())), (0, 255, 0))
+        DISPLAY.blit(fps_counter, (Hud.safezone_w, Hud.safezone_h))
+
+        # Weapon HUD
+        WEAPON_MODEL.draw()
+        current_weapon = WEAPON_MODEL.weapon
+
+        weapon_name = render_text(str(current_weapon.name), (255, 255, 255))
+        if current_weapon.melee:
+            weapon_ammo = render_text('--/--', (0, 255, 0))
+        else:
+            if not WEAPON_MODEL.reloading:
+                if current_weapon.ammo_unlimited:
+                    total_ammo = 'Unlimited'
+                else:
+                    total_ammo = PLAYER.ammo
+
+                weapon_ammo_text = '{}/{}'.format(current_weapon.mag_ammo, total_ammo)
+
+                if current_weapon.mag_ammo:
+                    self.alpha = 255  # Resets blinking
+                    weapon_ammo = render_text(weapon_ammo_text,
+                                              dynamic_colour(current_weapon.mag_ammo, current_weapon.mag_size))
+                else:
+                    weapon_ammo = render_text(weapon_ammo_text, (255, 0, 0), (0, 0, 0))  # Set black background
+                    weapon_ammo.set_colorkey((0, 0, 0))  # Tell program to treat black as transparent
+                    weapon_ammo.set_alpha(abs(self.alpha))
+            else:
+                weapon_ammo = render_text('Reloading', (255, 0, 0), (0, 0, 0))  # Set black background
+                weapon_ammo.set_colorkey((0, 0, 0))  # Tell program to treat black as transparent
+                weapon_ammo.set_alpha(abs(self.alpha))
+
+        DISPLAY.blit(weapon_name, (D_W - weapon_name.get_width() - Hud.safezone_w, D_H - Hud.font_h*2 - Hud.safezone_h))
+        DISPLAY.blit(weapon_ammo, (D_W - weapon_ammo.get_width() - Hud.safezone_w, D_H - Hud.font_h - Hud.safezone_h))
+
+        # Player hp HUD
+        hp_text = render_text('HP:', (255, 255, 255))
+        hp_amount = render_text(str(PLAYER.hp), dynamic_colour(PLAYER.hp, Player.max_hp))
+        DISPLAY.blit(hp_text, (Hud.safezone_w, D_H - Hud.font_h*2 - Hud.safezone_h))
+        DISPLAY.blit(hp_amount, (Hud.safezone_w, D_H - Hud.font_h - Hud.safezone_h))
+
+        EFFECTS.draw()
+
+
 class CameraPlane:
     len = 1
 
@@ -536,7 +559,7 @@ class Projectile(Drawable, Sprite):
         self.hit = False
         self.hit_radius = projectile.hit_radius
         self.damage = projectile.damage
-        self.exploding = projectile.exploding
+        self.explosive = projectile.explosive
 
         self.update()  # One update is needed to get self.perp_dist
         self.update()  # Second is to avoid drawing projectile too close to player
@@ -577,7 +600,7 @@ class Projectile(Drawable, Sprite):
                     squared_dist = (e.x - self.x) ** 2 + (e.y - self.y) ** 2
                     if squared_dist < self.hit_radius ** 2:
                         self.hit = True
-                        if not self.exploding:
+                        if not self.explosive:
                             e.hurt(self.damage)
                         break
             else:
@@ -591,7 +614,7 @@ class Projectile(Drawable, Sprite):
                 self.column = 0
                 self.row = 1
                 self.ticks = 0
-                if self.exploding:
+                if self.explosive:
                     for e in ENEMIES:
                         if not e.dead:
                             squared_dist = (self.x - e.x)**2 + (self.y - e.y)**2
@@ -731,7 +754,7 @@ class Enemy(Drawable, Sprite):
                 damage = rand / 16
             else:
                 damage = rand / 8
-            PLAYER.hurt(int(damage), self)
+            PLAYER.hurt(int(damage))
 
     def ready_to_shoot(self):
         return self.alerted and \
@@ -957,6 +980,99 @@ class Enemy(Drawable, Sprite):
                 self.adjust_image_height()
 
             self.calc_display_xy(angle_from_player)
+
+
+class Level:
+    def load(self, level_nr):
+        self.nr = level_nr
+        # Create tilemap
+        with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
+            global TILEMAP
+            TILEMAP = []
+            for line in f:
+                row = line.replace('\n', '')  # Get rid of newline (\n)
+                row = row[1:-1]  # Get rid of '[' and ']'
+                row = row.split(',')  # Split line into list
+                row = [int(i) for i in row]  # Turn all number strings to an int
+                TILEMAP.append(row)
+
+        # Create player
+        with open('../levels/{}/player.txt'.format(level_nr), 'r') as f:
+            player_pos = f.readline().replace('\n', '').split(',')
+            player_pos = [float(i) for i in player_pos]
+            player_angle = float(f.readline().replace('\n', ''))
+            global PLAYER
+            PLAYER = Player(player_pos, player_angle)
+
+        # Background
+        with open('../levels/{}/background.txt'.format(level_nr), 'r') as f:
+            colour = f.readline().replace('\n', '').split(',')
+            colour = [int(i) for i in colour]
+            self.ceiling_colour = tuple(colour)
+            colour = f.readline().replace('\n', '').split(',')
+            colour = [int(i) for i in colour]
+            self.floor_colour = tuple(colour)
+
+            self.skytexture = None
+            value = int(f.readline().replace('\n', ''))
+            if value > 0:
+                skytextures = os.listdir('../textures/skies')
+                try:
+                    self.skytexture = pygame.image.load('../textures/skies/{}'.format(skytextures[value - 1])).convert()
+                except pygame.error or IndexError:
+                    pass
+                else:
+                    self.skytexture = pygame.transform.scale(self.skytexture, (D_W * 4, H_H))
+
+        # Empty projectiles and doors
+        global DOORS
+        DOORS = []
+        global PROJECTILES
+        PROJECTILES = []
+
+        global EFFECTS
+        EFFECTS = Effects()
+        global WEAPON_MODEL
+        WEAPON_MODEL = WeaponModel()
+        for w in WEAPONS[1:]:
+            if w.starting_weapon:
+                w.in_loadout = True
+            else:
+                w.in_loadout = False
+            if not w.melee:
+                w.mag_ammo = w.mag_size
+
+        # Enemies
+        global ENEMIES
+        ENEMIES = []
+        for row in range(len(TILEMAP)):
+            for column in range(len(TILEMAP[row])):
+                if TILE_VALUES_INFO[TILEMAP[row][column]].type == 'Enemy':
+                    spritesheet = TILE_VALUES_INFO[TILEMAP[row][column]].texture
+                    pos = (column + 0.5, row + 0.5)
+                    ENEMIES.append(Enemy(spritesheet, pos))
+                    TILEMAP[row][column] = 0  # Clears tile
+        # Process some stuff after enemies have been cleared from tilemap
+        for e in ENEMIES:
+            e.get_look_angles()
+            e.get_home_room()
+
+        # Run pathfinding setup function
+        pathfinding.setup(TILEMAP, TILE_VALUES_INFO)
+
+    def start(self, level_nr):
+        self.load(level_nr)
+        # Blood going away
+
+        pygame.event.clear()
+        game_loop()
+
+    def restart(self):
+        # Blood coming to screen
+        self.start(self.nr)
+
+    def finish(self):
+        pass
 
 
 def fixed_angle(angle):
@@ -1245,74 +1361,85 @@ def simple_raycast(rayangle, start_pos, side_needed=False):
 
 
 def events():
+    global PAUSED
     global QUIT
-    weapon = WEAPON_MODEL.weapon
 
-    for event in pygame.event.get():
-        if event.type == pygame.KEYDOWN:
-            if event.key == K_ESCAPE:
-                QUIT = True
+    if PAUSED:
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN:
+                if event.key == K_ESCAPE:
+                    PAUSED = False
+                elif event.key == K_RETURN:
+                    QUIT = True
+        pygame.mouse.get_rel()
 
-            elif event.key == K_e:
-                x = int(PLAYER.x + PLAYER.dir_x)
-                y = int(PLAYER.y + PLAYER.dir_y)
-                tile_value = TILEMAP[y][x]
-                tile_type = TILE_VALUES_INFO[tile_value].type
-                tile_desc = TILE_VALUES_INFO[tile_value].desc
-                if tile_type == 'Door' and tile_desc == 'Dynamic':
-                    for d in DOORS:
-                        # If found the right door and it's not in motion already
-                        if x == d.x and y == d.y:
-                            d.state = 1
-                            break
-                elif tile_type == 'Wall' and tile_desc == 'End-trigger':
-                    TILEMAP[y][x] += 1  # Change trigger block texture
-                    #level_end()
+    else:
+        weapon = WEAPON_MODEL.weapon
+        for event in pygame.event.get():
+            if event.type == pygame.KEYDOWN:
+                if event.key == K_ESCAPE:
+                    PAUSED = True
 
-            elif event.key == K_r and not weapon.melee:
-                # If magazine not full and weapon not shooting
-                if weapon.mag_ammo < weapon.mag_size and not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
-                    if weapon.ammo_unlimited:
-                        WEAPON_MODEL.reloading = True
-                    elif PLAYER.ammo:
-                        WEAPON_MODEL.reloading = True
+                if event.key == K_e:
+                    x = int(PLAYER.x + PLAYER.dir_x)
+                    y = int(PLAYER.y + PLAYER.dir_y)
+                    tile_value = TILEMAP[y][x]
+                    tile_type = TILE_VALUES_INFO[tile_value].type
+                    tile_desc = TILE_VALUES_INFO[tile_value].desc
+                    if tile_type == 'Door' and tile_desc == 'Dynamic':
+                        for d in DOORS:
+                            # If found the right door and it's not in motion already
+                            if x == d.x and y == d.y:
+                                d.state = 1
+                                break
+                    elif tile_type == 'Wall' and tile_desc == 'End-trigger':
+                        TILEMAP[y][x] += 1  # Change trigger block texture
+                        LEVEL.finish()
 
-            elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
-                key = pygame.key.name(event.key)
-                numbers = (str(x) for x in range(1, 10))  # Skips 0 bc that can't be weapon slot
-                if key in numbers:
-                    key = int(key)
+                elif event.key == K_r and not weapon.melee:
+                    # If magazine not full and weapon not shooting
+                    if weapon.mag_ammo < weapon.mag_size and not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
+                        if weapon.ammo_unlimited:
+                            WEAPON_MODEL.reloading = True
+                        elif PLAYER.ammo:
+                            WEAPON_MODEL.reloading = True
 
-                    if key != PLAYER.weapon_nr and key <= len(WEAPONS) - 1:
-                        requested_weapon = WEAPONS[key]
-                        if requested_weapon.in_loadout:
-                            WEAPON_MODEL.switching = key
+                elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
+                    key = pygame.key.name(event.key)
+                    numbers = (str(x) for x in range(1, 10))  # Skips 0 bc that can't be weapon slot
+                    if key in numbers:
+                        key = int(key)
 
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:
-                if not WEAPON_MODEL.reloading and not WEAPON_MODEL.switching:
-                    if weapon.mag_ammo or weapon.melee:
-                        WEAPON_MODEL.shooting = True
+                        if key != PLAYER.weapon_nr and key <= len(WEAPONS) - 1:
+                            requested_weapon = WEAPONS[key]
+                            if requested_weapon.in_loadout:
+                                WEAPON_MODEL.switching = key
 
-            elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
-                if event.button == 4:  # Mousewheel up
-                    try:
-                        switch = 1
-                        while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
-                            switch += 1
-                    except IndexError:
-                        pass
-                    else:
-                        WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
-                if event.button == 5:  # Mousewheel down
-                    try:
-                        switch = -1
-                        while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
-                            switch -= 1
-                    except AttributeError:  # WEAPONS[0] is None, therefore it doesn't have in_loadout attribute
-                        pass
-                    else:
-                        WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    if not WEAPON_MODEL.reloading and not WEAPON_MODEL.switching:
+                        if weapon.mag_ammo or weapon.melee:
+                            WEAPON_MODEL.shooting = True
+
+                elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
+                    if event.button == 4:  # Mousewheel up
+                        try:
+                            switch = 1
+                            while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
+                                switch += 1
+                        except IndexError:
+                            pass
+                        else:
+                            WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
+                    if event.button == 5:  # Mousewheel down
+                        try:
+                            switch = -1
+                            while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
+                                switch -= 1
+                        except AttributeError:  # WEAPONS[0] is None, therefore it doesn't have in_loadout attribute
+                            pass
+                        else:
+                            WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
 
 
 def update_gameobjects():
@@ -1374,106 +1501,25 @@ def update_gameobjects():
             TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
 
 
-def load_level(level_nr):
-    # Create tilemap
-    with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
-        global TILEMAP
-        TILEMAP = []
-        for line in f:
-            row = line.replace('\n', '')  # Get rid of newline (\n)
-            row = row[1:-1]  # Get rid of '[' and ']'
-            row = row.split(',')  # Split line into list
-            row = [int(i) for i in row]  # Turn all number strings to an int
-            TILEMAP.append(row)
-
-    # Create player
-    with open('../levels/{}/player.txt'.format(level_nr), 'r') as f:
-        player_pos = f.readline().replace('\n', '').split(',')
-        player_pos = [float(i) for i in player_pos]
-        player_angle = float(f.readline().replace('\n', ''))
-        global PLAYER
-        PLAYER = Player(player_pos, player_angle)
-
-    # Background
-    with open('../levels/{}/background.txt'.format(level_nr), 'r') as f:
-        global BACKGROUND_COLOURS
-        BACKGROUND_COLOURS = []
-        for _ in range(2):
-            colour = f.readline().replace('\n', '').split(',')
-            colour = [int(i) for i in colour]
-            BACKGROUND_COLOURS.append(tuple(colour))
-
-        global SKYTEXTURE
-        SKYTEXTURE = None
-        value = int(f.readline().replace('\n', ''))
-        if value > 0:
-            skytextures = os.listdir('../textures/skies')
-            try:
-                SKYTEXTURE = pygame.image.load('../textures/skies/{}'.format(skytextures[value - 1])).convert()
-            except pygame.error:
-                pass
-            else:
-                SKYTEXTURE = pygame.transform.scale(SKYTEXTURE, (D_W * 4, H_H))
-
-    # Empty projectiles and doors
-    global DOORS
-    DOORS = []
-    global PROJECTILES
-    PROJECTILES = []
-
-    global WEAPON_MODEL
-    WEAPON_MODEL = WeaponModel()
-    global EFFECTS
-    EFFECTS = Effects()
-
-    for w in WEAPONS[1:]:
-        if w.starting_weapon:
-            w.in_loadout = True
-        else:
-            w.in_loadout = False
-        if not w.melee:
-            w.mag_ammo = w.mag_size
-
-    # Enemies
-    global ENEMIES
-    ENEMIES = []
-    for row in range(len(TILEMAP)):
-        for column in range(len(TILEMAP[row])):
-            if TILE_VALUES_INFO[TILEMAP[row][column]].type == 'Enemy':
-                spritesheet = TILE_VALUES_INFO[TILEMAP[row][column]].texture
-                pos = (column + 0.5, row + 0.5)
-                ENEMIES.append(Enemy(spritesheet, pos))
-                TILEMAP[row][column] = 0  # Clears tile
-    # Process some stuff after enemies have been cleared from tilemap
-    for e in ENEMIES:
-        e.get_look_angles()
-        e.get_home_room()
-
-    # Run pathfinding setup function
-    pathfinding.setup(TILEMAP, TILE_VALUES_INFO)
-
-    game_loop()
-
-
 def draw_background():
-    if SKYTEXTURE:
+    if LEVEL.skytexture:
         # x_offset is a value ranging from 0 to 1
         x_offset = (PLAYER.viewangle + pi) / (2*pi)
-        x = x_offset * SKYTEXTURE.get_width()
+        x = x_offset * LEVEL.skytexture.get_width()
 
         if x_offset <= 0.75:
             # Sky texture can be drawn as one image
-            sky = SKYTEXTURE.subsurface(x, 0, D_W, H_H)
+            sky = LEVEL.skytexture.subsurface(x, 0, D_W, H_H)
             DISPLAY.blit(sky, (0, 0))
         else:
             # Sky texture needs to be drawn as two separate parts
-            sky_left = SKYTEXTURE.subsurface(x, 0, SKYTEXTURE.get_width() - x, H_H)
-            sky_right = SKYTEXTURE.subsurface(0, 0, D_W - sky_left.get_width(), H_H)
+            sky_left = LEVEL.skytexture.subsurface(x, 0, LEVEL.skytexture.get_width() - x, H_H)
+            sky_right = LEVEL.skytexture.subsurface(0, 0, D_W - sky_left.get_width(), H_H)
             DISPLAY.blit(sky_left, (0, 0))
             DISPLAY.blit(sky_right, (sky_left.get_width(), 0))
     else:
-        pygame.draw.rect(DISPLAY, BACKGROUND_COLOURS[0], ((0, 0), (D_W, H_H)))  # Ceiling
-    pygame.draw.rect(DISPLAY, BACKGROUND_COLOURS[1], ((0, H_H), (D_W, H_H)))  # Floor
+        pygame.draw.rect(DISPLAY, LEVEL.ceiling_colour, ((0, 0), (D_W, H_H)))  # Ceiling
+    pygame.draw.rect(DISPLAY, LEVEL.floor_colour, ((0, H_H), (D_W, H_H)))  # Floor
 
 
 def draw_frame():
@@ -1484,86 +1530,27 @@ def draw_frame():
         obj.draw()
 
 
-def draw_hud():
-    def dynamic_colour(current, maximum):
-        ratio = current / maximum  # 1 is completely green, 0 completely red
-        if ratio < 0.5:
-            red = 255
-            green = int(ratio * 2 * 255)
-        else:
-            ratio = 1 - ratio
-            green = 255
-            red = int(ratio * 2 * 255)
-
-        return red, green, 0
-
-    x_safezone = 6  # In pixels
-
-    # Simulates blinking effect
-    global ALPHA
-    ALPHA -= 15
-    if ALPHA == -255:
-        ALPHA = 255
-
-    # FPS counter
-    text_surface = GAME_FONT.render(str(round(CLOCK.get_fps())), False, (0, 255, 0))
-    DISPLAY.blit(text_surface, (3, 3))
-
-    # Weapon HUD
-    WEAPON_MODEL.draw()
-    current_weapon = WEAPON_MODEL.weapon
-
-    weapon_name_surface = GAME_FONT.render(str(current_weapon.name), False, (255, 255, 255))
-    if current_weapon.melee:
-        weapon_ammo_surface = GAME_FONT.render('--/--', False, (0, 255, 0))
-    else:
-        if not WEAPON_MODEL.reloading:
-            if current_weapon.ammo_unlimited:
-                total_ammo = 'Unlimited'
-            else:
-                total_ammo = PLAYER.ammo
-
-            weapon_ammo = '{}/{}'.format(current_weapon.mag_ammo, total_ammo)
-
-            if current_weapon.mag_ammo:
-                ALPHA = 255  # Resets blinking
-                weapon_ammo_surface = GAME_FONT.render(weapon_ammo, False,
-                                                       dynamic_colour(current_weapon.mag_ammo, current_weapon.mag_size))
-            else:
-                weapon_ammo_surface = GAME_FONT.render(weapon_ammo, False, (255, 0, 0), (0, 0, 0))  # Black background
-                weapon_ammo_surface.set_colorkey((0, 0, 0))  # Tell program to treat black as transparent
-                weapon_ammo_surface.set_alpha(abs(ALPHA))
-        else:
-            weapon_ammo_surface = GAME_FONT.render('Reloading', False, (255, 0, 0), (0, 0, 0))  # Black background
-            weapon_ammo_surface.set_colorkey((0, 0, 0))  # Tell program to treat black as transparent
-            weapon_ammo_surface.set_alpha(abs(ALPHA))
-
-    DISPLAY.blit(weapon_name_surface, (D_W - weapon_name_surface.get_width() - x_safezone, D_H - 64))
-    DISPLAY.blit(weapon_ammo_surface, (D_W - weapon_ammo_surface.get_width() - x_safezone, D_H - 32))
-
-    # Player hp HUD
-    hp_text_surface = GAME_FONT.render('HP:', False, (255, 255, 255))
-    hp_amount_surface = GAME_FONT.render(str(PLAYER.hp), False, dynamic_colour(PLAYER.hp, 100))
-    DISPLAY.blit(hp_text_surface, (x_safezone, D_H - 64))
-    DISPLAY.blit(hp_amount_surface, (x_safezone, D_H - 32))
-
-    EFFECTS.draw()
-
-
 def game_loop():
-    PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
-    PLAYER.handle_movement()
+    while not QUIT:
+        events()
+        if not PAUSED:
+            PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
+            PLAYER.handle_movement()
+            update_gameobjects()
 
-    events()
-    update_gameobjects()
+        draw_background()
+        send_rays()
+        draw_frame()
+        HUD.draw()
 
-    draw_background()
-    send_rays()
-    draw_frame()
-    draw_hud()
+        if PAUSED:
+            pause_overlay = pygame.Surface((D_W, D_H))
+            pause_overlay.set_alpha(128)
+            pause_overlay.fill((0, 0, 0))
+            DISPLAY.blit(pause_overlay, (0, 0))
 
-    pygame.display.flip()
-    CLOCK.tick(30)
+        pygame.display.flip()
+        CLOCK.tick(30)
 
 
 if __name__ == '__main__':
@@ -1588,7 +1575,6 @@ if __name__ == '__main__':
     H_W = int(D_W / 2)  # Half width
     H_H = int(D_H / 2)  # Half height
     FOV = pi / 2  # = 90 degrees
-    LEVEL_NR = 1
     RAYS_AMOUNT = H_W  # Drawing frequency across the screen / Rays casted each frame
     SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
     CAMERA_PLANE = CameraPlane(RAYS_AMOUNT, FOV)
@@ -1605,17 +1591,19 @@ if __name__ == '__main__':
     CLOCK = pygame.time.Clock()
     pygame.mouse.set_visible(False)
     pygame.event.set_grab(True)
+    pygame.event.set_allowed([KEYDOWN, MOUSEBUTTONDOWN])
 
     GAME_FONT = pygame.font.Font('../font/LCD_Solid.ttf', 32)
-    ALPHA = 255  # Text transparency value used to create blinking texts in draw_hud()
+    HUD = Hud()
 
     DOOR_SIDE_TEXTURE = graphics.get_door_side_texture(sys, pygame)
     ENEMY_INFO = graphics.get_enemy_info(sys, pygame)
     TILE_VALUES_INFO = graphics.get_tile_values_info(sys, pygame, TEXTURE_SIZE, ENEMY_INFO)
     WEAPONS = graphics.get_weapons(sys, pygame)
 
-    load_level(LEVEL_NR)
     QUIT = False
-    while not QUIT:
-        game_loop()
+    PAUSED = False
+
+    LEVEL = Level()
+    LEVEL.start(1)
     pygame.quit()

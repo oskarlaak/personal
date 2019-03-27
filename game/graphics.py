@@ -45,14 +45,14 @@ def get_weapons(sys_module, pygame_module):
             self.projectile = False
 
     class Projectile:
-        def __init__(self, sheet, columns, y_multiplier, speed, hit_radius, damage, exploding):
+        def __init__(self, sheet, columns, y_multiplier, speed, hit_radius, damage, explosive):
             self.sheet = sheet
             self.columns = columns
             self.y_multiplier = y_multiplier
             self.speed = speed
             self.hit_radius = hit_radius
             self.damage = damage
-            self.exploding = exploding
+            self.explosive = explosive
 
     sys = sys_module
     pygame = pygame_module
