@@ -1,5 +1,4 @@
 # TO DO:
-# Level finish system
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -337,6 +336,75 @@ class Effects:
             self.alpha -= 16
 
 
+class TransitionEffect:
+    speed = 20
+    column_width = 20
+
+    def cover(self, colour):
+        class EffectColumn:
+            def __init__(self, x):
+                self.x = x
+                self.y = -TransitionEffect.speed
+
+            def draw(self):
+                self.rect = (self.x, self.y, TransitionEffect.column_width, TransitionEffect.speed)
+                pygame.draw.rect(DISPLAY, colour, self.rect)
+
+        empty_columns = [x*TransitionEffect.column_width for x in range(int(D_W / TransitionEffect.column_width))]
+        effect_columns = []
+        while True:
+            pygame.mouse.get_rel()
+            pygame.event.clear()
+
+            if empty_columns:
+                effect_columns.append(EffectColumn(empty_columns[0]))
+                del empty_columns[0]
+
+            rects_drawn = []
+            for c, b in enumerate(effect_columns):
+                b.y += TransitionEffect.speed
+                if b.y >= D_H:
+                    del effect_columns[c]
+                else:
+                    b.draw()
+                    rects_drawn.append(b.rect)
+
+            if not effect_columns:
+                break
+            pygame.display.update(rects_drawn)
+            CLOCK.tick(30)
+
+    def clear(self, colour):
+        class EffectColumn:
+            def __init__(self, x, y):
+                self.x = x
+                self.y = y
+
+            def draw(self):
+                pygame.draw.rect(DISPLAY, colour, (self.x, self.y, TransitionEffect.column_width, D_H - self.y))
+
+        effect_columns = [EffectColumn(x*TransitionEffect.column_width, -x*TransitionEffect.speed)
+                          for x in range(int(D_W / TransitionEffect.column_width))]
+        while effect_columns:
+            pygame.mouse.get_rel()
+            pygame.event.clear()
+
+            draw_background()
+            send_rays()
+            draw_frame()
+            HUD.draw()
+
+            for c, b in enumerate(effect_columns):
+                b.y += TransitionEffect.speed
+                if b.y >= D_H:
+                    del effect_columns[c]
+                else:
+                    b.draw()
+
+            pygame.display.flip()
+            CLOCK.tick(30)
+
+
 class Hud:
     safezone_w = 5
     safezone_h = 5
@@ -407,6 +475,20 @@ class Hud:
         hp_amount = render_text(str(PLAYER.hp), dynamic_colour(PLAYER.hp, Player.max_hp))
         DISPLAY.blit(hp_text, (Hud.safezone_w, D_H - Hud.font_h*2 - Hud.safezone_h))
         DISPLAY.blit(hp_amount, (Hud.safezone_w, D_H - Hud.font_h - Hud.safezone_h))
+
+        # Loadout HUD
+        y = 300
+        for w in WEAPONS:
+            if w:
+                if w == WEAPON_MODEL.weapon:
+                    colour = (255, 255, 255)
+                elif w.in_loadout:
+                    colour = (128, 128, 128)
+                else:
+                    colour = (64, 64, 64)
+                number = render_text(str(WEAPONS.index(w)), colour)
+                DISPLAY.blit(number, (D_W - number.get_width() - Hud.safezone_w, y))
+                y += Hud.font_h
 
         EFFECTS.draw()
 
@@ -1061,57 +1143,19 @@ class Level:
         # Run pathfinding setup function
         pathfinding.setup(TILEMAP, TILE_VALUES_INFO)
 
-    def start(self, level_nr):
-        class Blood:
-            colour = (255, 0, 0)
-            drip_speed = 20
-            width = 20
-
-            def __init__(self, x, y):
-                self.x = x
-                self.y = y
-
-            def draw(self):
-                pygame.draw.rect(DISPLAY, Blood.colour, (self.x, self.y, Blood.width, D_H - self.y))
-
+    def start(self, level_nr, previously_died=False):
         self.load(level_nr)
         update_gameobjects()
-        blood_trails = [Blood(x*Blood.width, -x*Blood.drip_speed) for x in range(int(D_W / Blood.width))]
-        while blood_trails:
-            pygame.mouse.get_rel()
-            pygame.event.clear()
 
-            draw_background()
-            send_rays()
-            draw_frame()
-            HUD.draw()
-
-            for c, b in enumerate(blood_trails):
-                b.y += Blood.drip_speed
-                if b.y >= D_H:
-                    del blood_trails[c]
-                else:
-                    b.draw()
-
-            pygame.display.flip()
-            CLOCK.tick(30)
+        if previously_died:
+            colour = (255, 0, 0)
+        else:
+            colour = (0, 0, 0)
+        TransitionEffect().clear(colour)
 
         game_loop()
 
     def restart(self, enemy=None):
-        class Blood:
-            colour = (255, 0, 0)
-            drip_speed = 20
-            width = 20
-
-            def __init__(self, x):
-                self.x = x
-                self.y = -Blood.drip_speed
-
-            def draw(self):
-                self.rect = (self.x, self.y, Blood.width, Blood.drip_speed)
-                pygame.draw.rect(DISPLAY, Blood.colour, self.rect)
-
         draw_background()
         send_rays()
         draw_frame()
@@ -1148,35 +1192,20 @@ class Level:
                 pygame.display.flip()
                 CLOCK.tick(30)
 
-        # Level transition effect
-        empty_columns = [x*Blood.width for x in range(int(D_W / Blood.width))]
-        blood_trails = []
-        while True:
-            pygame.mouse.get_rel()
-            pygame.event.clear()
+        TransitionEffect().cover((255, 0, 0))
 
-            if empty_columns:
-                blood_trails.append(Blood(empty_columns[0]))
-                del empty_columns[0]
-
-            rects_drawn = []
-            for c, b in enumerate(blood_trails):
-                b.y += Blood.drip_speed
-                if b.y >= D_H:
-                    del blood_trails[c]
-                else:
-                    b.draw()
-                    rects_drawn.append(b.rect)
-
-            if not blood_trails:
-                break
-            pygame.display.update(rects_drawn)
-            CLOCK.tick(30)
-
-        self.start(self.nr)
+        self.start(self.nr, True)
 
     def finish(self):
-        pass
+        draw_background()
+        send_rays()
+        draw_frame()
+        HUD.draw()
+        pygame.display.flip()
+        CLOCK.tick(30)
+
+        TransitionEffect().cover((0, 0, 0))
+        self.start(self.nr + 1)
 
 
 def fixed_angle(angle):
@@ -1528,19 +1557,19 @@ def events():
                 elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
                     if event.button == 4:  # Mousewheel up
                         try:
-                            switch = 1
-                            while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
-                                switch += 1
-                        except IndexError:
-                            pass
-                        else:
-                            WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
-                    if event.button == 5:  # Mousewheel down
-                        try:
                             switch = -1
                             while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
                                 switch -= 1
                         except AttributeError:  # WEAPONS[0] is None, therefore it doesn't have in_loadout attribute
+                            pass
+                        else:
+                            WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
+                    elif event.button == 5:  # Mousewheel down
+                        try:
+                            switch = 1
+                            while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
+                                switch += 1
+                        except IndexError:
                             pass
                         else:
                             WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
@@ -1634,6 +1663,15 @@ def draw_frame():
         obj.draw()
 
 
+def draw_pause_screen():
+    pause_overlay = pygame.Surface((D_W, D_H))
+    pause_overlay.set_alpha(128)
+    pause_overlay.fill((0, 0, 0))
+    DISPLAY.blit(pause_overlay, (0, 0))
+    paused = GAME_FONT.render('PAUSED', False, (255, 255, 255))
+    DISPLAY.blit(paused, ((D_W - paused.get_width()) / 2, (D_H - paused.get_height()) / 2))
+
+
 def game_loop():
     while not QUIT:
         events()
@@ -1648,10 +1686,7 @@ def game_loop():
         HUD.draw()
 
         if PAUSED:
-            pause_overlay = pygame.Surface((D_W, D_H))
-            pause_overlay.set_alpha(128)
-            pause_overlay.fill((0, 0, 0))
-            DISPLAY.blit(pause_overlay, (0, 0))
+            draw_pause_screen()
 
         pygame.display.flip()
         CLOCK.tick(30)
