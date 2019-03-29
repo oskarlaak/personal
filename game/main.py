@@ -1,6 +1,5 @@
 # TO DO:
-# Level start animation
-# Player death animation
+# Level finish system
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -24,16 +23,18 @@ class Player:
     def __init__(self, pos, angle):
         self.x, self.y = pos
         self.viewangle = angle + 0.0000001
+        self.dir_x = cos(self.viewangle)
+        self.dir_y = sin(self.viewangle)
 
         self.hp = 100
         self.ammo = 0
         self.weapon_nr = 2
 
-    def hurt(self, damage):
+    def hurt(self, damage, enemy):
         EFFECTS.update((255, 0, 0))
         self.hp -= damage
         if self.hp <= 0:
-            LEVEL.restart()
+            LEVEL.restart(enemy)
 
     def hitscan(self, weapon):
         # An instant shot detection system
@@ -754,7 +755,7 @@ class Enemy(Drawable, Sprite):
                 damage = rand / 16
             else:
                 damage = rand / 8
-            PLAYER.hurt(int(damage))
+            PLAYER.hurt(int(damage), self)
 
     def ready_to_shoot(self):
         return self.alerted and \
@@ -817,10 +818,10 @@ class Enemy(Drawable, Sprite):
                 d.state = 1
                 DOORS.append(d)
 
-        delta_x = self.x - PLAYER.x
-        delta_y = self.y - PLAYER.y
-        angle_from_player = atan2(delta_y, delta_x)
-        self.dist_squared = delta_x**2 + delta_y**2
+        self.delta_x = self.x - PLAYER.x
+        self.delta_y = self.y - PLAYER.y
+        self.angle_from_player = atan2(self.delta_y, self.delta_x)
+        self.dist_squared = self.delta_x**2 + self.delta_y**2
 
         # Make enemy shoot when he's in player's tile
         if not self.hit and (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
@@ -847,7 +848,7 @@ class Enemy(Drawable, Sprite):
 
             # Assume these two values (program is going to change them if needed)
             self.alerted = True
-            self.wanted_angle = atan2(-delta_y, -delta_x)
+            self.wanted_angle = atan2(-self.delta_y, -self.delta_x)
 
             can_see_player = can_see((self.x, self.y), (PLAYER.x, PLAYER.y), self.angle, Enemy.fov)
             if can_see_player or self.could_see_alerted_enemies():
@@ -897,7 +898,7 @@ class Enemy(Drawable, Sprite):
                         if random.randint(0, 1) == 0:
                             if self.ready_to_shoot():
                                 self.shooting = True
-                                self.angle = atan2(-delta_y, -delta_x)
+                                self.angle = atan2(-self.delta_y, -self.delta_x)
                                 self.path = []  # Need to draw enemy standing
                         else:
                             self.strafe()  # Gets new path to a random neighbour tile
@@ -920,17 +921,17 @@ class Enemy(Drawable, Sprite):
                         # If alerted, close enough to player and possible for the shot to make it
                         if self.ready_to_shoot():
                             self.shooting = True
-                            self.angle = atan2(-delta_y, -delta_x)
+                            self.angle = atan2(-self.delta_y, -self.delta_x)
                             self.path = []  # Needed to draw enemy standing
                         elif self.alerted:
                             self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
                         else:
                             del self.path[0]
                             if not self.path:  # If reached path end
-                                self.angle = atan2(-delta_y, -delta_x)  # Face player
+                                self.angle = atan2(-self.delta_y, -self.delta_x)  # Face player
 
             # Find the right spritesheet column
-            angle = fixed_angle(-angle_from_player + self.angle) + pi  # +pi to get rid of negative values
+            angle = fixed_angle(-self.angle_from_player + self.angle) + pi  # +pi to get rid of negative values
             self.column = round(angle / (pi / 4))
             if self.column == 8:
                 self.column = 0
@@ -967,10 +968,10 @@ class Enemy(Drawable, Sprite):
                     self.last_saw_ticks = 0
                     self.stationary_ticks = 0
 
-        self.update_perp_dist(delta_x, delta_y, angle_from_player)
+        self.update_for_drawing()
 
-    def update_perp_dist(self, delta_x, delta_y, angle_from_player):
-        self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
+    def update_for_drawing(self):
+        self.perp_dist = self.delta_x * PLAYER.dir_x + self.delta_y * PLAYER.dir_y
         if self.perp_dist > 0:
             self.image = self.sheet.subsurface(self.column * TEXTURE_SIZE, self.row * TEXTURE_SIZE,
                                                TEXTURE_SIZE, TEXTURE_SIZE)
@@ -979,7 +980,7 @@ class Enemy(Drawable, Sprite):
             if self.height > D_H:
                 self.adjust_image_height()
 
-            self.calc_display_xy(angle_from_player)
+            self.calc_display_xy(self.angle_from_player)
 
 
 class Level:
@@ -1061,14 +1062,117 @@ class Level:
         pathfinding.setup(TILEMAP, TILE_VALUES_INFO)
 
     def start(self, level_nr):
-        self.load(level_nr)
-        # Blood going away
+        class Blood:
+            colour = (255, 0, 0)
+            drip_speed = 20
+            width = 20
 
-        pygame.event.clear()
+            def __init__(self, x, y):
+                self.x = x
+                self.y = y
+
+            def draw(self):
+                pygame.draw.rect(DISPLAY, Blood.colour, (self.x, self.y, Blood.width, D_H - self.y))
+
+        self.load(level_nr)
+        update_gameobjects()
+        blood_trails = [Blood(x*Blood.width, -x*Blood.drip_speed) for x in range(int(D_W / Blood.width))]
+        while blood_trails:
+            pygame.mouse.get_rel()
+            pygame.event.clear()
+
+            draw_background()
+            send_rays()
+            draw_frame()
+            HUD.draw()
+
+            for c, b in enumerate(blood_trails):
+                b.y += Blood.drip_speed
+                if b.y >= D_H:
+                    del blood_trails[c]
+                else:
+                    b.draw()
+
+            pygame.display.flip()
+            CLOCK.tick(30)
+
         game_loop()
 
-    def restart(self):
-        # Blood coming to screen
+    def restart(self, enemy=None):
+        class Blood:
+            colour = (255, 0, 0)
+            drip_speed = 20
+            width = 20
+
+            def __init__(self, x):
+                self.x = x
+                self.y = -Blood.drip_speed
+
+            def draw(self):
+                self.rect = (self.x, self.y, Blood.width, Blood.drip_speed)
+                pygame.draw.rect(DISPLAY, Blood.colour, self.rect)
+
+        draw_background()
+        send_rays()
+        draw_frame()
+        pygame.display.flip()
+        CLOCK.tick(30)
+
+        # Turn towards enemy
+        if enemy:
+            turn_speed = 0.05
+            angle_to_enemy = atan2(enemy.delta_y, enemy.delta_x)
+            difference = (angle_to_enemy + pi) - (PLAYER.viewangle + pi)
+            if difference < 0:
+                difference += 2 * pi
+            if difference < pi:
+                turn_radians = turn_speed
+            else:
+                turn_radians = -turn_speed
+
+            while abs(PLAYER.viewangle - angle_to_enemy) > turn_speed:
+                pygame.mouse.get_rel()
+                pygame.event.clear()
+
+                PLAYER.viewangle = fixed_angle(PLAYER.viewangle + turn_radians)
+                PLAYER.dir_x = cos(PLAYER.viewangle)
+                PLAYER.dir_y = sin(PLAYER.viewangle)
+
+                for e in ENEMIES:
+                    e.update_for_drawing()
+
+                draw_background()
+                send_rays()
+                draw_frame()
+
+                pygame.display.flip()
+                CLOCK.tick(30)
+
+        # Level transition effect
+        empty_columns = [x*Blood.width for x in range(int(D_W / Blood.width))]
+        blood_trails = []
+        while True:
+            pygame.mouse.get_rel()
+            pygame.event.clear()
+
+            if empty_columns:
+                blood_trails.append(Blood(empty_columns[0]))
+                del empty_columns[0]
+
+            rects_drawn = []
+            for c, b in enumerate(blood_trails):
+                b.y += Blood.drip_speed
+                if b.y >= D_H:
+                    del blood_trails[c]
+                else:
+                    b.draw()
+                    rects_drawn.append(b.rect)
+
+            if not blood_trails:
+                break
+            pygame.display.update(rects_drawn)
+            CLOCK.tick(30)
+
         self.start(self.nr)
 
     def finish(self):
