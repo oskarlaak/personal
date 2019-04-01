@@ -92,8 +92,8 @@ class AngleBox:
 
     def rotate(self, radians):
         self.angle += radians
-        if self.angle <= -math.pi:
-            self.angle += math.pi * 2
+        if self.angle > math.pi:
+            self.angle -= math.pi * 2
 
     def draw(self):
         DISPLAY.blit(pygame.transform.rotate(self.image, math.degrees(-self.angle)), (self.rect.x, self.rect.y))
@@ -383,7 +383,7 @@ def events():
                             sidebar_obj.active = False
 
                     if ANGLEBOX.rect.collidepoint(MOUSE_X, MOUSE_Y):
-                        ANGLEBOX.rotate(-math.pi / 2)
+                        ANGLEBOX.rotate(math.pi / 2)
 
             elif event.button == 4:  # Scroll wheel up
                 # If control pressed down
