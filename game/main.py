@@ -14,7 +14,7 @@
 
 class Player:
     max_ammo = 150
-    max_hp = 100
+    max_hp = 9999999
 
     speed = 0.15  # Must be < half_hitbox, otherwise collisions will not work
     half_hitbox = 0.2
@@ -25,48 +25,14 @@ class Player:
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
 
-        self.hp = 100
-        self.ammo = 0
-        self.weapon_nr = 2
+        self.hp = 9999999
+        self.weapon_nr = 1
 
     def hurt(self, damage, enemy):
         EFFECTS.update((255, 0, 0))
         self.hp -= damage
         if self.hp <= 0:
             LEVEL.restart(enemy)
-
-    def hitscan(self, weapon):
-        # An instant shot detection system
-        # Applies to everything but projectile weapons
-
-        # Find all shootable enemies in ENEMIES list
-        shootable_enemies = []
-        for e in ENEMIES:
-            # If enemy not dead and player can see him
-            if not e.dead and can_see((PLAYER.x, PLAYER.y), (e.x, e.y), PLAYER.viewangle, FOV):
-                shootable_enemies.append(e)
-        shootable_enemies.sort(key=lambda x: x.dist_squared)  # Makes hit register for closest enemy
-
-        for e in shootable_enemies:
-            enemy_center_display_x = e.display_x + (e.width / 2)
-            x_offset = abs(H_W - enemy_center_display_x)
-            hittable_offset = e.hittable_amount / 2 * e.width
-            if hittable_offset > x_offset:  # If theoretical crosshair more or less on enemy
-                if not weapon.melee:
-                    e.hurt()
-                elif e.dist_squared <= weapon.hit_radius**2:
-                    e.hurt(weapon.damage)
-                break
-
-    def reload(self, weapon):
-        ammo_needed = weapon.mag_size - weapon.mag_ammo
-
-        if not weapon.ammo_unlimited:
-            if ammo_needed > self.ammo:
-                ammo_needed = self.ammo
-            self.ammo -= ammo_needed
-
-        weapon.mag_ammo += ammo_needed
 
     def rotate(self, radians):
         self.viewangle = fixed_angle(self.viewangle + radians)
@@ -236,11 +202,10 @@ class Door:
 
 class WeaponModel:
     switch_ticks = 20
-    w = h = 512
+    w = h = 576
 
     def __init__(self):
         self.shooting = False
-        self.reloading = False
         self.switching = 0
 
         self.ticks = 0
@@ -250,43 +215,52 @@ class WeaponModel:
         self.update()
 
     def shoot(self, weapon):
+        def bullet_hitscan(max_spread=0, max_range=False):
+            shootable_enemies = []
+            for e in ENEMIES:
+                if not e.dead and can_see((PLAYER.x, PLAYER.y), (e.x, e.y), PLAYER.viewangle, FOV):
+                    shootable_enemies.append(e)
+            shootable_enemies.sort(key=lambda x: x.dist_squared)  # Sort for closest dist first
+
+            for e in shootable_enemies:
+                enemy_center_display_x = e.display_x + random.randint(-max_spread, max_spread) + (e.width / 2)
+                x_offset = abs(H_W - enemy_center_display_x)
+                hittable_offset = e.width / 2
+                if hittable_offset > x_offset:  # If bullet more or less on enemy
+                    if not max_range:
+                        e.hurt(random.choice(weapon.damage_range))
+                    elif e.dist_squared <= max_range ** 2:
+                        e.hurt(random.choice(weapon.damage_range))
+                    break
+
         # Shooting animation system
         self.ticks += 1
-        if self.ticks == weapon.fire_delay / weapon.animation_frames:
+        if self.ticks == int(weapon.fire_delay / weapon.animation_frames):
             self.ticks = 0
-
             self.column += 1
 
             if self.column > weapon.animation_frames:  # If finished shot animation
                 # If weapon automatic, has magazine ammo and mouse down
-                if weapon.automatic and weapon.mag_ammo and pygame.mouse.get_pressed()[0]:
+                if weapon.automatic and pygame.mouse.get_pressed()[0]:
                     self.column = 1  # Keep going
                 else:
                     self.column = 0  # Ends animation
                     self.shooting = False
-                    if weapon.auto_reload:
-                        self.reloading = True
 
             if self.column == weapon.shot_column:
-                # Sending out a shot
-                if not weapon.melee:
-                    weapon.mag_ammo -= 1
-                if not weapon.projectile:
-                    PLAYER.hitscan(weapon)
-                else:
+                if weapon.type == 'melee':
+                    bullet_hitscan(0, weapon.range)
+
+                elif weapon.type == 'hitscan':
+                    bullet_hitscan(weapon.max_spread)
+
+                elif weapon.type == 'shotgun':
+                    for _ in range(weapon.shot_bullets):
+                        bullet_hitscan(weapon.max_spread)
+
+                elif weapon.type == 'projectile':
                     p = Projectile((PLAYER.x, PLAYER.y), PLAYER.viewangle, weapon.projectile)
                     PROJECTILES.append(p)
-
-    def reload(self, weapon):
-        self.ticks += 1
-        if self.ticks <= weapon.reload_time / 2:
-            self.draw_y += 20
-        elif self.ticks <= weapon.reload_time:
-            self.draw_y -= 20
-        else:
-            self.ticks = 0
-            self.reloading = False
-            PLAYER.reload(weapon)
 
     def switch_weapons(self):
         self.ticks += 1
@@ -306,9 +280,6 @@ class WeaponModel:
 
         if self.shooting:
             self.shoot(self.weapon)
-
-        elif self.reloading:
-            self.reload(self.weapon)
 
         elif self.switching:
             self.switch_weapons()
@@ -410,9 +381,6 @@ class Hud:
     safezone_h = 5
     font_h = 28
 
-    def __init__(self):
-        self.alpha = 255
-
     def draw(self):
         def dynamic_colour(current, maximum):
             ratio = current / maximum  # 1 is completely green, 0 completely red
@@ -429,11 +397,6 @@ class Hud:
         def render_text(text, colour, background=None):
             return GAME_FONT.render(text, False, colour, background)
 
-        # Simulates blinking effect
-        self.alpha -= 15
-        if self.alpha == -255:
-            self.alpha = 255
-
         # FPS counter
         fps_counter = render_text(str(ceil(CLOCK.get_fps())), (0, 255, 0))
         DISPLAY.blit(fps_counter, (Hud.safezone_w, Hud.safezone_h))
@@ -443,32 +406,7 @@ class Hud:
         current_weapon = WEAPON_MODEL.weapon
 
         weapon_name = render_text(str(current_weapon.name), (255, 255, 255))
-        if current_weapon.melee:
-            weapon_ammo = render_text('--/--', (0, 255, 0))
-        else:
-            if not WEAPON_MODEL.reloading:
-                if current_weapon.ammo_unlimited:
-                    total_ammo = 'Unlimited'
-                else:
-                    total_ammo = PLAYER.ammo
-
-                weapon_ammo_text = '{}/{}'.format(current_weapon.mag_ammo, total_ammo)
-
-                if current_weapon.mag_ammo:
-                    self.alpha = 255  # Resets blinking
-                    weapon_ammo = render_text(weapon_ammo_text,
-                                              dynamic_colour(current_weapon.mag_ammo, current_weapon.mag_size))
-                else:
-                    weapon_ammo = render_text(weapon_ammo_text, (255, 0, 0), (0, 0, 0))  # Set black background
-                    weapon_ammo.set_colorkey((0, 0, 0))  # Tell program to treat black as transparent
-                    weapon_ammo.set_alpha(abs(self.alpha))
-            else:
-                weapon_ammo = render_text('Reloading', (255, 0, 0), (0, 0, 0))  # Set black background
-                weapon_ammo.set_colorkey((0, 0, 0))  # Tell program to treat black as transparent
-                weapon_ammo.set_alpha(abs(self.alpha))
-
-        DISPLAY.blit(weapon_name, (D_W - weapon_name.get_width() - Hud.safezone_w, D_H - Hud.font_h*2 - Hud.safezone_h))
-        DISPLAY.blit(weapon_ammo, (D_W - weapon_ammo.get_width() - Hud.safezone_w, D_H - Hud.font_h - Hud.safezone_h))
+        DISPLAY.blit(weapon_name, (D_W - weapon_name.get_width() - Hud.safezone_w, D_H - Hud.font_h - Hud.safezone_h))
 
         # Player hp HUD
         hp_text = render_text('HP:', (255, 255, 255))
@@ -482,8 +420,6 @@ class Hud:
             if w:
                 if w == WEAPON_MODEL.weapon:
                     colour = (255, 255, 255)
-                elif w.in_loadout:
-                    colour = (128, 128, 128)
                 else:
                     colour = (64, 64, 64)
                 number = render_text(str(WEAPONS.index(w)), colour)
@@ -734,6 +670,7 @@ class Projectile(Drawable, Sprite):
 
 class Enemy(Drawable, Sprite):
     turning_speed = 0.08  # Stationary enemy turning speed in radians per tick
+    instant_alert_dist = 1.4
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = self.home = pos
@@ -745,6 +682,7 @@ class Enemy(Drawable, Sprite):
         self.column = 0  # Spritesheet column
 
         self.path = []
+        #self.status = 'idle'  # (idle, alerted, shooting, hit, dead)
         self.alerted = False
         self.shooting = False
         self.dead = False
@@ -752,12 +690,11 @@ class Enemy(Drawable, Sprite):
 
         # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
         # What each attribute means see graphics.py get_enemy_info() enemy_info dictionary description
-        self.name, self.hp, self.speed, self.shooting_range, self.accuracy, self.instant_alert_dist,\
-        self.memory, self.patience, self.hittable_amount = ENEMY_INFO[self.sheet]
+        self.name, self.hp, self.speed, self.shooting_range, self.accuracy,\
+        self.memory, self.patience, self.pain_chance = ENEMY_INFO[self.sheet]
 
         # Timed events tick variables (frames passed since some action)
         self.anim_ticks = 0
-        self.last_hit_anim_ticks = Sprite.animation_ticks
         self.last_saw_ticks = self.memory
         self.stationary_ticks = 0
 
@@ -803,15 +740,16 @@ class Enemy(Drawable, Sprite):
         self.shooting = False
         if self.hp <= 0:
             self.hit = True
-            self.row = 5  # Choose death/hurt animation row
-            self.anim_ticks = 0
-            self.dead = True
-            self.column = 0  # Choose first death animation frame
-        elif self.last_hit_anim_ticks >= Sprite.animation_ticks:  # If enough time passed to show new hit animation
-            self.hit = True
             self.row = 5
             self.anim_ticks = 0
-            self.last_hit_anim_ticks = 0
+            self.dead = True
+            self.column = 0
+        else:
+            rand = random.randint(0, 100)
+            if rand < self.pain_chance * 100:
+                self.hit = True
+                self.row = 5
+                self.anim_ticks = 0
 
     def shoot(self):
         # Player shot hit and damage logic / enemy hitscan
@@ -925,8 +863,6 @@ class Enemy(Drawable, Sprite):
                 self.stationary_ticks = 0
 
         elif not self.hit:
-            if self.last_hit_anim_ticks != Sprite.animation_ticks:
-                self.last_hit_anim_ticks += 1
 
             # Assume these two values (program is going to change them if needed)
             self.alerted = True
@@ -937,7 +873,7 @@ class Enemy(Drawable, Sprite):
                 self.last_saw_ticks = 0
             elif self.last_saw_ticks < self.memory:
                 self.last_saw_ticks += 1
-            elif self.dist_squared > self.instant_alert_dist**2:
+            elif self.dist_squared > Enemy.instant_alert_dist**2:
                 self.alerted = False
                 self.wanted_angle = self.angle  # Reset wanted_angle / Don't look at player
 
@@ -1112,18 +1048,10 @@ class Level:
         DOORS = []
         global PROJECTILES
         PROJECTILES = []
-
         global EFFECTS
         EFFECTS = Effects()
         global WEAPON_MODEL
         WEAPON_MODEL = WeaponModel()
-        for w in WEAPONS[1:]:
-            if w.starting_weapon:
-                w.in_loadout = True
-            else:
-                w.in_loadout = False
-            if not w.melee:
-                w.mag_ammo = w.mag_size
 
         # Enemies
         global ENEMIES
@@ -1507,7 +1435,6 @@ def events():
         pygame.mouse.get_rel()
 
     else:
-        weapon = WEAPON_MODEL.weapon
         for event in pygame.event.get():
             if event.type == pygame.KEYDOWN:
                 if event.key == K_ESCAPE:
@@ -1529,50 +1456,18 @@ def events():
                         TILEMAP[y][x] += 1  # Change trigger block texture
                         LEVEL.finish()
 
-                elif event.key == K_r and not weapon.melee:
-                    # If magazine not full and weapon not shooting
-                    if weapon.mag_ammo < weapon.mag_size and not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
-                        if weapon.ammo_unlimited:
-                            WEAPON_MODEL.reloading = True
-                        elif PLAYER.ammo:
-                            WEAPON_MODEL.reloading = True
-
-                elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
+                elif not WEAPON_MODEL.shooting:
                     key = pygame.key.name(event.key)
                     numbers = (str(x) for x in range(1, 10))  # Skips 0 bc that can't be weapon slot
                     if key in numbers:
                         key = int(key)
-
                         if key != PLAYER.weapon_nr and key <= len(WEAPONS) - 1:
-                            requested_weapon = WEAPONS[key]
-                            if requested_weapon.in_loadout:
-                                WEAPON_MODEL.switching = key
+                            WEAPON_MODEL.switching = key
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    if not WEAPON_MODEL.reloading and not WEAPON_MODEL.switching:
-                        if weapon.mag_ammo or weapon.melee:
-                            WEAPON_MODEL.shooting = True
-
-                elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading:
-                    if event.button == 4:  # Mousewheel up
-                        try:
-                            switch = -1
-                            while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
-                                switch -= 1
-                        except AttributeError:  # WEAPONS[0] is None, therefore it doesn't have in_loadout attribute
-                            pass
-                        else:
-                            WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
-                    elif event.button == 5:  # Mousewheel down
-                        try:
-                            switch = 1
-                            while not WEAPONS[PLAYER.weapon_nr + switch].in_loadout:
-                                switch += 1
-                        except IndexError:
-                            pass
-                        else:
-                            WEAPON_MODEL.switching = PLAYER.weapon_nr + switch
+                    if not WEAPON_MODEL.switching:
+                        WEAPON_MODEL.shooting = True
 
 
 def update_gameobjects():
@@ -1594,44 +1489,14 @@ def update_gameobjects():
     if tile_value < 0:
         OBJECTS.append(Object((int(PLAYER.x), int(PLAYER.y)), tile_value))
         if TILE_VALUES_INFO[tile_value].type == 'Object-dynamic':
-            def handle_weapon_pickup(weapon_nr):
-                weapon = WEAPONS[weapon_nr]
-                if weapon.in_loadout:
-                    PLAYER.ammo += weapon.mag_size
-                    if PLAYER.ammo > PLAYER.max_ammo:
-                        PLAYER.ammo = PLAYER.max_ammo
-                else:
-                    weapon.in_loadout = True
-                    if not WEAPON_MODEL.shooting and not WEAPON_MODEL.reloading and not WEAPON_MODEL.switching:
-                        WEAPON_MODEL.switching = weapon_nr
-
             tile_desc = TILE_VALUES_INFO[tile_value].desc
-            if tile_desc == 'Ammo':
-                if PLAYER.ammo < PLAYER.max_ammo:
-                    PLAYER.ammo += 10
-                    if PLAYER.ammo > PLAYER.max_ammo:
-                        PLAYER.ammo = PLAYER.max_ammo
-                else:
-                    return None  # Avoid deleting object
-            elif tile_desc == 'Health':
+            if tile_desc == 'Health':
                 if PLAYER.hp < PLAYER.max_hp:
                     PLAYER.hp += 20
                     if PLAYER.hp > PLAYER.max_hp:
                         PLAYER.hp = PLAYER.max_hp
-                else:
-                    return None  # Avoid deleting object
-
-            elif tile_desc == 'Machinegun':
-                handle_weapon_pickup(3)
-            elif tile_desc == 'Chaingun':
-                handle_weapon_pickup(4)
-            elif tile_desc == 'Plasmagun':
-                handle_weapon_pickup(5)
-            elif tile_desc == 'Rocket launcher':
-                handle_weapon_pickup(6)
-
-            EFFECTS.update((0, 255, 0))
-            TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
+                    EFFECTS.update((0, 255, 0))
+                    TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
 
 
 def draw_background():
@@ -1693,7 +1558,6 @@ def game_loop():
 
 
 if __name__ == '__main__':
-    import sys
     import os
 
     from math import *
@@ -1705,19 +1569,11 @@ if __name__ == '__main__':
     import pygame
     from pygame.locals import *
 
+    from game.settings import *
     import game.graphics as graphics
+    import game.weapons as weapons
     import game.pathfinding as pathfinding
 
-    # Game settings
-    D_W = 800
-    D_H = 600
-    H_W = int(D_W / 2)  # Half width
-    H_H = int(D_H / 2)  # Half height
-    FOV = pi / 2  # = 90 degrees
-    RAYS_AMOUNT = H_W  # Drawing frequency across the screen / Rays casted each frame
-    SENSITIVITY = 0.003  # Radians turned per every pixel the mouse has moved horizontally
-    CAMERA_PLANE = CameraPlane(RAYS_AMOUNT, FOV)
-    TEXTURE_SIZE = 64
     # Make class constants
     Drawable.constant = 0.6 * D_H
     Wall.width = int(D_W / RAYS_AMOUNT)
@@ -1732,13 +1588,14 @@ if __name__ == '__main__':
     pygame.event.set_grab(True)
     pygame.event.set_allowed([KEYDOWN, MOUSEBUTTONDOWN])
 
+    CAMERA_PLANE = CameraPlane(RAYS_AMOUNT, FOV)
     GAME_FONT = pygame.font.Font('../font/LCD_Solid.ttf', 32)
     HUD = Hud()
 
-    DOOR_SIDE_TEXTURE = graphics.get_door_side_texture(sys, pygame)
-    ENEMY_INFO = graphics.get_enemy_info(sys, pygame)
-    TILE_VALUES_INFO = graphics.get_tile_values_info(sys, pygame, TEXTURE_SIZE, ENEMY_INFO)
-    WEAPONS = graphics.get_weapons(sys, pygame)
+    DOOR_SIDE_TEXTURE = graphics.get_door_side_texture()
+    ENEMY_INFO = graphics.get_enemy_info()
+    TILE_VALUES_INFO = graphics.get_tile_values_info(TEXTURE_SIZE, ENEMY_INFO)
+    WEAPONS = weapons.get()
 
     QUIT = False
     PAUSED = False

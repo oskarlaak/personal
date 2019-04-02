@@ -1,99 +1,9 @@
-def get_weapons(sys_module, pygame_module):
-    class Weapon:
-        def __init__(self, name, weapon_sheet, animation_frames, fire_delay, shot_column, reload_time,
-                     mag_size, automatic, ammo_unlimited, starting_weapon, projectile=False):
-            self.name = name
-            self.weapon_sheet = weapon_sheet
-            self.animation_frames = animation_frames  # Amount of shot animation frames in weapon_sheet
-            self.fire_delay = fire_delay  # Has to be dividable by animation frames
-            self.shot_column = shot_column  # Weapon sheet column that shoots (1 would mean 1st shot animation frame)
+import pygame
+import sys
 
-            self.reload_time = reload_time  # Reloading time in ticks, has to be even number
-            self.mag_size = mag_size  # Mag's total capacity
-            self.mag_ammo = self.mag_size  # Currently ammo in weapon's mag
-            if self.mag_size == 1:
-                self.auto_reload = True  # Automatically reloads one shot weapons
-            else:
-                self.auto_reload = False
-            self.automatic = automatic
-            self.ammo_unlimited = ammo_unlimited
-            self.starting_weapon = starting_weapon
-            self.in_loadout = False
 
-            self.melee = False
-            self.projectile = projectile
-
-    class Melee:
-        def __init__(self, name, weapon_sheet, animation_frames, fire_delay,
-                     shot_column, hit_radius, damage, starting_weapon):
-            self.name = name
-            self.weapon_sheet = weapon_sheet
-            self.animation_frames = animation_frames
-            self.fire_delay = fire_delay
-            self.shot_column = shot_column
-
-            self.hit_radius = hit_radius
-            self.damage = damage
-
-            self.mag_ammo = False
-            self.auto_reload = False
-            self.automatic = False
-            self.starting_weapon = starting_weapon
-            self.in_loadout = False
-
-            self.melee = True
-            self.projectile = False
-
-    class Projectile:
-        def __init__(self, sheet, columns, y_multiplier, speed, hit_radius, damage, explosive):
-            self.sheet = sheet
-            self.columns = columns
-            self.y_multiplier = y_multiplier
-            self.speed = speed
-            self.hit_radius = hit_radius
-            self.damage = damage
-            self.explosive = explosive
-
-    sys = sys_module
-    pygame = pygame_module
-
+def get_enemy_info():
     try:
-        def scale(image, times):
-            return pygame.transform.scale(image, (image.get_width() * times, image.get_height() * times))
-
-        knife = scale(pygame.image.load('../textures/weapons/knife.png').convert_alpha(), 8)
-        pistol = scale(pygame.image.load('../textures/weapons/pistol.png').convert_alpha(), 8)
-        machinegun = scale(pygame.image.load('../textures/weapons/machinegun.png').convert_alpha(), 8)
-        chaingun = scale(pygame.image.load('../textures/weapons/chaingun.png').convert_alpha(), 8)
-        plasmagun = scale(pygame.image.load('../textures/weapons/plasmagun.png').convert_alpha(), 8)
-        rocketlauncher = scale(pygame.image.load('../textures/weapons/rocketlauncher.png').convert_alpha(), 8)
-
-        plasma = pygame.image.load('../textures/projectiles/plasma.png').convert_alpha()
-        rocket = pygame.image.load('../textures/projectiles/rocket.png').convert_alpha()
-
-    except pygame.error as loading_error:
-        sys.exit(loading_error)
-
-    else:
-        plasma = Projectile(plasma, 4, 0.55, 0.25, 0.2, 2, False)
-        rocket = Projectile(rocket, 3, 0.75, 0.3, 0.3, 10, True)
-
-        weapons = [None]  # Makes it so first weapon is index 1 instead of 0
-        weapons.append(Melee('Knife', knife, 3, 9, 2, 1.3, 3, True))
-        weapons.append(Weapon('Pistol', pistol, 4, 8, 2, 50, 12, False, True, True))
-        weapons.append(Weapon('Machinegun', machinegun, 4, 4, 2, 60, 25, True, False, False))
-        weapons.append(Weapon('Chaingun', chaingun, 3, 3, 1, 120, 50, True, False, False))
-        weapons.append(Weapon('Plasmagun', plasmagun, 2, 4, 2, 80, 20, True, False, False, plasma))
-        weapons.append(Weapon('Rocket launcher', rocketlauncher, 5, 10, 1, 40, 1, False, False, False, rocket))
-        return weapons
-
-
-def get_enemy_info(sys_module, pygame_module):
-    sys = sys_module
-    pygame = pygame_module
-    try:
-        # Enemy spritesheets
-        # Using original Wolfenstein 3D enemy names
         guard = pygame.image.load('../textures/enemies/guard.png').convert_alpha()
         ss = pygame.image.load('../textures/enemies/ss.png').convert_alpha()
         officer = pygame.image.load('../textures/enemies/officer.png').convert_alpha()
@@ -103,29 +13,22 @@ def get_enemy_info(sys_module, pygame_module):
 
     else:
         enemy_info = {
-            # spritesheet: (name, hp, speed, shooting_range, accuracy,
-            #               instant_alert_dist, memory, patience, hittable_amount)
+            # spritesheet: (name, hp, speed, shooting_range, accuracy, memory, patience, pain_chance)
             #
             # Attributes description:
-            #     shooting_range = maximum distance in units where enemy can shoot player from
-            #           accuracy = var ranging from 0 to 1, 0 means distance doesn't matter to enemy at all,
-            #                      1 means he's completely average shooter
-            # instant_alert_dist = distance in which enemy automatically becomes alerted even if he can't see player
-            #             memory = the time in ticks enemy knows player's position,
-            #                      after player has disappeared from enemy's vision
-            #           patience = the maximum time enemy stays standing still without an action
-            #    hittable_amount = "average amount enemy" in each enemy's spritesheet cells
-            #                      (basically how much of enemy's average spritesheet cell is non-transparent)
-            guard:   (  'Guard',  3, 0.04, 10, 1.0, 1.4,  90, 120, 1/3),
-            ss:      (     'SS', 10, 0.05, 20, 1.0, 1.4, 150, 120, 1/2),
-            officer: ('Officer',  6, 0.06, 15, 0.7, 1.4, 150,  90, 1/3)
+            # shooting_range = maximum distance in units where enemy can shoot player from
+            # accuracy = 0 means distance doesn't matter to enemy at all, 1 means he's completely average shooter
+            # memory = the time in ticks enemy knows player's position, after player has disappeared from enemy's vision
+            # patience = the maximum time enemy stays standing still without an action
+            # pain_chance = 1 means enemy will be displayed getting hit for every bullet, 0 means that will never happen
+            guard:   (  'Guard', 100, 0.04, 10, 1.0,  90, 120, 0.90),
+            ss:      (     'SS', 100, 0.05, 20, 0.6, 150, 120, 0.75),
+            officer: ('Officer', 100, 0.06, 15, 0.7, 150,  90, 0.75)
         }
         return enemy_info
 
 
-def get_door_side_texture(sys_module, pygame_module):
-    sys = sys_module
-    pygame = pygame_module
+def get_door_side_texture():
     try:
         door_side_texture = pygame.image.load('../textures/doors/side.png').convert()
 
@@ -136,7 +39,7 @@ def get_door_side_texture(sys_module, pygame_module):
         return door_side_texture
 
 
-def get_tile_values_info(sys_module, pygame_module, texture_size, enemy_info):
+def get_tile_values_info(texture_size, enemy_info):
     class Tile:
         def __init__(self, texture, type, description):
             self.texture = texture
@@ -151,8 +54,6 @@ def get_tile_values_info(sys_module, pygame_module, texture_size, enemy_info):
                 tile_values_info[index] = Tile(texture, type, description)  # Update tile_values_info with Tile object
                 index += index_step
 
-    sys = sys_module
-    pygame = pygame_module
     try:
         # Wall textures
         bloodycave_textures = pygame.image.load('../textures/walls/bloodycave.png').convert()
@@ -243,13 +144,9 @@ def get_tile_values_info(sys_module, pygame_module, texture_size, enemy_info):
 
 if __name__ == '__main__':
     # Prints out tile_values_info if executed directly
-    import sys
-    import pygame
     pygame.init()
     pygame.display.set_mode((1, 1))
-
-    enemy_info = get_enemy_info(sys, pygame)
-    tile_values_info = get_tile_values_info(sys, pygame, 64, enemy_info)
+    tile_values_info = get_tile_values_info(64, get_enemy_info())
 
     for value in sorted(tile_values_info):
         tile_obj = tile_values_info[value]
