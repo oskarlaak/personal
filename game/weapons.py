@@ -89,5 +89,5 @@ def get():
         weapons.append(HitscanWeapon(('Pistol', pistol, 1, range(5, 15), 12, False), 0.10))
         weapons.append(Shotgun(('Shotgun', shotgun, 1, range(5, 15), 28, False), 0.17, 7))
         weapons.append(Shotgun(('Super Shotgun', super_shotgun, 1, range(5, 15), 63, False), 0.20, 20))
-        weapons.append(HitscanWeapon(('Chaingun', chaingun, 1, range(10, 30), 4, True), 0.10))
+        weapons.append(HitscanWeapon(('Chaingun', chaingun, 1, range(5, 15), 4, True), 0.10))
         return weapons

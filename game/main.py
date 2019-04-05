@@ -1,4 +1,5 @@
 # TO DO:
+# Fix enemies missing frames
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -218,7 +219,7 @@ class WeaponModel:
         def bullet_hitscan(max_spread=0, max_range=False):
             shootable_enemies = []
             for e in ENEMIES:
-                if not e.dead and can_see((PLAYER.x, PLAYER.y), (e.x, e.y), PLAYER.viewangle, FOV):
+                if not e.status == 'dead' and can_see((PLAYER.x, PLAYER.y), (e.x, e.y), PLAYER.viewangle, FOV):
                     shootable_enemies.append(e)
             shootable_enemies.sort(key=lambda x: x.dist_squared)  # Sort for closest dist first
 
@@ -673,20 +674,18 @@ class Enemy(Drawable, Sprite):
     instant_alert_dist = 1.4
 
     def __init__(self, spritesheet, pos):
-        self.x, self.y = self.home = pos
-        self.angle = 0  # Enemy actual facing angle
-        self.wanted_angle = 0  # Angle to which enemy is turning
+        self.x, self.y = pos
+        self.home = int(self.x), int(self.y)
+        self.angle = 0
 
         self.sheet = spritesheet
         self.row = 0  # Spritesheet row
         self.column = 0  # Spritesheet column
 
         self.path = []
-        #self.status = 'idle'  # (idle, alerted, shooting, hit, dead)
-        self.alerted = False
-        self.shooting = False
-        self.dead = False
-        self.hit = False
+        self.target_tile = self.home
+        self.status = 'default'  # (default, shooting, hit, dead)
+        self.chasing = False
 
         # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
         # What each attribute means see graphics.py get_enemy_info() enemy_info dictionary description
@@ -698,18 +697,8 @@ class Enemy(Drawable, Sprite):
         self.last_saw_ticks = self.memory
         self.stationary_ticks = 0
 
-    def get_look_angles(self):
-        # Creates a list of angles that are going to be chosen by random when stationary every once in a while
-        # Angles which enemy can further are chosen more often
-        self.look_angles = []
-        rayangles = [x/10*pi for x in range(10, -10, -1)]  # 20 different viewangles should be enough
-        for rayangle in rayangles:
-
-            ray_x, ray_y = simple_raycast(rayangle, (self.x, self.y))
-            ray_dist = sqrt((ray_x - self.x)**2 + (ray_y - self.y)**2)
-
-            for _ in range(int(ray_dist)):
-                self.look_angles.append(rayangle)
+    def __eq__(self, other):
+        return self.home == other.home
 
     def get_home_room(self):
         # Makes a self.home_room list which contains all the map points in his room
@@ -735,21 +724,55 @@ class Enemy(Drawable, Sprite):
 
         self.home_room = visited
 
-    def hurt(self, damage=1):
-        self.hp -= damage
-        self.shooting = False
-        if self.hp <= 0:
-            self.hit = True
-            self.row = 5
-            self.anim_ticks = 0
-            self.dead = True
+    def get_row_and_column(self, moved):
+        angle = fixed_angle(-self.angle_from_player + self.angle) + pi
+        self.column = round(angle / (pi / 4))
+        if self.column == 8:
             self.column = 0
-        else:
-            rand = random.randint(0, 100)
-            if rand < self.pain_chance * 100:
-                self.hit = True
-                self.row = 5
+
+        if moved:
+            running_rows = (1, 2, 3, 4)
+            if self.row not in running_rows:
+                self.row = 1
+
+            # Cycle through running animations
+            self.anim_ticks += 1
+            if self.anim_ticks == Sprite.animation_ticks:
                 self.anim_ticks = 0
+                self.row += 1
+                if self.row not in running_rows:
+                    self.row = 1
+        else:
+            self.row = 0
+            self.anim_ticks = 0
+
+    def can_step(self, step_x, step_y):
+        if (int(PLAYER.x), int(PLAYER.y)) == (step_x, step_y):
+            return False
+
+        for e in ENEMIES:
+            if not self == e and not e.status == 'dead':  # Ignore self and dead enemies
+                if (int(e.x), int(e.y)) == (step_x, step_y):  # If enemy in way
+                    return False
+        return True
+
+    def get_nearby_alerted_enemy(self):
+        for e in ENEMIES:
+            if not self == e and e.chasing and can_see((self.x, self.y), (e.x, e.y)):
+                    return e
+        return None
+
+    def ready_to_shoot(self):
+        return self.dist_squared < self.shooting_range**2 and can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
+
+    def stop_animation(self):
+        self.status = 'default'
+        self.anim_ticks = 0
+
+    def start_shooting(self):
+        self.status = 'shooting'
+        self.column = 0
+        self.anim_ticks = 0
 
     def shoot(self):
         # Player shot hit and damage logic / enemy hitscan
@@ -777,55 +800,35 @@ class Enemy(Drawable, Sprite):
                 damage = rand / 8
             PLAYER.hurt(int(damage), self)
 
-    def ready_to_shoot(self):
-        return self.alerted and \
-               self.dist_squared < self.shooting_range**2 and \
-               can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
-
-    def could_see_alerted_enemies(self):
-        # NOTE: Other alerted enemies don't have to be in enemy's fov
-        for e in ENEMIES:
-            if e.alerted and self.home != e.home:
-                if can_see((self.x, self.y), (e.x, e.y)):
-                    return True
-        return False
+    def hurt(self, damage):
+        self.hp -= damage
+        if self.hp <= 0:
+            self.status = 'dead'
+            self.anim_ticks = 0
+            self.row = 5
+            self.column = 0
+        else:
+            rand = random.randint(0, 100)
+            if rand < self.pain_chance * 100:
+                self.status = 'hit'
+                self.anim_ticks = 0
+                self.row = 5
+                self.column = 7
 
     def strafe(self):
         # Gets new path to a random empty neighbour tile (if possible)
         available_tiles = []
         for x in (-1, 0, 1):
             for y in (-1, 0, 1):
-                tile_x = int(self.x) + x
-                tile_y = int(self.y) + y
-                if TILEMAP[tile_y][tile_x] <= 0:  # If tile steppable
-                    for e in ENEMIES:  # Check if no enemies standing there
-                        if (int(e.x), int(e.y)) == (tile_x, tile_y):
-                            break
-                    else:
+                if x != 0 and y != 0:
+                    tile_x = int(self.x) + x
+                    tile_y = int(self.y) + y
+                    if TILEMAP[tile_y][tile_x] <= 0:  # If tile steppable
                         available_tiles.append((tile_x, tile_y))
 
-        if available_tiles:
-            self.path = pathfinding.pathfind((self.x, self.y), random.choice(available_tiles))
-        else:
-            self.path = []
-
-    def turn_towards(self, angle):
-        self.stationary_ticks = 0
-
-        difference = (angle + pi) - (self.angle + pi)
-        if difference < 0:
-            difference += 2 * pi
-
-        if difference < pi:
-            self.angle += Enemy.turning_speed
-        else:
-            self.angle -= Enemy.turning_speed
-
-        if abs(self.angle - angle) < Enemy.turning_speed:  # If self.angle close enough
-            self.angle = angle  # Finish turning
+        self.path = pathfinding.pathfind((self.x, self.y) ,random.choice(available_tiles))
 
     def update(self):
-
         # If door underneath enemy, create a door obj if it isn't there already and start opening it immediately
         tile_value = TILEMAP[int(self.y)][int(self.x)]
         if TILE_VALUES_INFO[tile_value].type == 'Door':
@@ -838,153 +841,116 @@ class Enemy(Drawable, Sprite):
                 d.state = 1
                 DOORS.append(d)
 
+        moved = False
+        saw_player = False
+
         self.delta_x = self.x - PLAYER.x
         self.delta_y = self.y - PLAYER.y
         self.angle_from_player = atan2(self.delta_y, self.delta_x)
         self.dist_squared = self.delta_x**2 + self.delta_y**2
 
-        # Make enemy shoot when he's in player's tile
-        if not self.hit and (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
-            if random.randint(0, 10) == 0:
-                self.shooting = True
-
-        if self.shooting:
-            self.row = 6
-            self.anim_ticks += 1
-            self.column = int(self.anim_ticks / Sprite.animation_ticks)
-            if self.anim_ticks == Sprite.animation_ticks * 2:
-                self.shoot()
-            if self.column > 2:
-                self.column = 2
-                self.shooting = False
-
-                self.anim_ticks = 0
-                self.last_saw_ticks = 0
-                self.stationary_ticks = 0
-
-        elif not self.hit:
-
-            # Assume these two values (program is going to change them if needed)
-            self.alerted = True
-            self.wanted_angle = atan2(-self.delta_y, -self.delta_x)
-
-            can_see_player = can_see((self.x, self.y), (PLAYER.x, PLAYER.y), self.angle, Enemy.fov)
-            if can_see_player or self.could_see_alerted_enemies():
-                self.last_saw_ticks = 0
-            elif self.last_saw_ticks < self.memory:
-                self.last_saw_ticks += 1
-            elif self.dist_squared > Enemy.instant_alert_dist**2:
-                self.alerted = False
-                self.wanted_angle = self.angle  # Reset wanted_angle / Don't look at player
-
-            # Turn towards wanted angle
-            if self.angle != self.wanted_angle:
-                self.turn_towards(self.wanted_angle)
-
-            if not self.path:
-                # If enemy can see player:
-                #   Set path to player
-                # Elif enemy's been stationary for a while:
-                #   Choose a new action
-
-                self.stationary_ticks += 1
-                if self.alerted:
-                    self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
-
-                elif self.stationary_ticks > self.patience:
-                    if (self.x, self.y) == self.home:
-                        # If at home:
-                        # Either look at semi-random angle
-                        # Or go to a random location in his room
-                        if random.randint(0, 1) == 0:
-                            self.wanted_angle = random.choice(self.look_angles)
-                        else:
-                            self.path = pathfinding.pathfind((self.x, self.y), random.choice(self.home_room))
-                    else:
-                        self.path = pathfinding.pathfind((self.x, self.y), self.home)
-
-            if self.path:
-                # If other enemy(s) in step tile:
-                #   Empty path and don't step
-                # Else:
-                #   Make a step
-
-                step_x, step_y = self.path[0]
-                for e in ENEMIES:
-                    if not e.dead and e.home != self.home and (int(e.x), int(e.y)) == (step_x, step_y):
-                        # Enemy has path but can't move --> either shoot (if possible) or move position
-                        if random.randint(0, 1) == 0:
-                            if self.ready_to_shoot():
-                                self.shooting = True
-                                self.angle = atan2(-self.delta_y, -self.delta_x)
-                                self.path = []  # Need to draw enemy standing
-                        else:
-                            self.strafe()  # Gets new path to a random neighbour tile
-                        break
-                else:
-                    self.stationary_ticks = 0
-                    step_x += 0.5  # Centers tile pos
-                    step_y += 0.5
-
-                    self.angle = self.wanted_angle = atan2(step_y - self.y, step_x - self.x)
-                    self.x += cos(self.angle) * self.speed
-                    self.y += sin(self.angle) * self.speed
-
-                    # Could recalculate delta_x/delta_y here but it makes next to no difference
-
-                    # If enemy close enough to the path step / If enemy has finished his step
-                    if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
-                        self.x = step_x
-                        self.y = step_y
-                        # If alerted, close enough to player and possible for the shot to make it
-                        if self.ready_to_shoot():
-                            self.shooting = True
-                            self.angle = atan2(-self.delta_y, -self.delta_x)
-                            self.path = []  # Needed to draw enemy standing
-                        elif self.alerted:
-                            self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
-                        else:
-                            del self.path[0]
-                            if not self.path:  # If reached path end
-                                self.angle = atan2(-self.delta_y, -self.delta_x)  # Face player
-
-            # Find the right spritesheet column
-            angle = fixed_angle(-self.angle_from_player + self.angle) + pi  # +pi to get rid of negative values
-            self.column = round(angle / (pi / 4))
-            if self.column == 8:
-                self.column = 0
-
-            if self.path:
-                if self.row == 0 or self.row > 4:
-                    self.row = 1
-
-                # Cycle through running animations
+        if self.status == 'dead':
+            if self.column < 4:
                 self.anim_ticks += 1
                 if self.anim_ticks == Sprite.animation_ticks:
                     self.anim_ticks = 0
-                    self.row += 1
-                    if self.row == 5:
-                        self.row = 1
-            else:
+                    self.column += 1
+
+        elif self.status == 'hit':
+            saw_player = True
+            self.anim_ticks += 1
+            if self.anim_ticks == Sprite.animation_ticks - 2:
+                self.stop_animation()
+
+        elif self.status == 'shooting':
+            saw_player = True
+            self.row = 6
+
+            self.anim_ticks += 1
+            if self.anim_ticks == Sprite.animation_ticks:
                 self.anim_ticks = 0
-                self.row = 0
+
+                self.column += 1
+                if self.column == 2:
+                    if self.ready_to_shoot():
+                        self.shoot()
+
+                elif self.column > 2:
+                    self.column = 2
+
+                    if random.randint(0, 1) == 0:
+                        self.column = 0  # Continues shooting
+                    else:
+                        self.stop_animation()
 
         else:
-            if self.dead:  # If dead/dying
-                if self.column < 4:  # 4 is the final death animation frame ; If death animation not completed
-                    self.anim_ticks += 1
-                    if self.anim_ticks == Sprite.animation_ticks:
-                        self.anim_ticks = 0
-                        self.column += 1
-            else:  # If just hit
-                self.column = 7
-                self.anim_ticks += 1
-                if self.anim_ticks == Sprite.animation_ticks - 2:  # - 2 makes hit animation show for less frames
-                    self.hit = False
+            if can_see((self.x, self.y), (PLAYER.x, PLAYER.y), self.angle, Enemy.fov) or \
+                    self.dist_squared <= Enemy.instant_alert_dist**2:
+                saw_player = True
+                self.chasing = True
+                self.target_tile = (int(PLAYER.x), int(PLAYER.y))
+            elif self.last_saw_ticks < self.memory:
+                self.chasing = True
+                self.target_tile = (int(PLAYER.x), int(PLAYER.y))
+            else:
+                alerted_enemy = self.get_nearby_alerted_enemy()
+                if alerted_enemy:
+                    self.chasing = True
+                    self.target_tile = (int(alerted_enemy.x), int(alerted_enemy.y))
+                else:
+                    self.chasing = False
 
-                    self.anim_ticks = 0
-                    self.last_saw_ticks = 0
-                    self.stationary_ticks = 0
+            if (self.x - 0.5, self.y - 0.5) == self.target_tile:
+                if self.stationary_ticks >= self.patience:
+                    if (self.x - 0.5, self.y - 0.5) == self.home:
+                        if random.randint(0, 2) == 0:
+                            self.target_tile = random.choice(self.home_room)
+                        else:
+                            self.angle = fixed_angle(2 * pi * random.random())
+                            moved = True
+                    else:
+                        self.target_tile = self.home
+            else:
+                if not self.path:
+                    self.path = pathfinding.pathfind((self.x, self.y), self.target_tile)
+                step_x, step_y = self.path[0]
+                if not self.can_step(step_x, step_y):
+                    if self.chasing and random.randint(0, 1) == 0:
+                        self.start_shooting()
+                    else:
+                        self.strafe()
+                else:
+                    step_x += 0.5
+                    step_y += 0.5
+                    self.angle = atan2(step_y - self.y, step_x - self.x)
+                    self.x += cos(self.angle) * self.speed
+                    self.y += sin(self.angle) * self.speed
+
+                    if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
+                        self.x = step_x
+                        self.y = step_y
+                        self.path = pathfinding.pathfind((self.x, self.y), self.target_tile)
+
+                        if self.chasing and self.ready_to_shoot():
+                            self.start_shooting()
+                        elif not self.path:
+                            self.angle = atan2(-self.delta_y, -self.delta_x)
+                    moved = True
+
+            self.get_row_and_column(moved)
+
+        if moved:
+            self.stationary_ticks = 0
+        else:
+            self.stationary_ticks += 1
+            if self.stationary_ticks > self.patience:
+                self.stationary_ticks = self.patience
+        if saw_player:
+            self.last_saw_ticks = 0
+        else:
+            self.last_saw_ticks += 1
+            if self.last_saw_ticks > self.memory:
+                self.last_saw_ticks = self.memory
 
         self.update_for_drawing()
 
@@ -1065,7 +1031,6 @@ class Level:
                     TILEMAP[row][column] = 0  # Clears tile
         # Process some stuff after enemies have been cleared from tilemap
         for e in ENEMIES:
-            e.get_look_angles()
             e.get_home_room()
 
         # Run pathfinding setup function

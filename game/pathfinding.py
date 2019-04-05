@@ -154,9 +154,7 @@ def pathfind(start, end):
 
     start_doors = get_neighbour_doors(start)
     end_doors = get_neighbour_doors(end)
-    if start_doors == end_doors:
-        return a_star(start, end)
-    if end in start_doors or start in end_doors:
+    if start_doors == end_doors or end in start_doors or start in end_doors:
         return a_star(start, end)
 
     # If start and end in different rooms
@@ -216,7 +214,6 @@ def pathfind(start, end):
 if __name__ == '__main__':
     # When executed directly, visualizes paths being created by algorithm
     import game.graphics as graphics
-    import sys
     import pygame
     from pygame.locals import *
 
@@ -224,30 +221,23 @@ if __name__ == '__main__':
     DISPLAY = pygame.display.set_mode((1024, 1024))
     CLOCK = pygame.time.Clock()
 
+    level_nr = 2
     tilemap = []
-    with open('../levels/2/tilemap.txt', 'r') as f:
-        row = f.readline().replace('\n', '').split(',')
-        row = tuple(int(float(i)) for i in row)
-        start = row[0:2]
-        # Skip the level colour lines
-        next(f)
-        next(f)
+    with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
         for line in f:
             row = line.replace('\n', '')  # Get rid of newline (\n)
             row = row[1:-1]  # Get rid of '[' and ']'
             row = row.split(',')  # Split line into list
             row = [int(i) for i in row]  # Turn all number strings to an int
             tilemap.append(row)
+    with open('../levels/{}/player.txt'.format(level_nr), 'r') as f:
+        start = f.readline().split(',')
+        start = (int(float(start[0])), int(float(start[1])))
 
-    # enemy_info needed for tile_values_info
-    # tile_values_info needed for setup
-    enemy_info = graphics.get_enemy_info(sys, pygame)
-    setup(tilemap, graphics.get_tile_values_info(sys, pygame, 64, enemy_info))
-
+    setup(tilemap, graphics.get_tile_values_info(64, graphics.get_enemy_info()))
     end_x, end_y = 0, 0
     running = True
     while running:
-        # Event handling
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -275,13 +265,11 @@ if __name__ == '__main__':
                 end_y = 0
         pygame.draw.rect(DISPLAY, (0, 255, 0), (end_x*16, end_y*16, 16, 16))
         if TILEMAP[end_y][end_x] <= 0:
-            # Draw path in red
             path = pathfind(start, (end_x, end_y))
             old_x, old_y = start
             for point_x, point_y in path:
                 pygame.draw.line(DISPLAY, (255, 0, 0),
-                                 (  (old_x+.5) * 16,   (old_y+.5) * 16),
-                                 ((point_x+.5) * 16, (point_y+.5) * 16))
+                                 ((old_x + 0.5) * 16, (old_y + 0.5) * 16), ((point_x + 0.5) * 16, (point_y + 0.5) * 16))
                 old_x, old_y = point_x, point_y
 
         pygame.display.flip()
