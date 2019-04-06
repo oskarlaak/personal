@@ -1,22 +1,14 @@
 # TO DO:
-# Projectile weapons
-# Fix weaponsheets
+# Add more enemies
 
 # NOTES:
 # Game's tick rate is capped at 30
 # All angles are in radians
-# DOORS list contains all doors currently visible or in motion
-# Objects are in OBJECTS list only if that object's cell is visible to player
-# Enemies are in ENEMIES list at all time time but are drawn only if their perp_dist is > 0
-# Wall texture files require two textures side by side (even if they are going to be the same),
-# bc raycast() is going to pick one based on the side of the interception
-# All timed events are tick based,
-# meaning that changing fps will change timer time
 
 
 class Player:
     max_ammo = 150
-    max_hp = 9999999
+    max_hp = 1000
 
     speed = 0.15  # Must be < half_hitbox, otherwise collisions will not work
     half_hitbox = 0.2
@@ -27,7 +19,7 @@ class Player:
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
 
-        self.hp = 9999999
+        self.hp = 1000
         self.weapon_nr = 1
 
     def hurt(self, damage, enemy):
@@ -217,7 +209,7 @@ class WeaponModel:
         self.update()
 
     def shoot(self, weapon):
-        def bullet_hitscan(max_spread=0, max_range=False):
+        def bullet_hitscan(max_spread, max_range=False):
             shootable_enemies = []
             for e in ENEMIES:
                 if not e.status == 'dead' and can_see((PLAYER.x, PLAYER.y), (e.x, e.y), PLAYER.viewangle, FOV):
@@ -259,10 +251,6 @@ class WeaponModel:
                 elif weapon.type == 'shotgun':
                     for _ in range(weapon.shot_bullets):
                         bullet_hitscan(weapon.max_spread)
-
-                elif weapon.type == 'projectile':
-                    p = Projectile((PLAYER.x, PLAYER.y), PLAYER.viewangle, weapon.projectile)
-                    PROJECTILES.append(p)
 
     def switch_weapons(self):
         self.ticks += 1
@@ -560,116 +548,6 @@ class Object(Drawable, Sprite):
         return (self.x, self.y) == (other.x, other.y)
 
 
-class Projectile(Drawable, Sprite):
-    def __init__(self, pos, angle, projectile):
-        # projectile is a Projectile object made in graphics.py get_weapons()
-        self.sheet = projectile.sheet
-        self.columns = projectile.columns
-        self.column = random.randint(0, self.columns - 1)
-        self.row = 0
-        self.y_multiplier = projectile.y_multiplier  # Makes projectile draw at gun level
-
-        self.angle = angle
-        self.speed = projectile.speed
-        self.x_step = cos(self.angle) * self.speed
-        self.y_step = sin(self.angle) * self.speed
-        self.x, self.y = self.came_from = pos
-
-        self.ticks = 0
-        self.to_delete = False
-        self.hit = False
-        self.hit_radius = projectile.hit_radius
-        self.damage = projectile.damage
-        self.explosive = projectile.explosive
-
-        self.update()  # One update is needed to get self.perp_dist
-        self.update()  # Second is to avoid drawing projectile too close to player
-
-    def wall_collision(self):
-        # If no collision, returns False
-        # Else returns True and sets x/y to contact point
-
-        tile_value = TILEMAP[int(self.y)][int(self.x)]
-        if tile_value != 0:
-            tile_type = TILE_VALUES_INFO[tile_value].type
-            if tile_type == 'Wall':
-                # Cancel step
-                self.x -= self.x_step
-                self.y -= self.y_step
-                # Get the exact contact point
-                self.x, self.y = simple_raycast(self.angle, (self.x, self.y))
-                return True
-            elif tile_type == 'Door':
-                max_travel_point = simple_raycast(self.angle, self.came_from)
-                max_travel_dist_squared = (self.came_from[0] - max_travel_point[0])**2 + \
-                                          (self.came_from[1] - max_travel_point[1])**2
-                projectile_dist_squared = (self.came_from[0] - self.x)**2 + (self.came_from[1] - self.y)**2
-                if max_travel_dist_squared < projectile_dist_squared:
-                    # Get the exact contact point
-                    self.x, self.y = max_travel_point
-                    return True
-        return False
-
-    def update(self):
-        if not self.hit:
-            self.x += self.x_step
-            self.y += self.y_step
-
-            # Check for collision
-            for e in ENEMIES:
-                if not e.dead:
-                    squared_dist = (e.x - self.x) ** 2 + (e.y - self.y) ** 2
-                    if squared_dist < self.hit_radius ** 2:
-                        self.hit = True
-                        if not self.explosive:
-                            e.hurt(self.damage)
-                        break
-            else:
-                if self.wall_collision():
-                    self.hit = True
-
-            if self.hit:
-                # Trace back position a little bit
-                self.x -= self.x_step * 0.3
-                self.y -= self.y_step * 0.3
-                self.column = 0
-                self.row = 1
-                self.ticks = 0
-                if self.explosive:
-                    for e in ENEMIES:
-                        if not e.dead:
-                            squared_dist = (self.x - e.x)**2 + (self.y - e.y)**2
-                            if squared_dist < 1:  # If enemy in 1 unit distance
-                                e.hurt(self.damage)
-                self.update()
-
-        self.ticks += 1
-        if self.ticks == Sprite.animation_ticks:
-            self.ticks = 0
-            self.column += 1
-            if self.column >= self.columns:
-                self.column = 0
-                if self.hit:
-                    self.to_delete = True
-
-        # Update image for drawing
-        delta_x = self.x - PLAYER.x
-        delta_y = self.y - PLAYER.y
-        angle_from_player = atan2(delta_y, delta_x)
-
-        self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
-        if self.perp_dist > 0:
-            self.image = self.sheet.subsurface(self.column * TEXTURE_SIZE, self.row * TEXTURE_SIZE,
-                                               TEXTURE_SIZE, TEXTURE_SIZE)
-
-            self.height = self.width = int(Drawable.constant / self.perp_dist)
-            #if self.height > D_H:
-            #    self.adjust_image_height()
-            # Not adjusting image height bc it will not work properly with y_multiplier
-
-            self.calc_display_xy(angle_from_player, self.y_multiplier)
-
-
 class Enemy(Drawable, Sprite):
     turning_speed = 0.08  # Stationary enemy turning speed in radians per tick
     instant_alert_dist = 1.4
@@ -910,6 +788,8 @@ class Enemy(Drawable, Sprite):
                             moved = True
                     else:
                         self.target_tile = self.home
+                elif self.chasing and self.ready_to_shoot():
+                    self.start_shooting()
             else:
                 if not self.path:
                     self.path = pathfinding.pathfind((self.x, self.y), self.target_tile)
@@ -1009,11 +889,8 @@ class Level:
                 else:
                     self.skytexture = pygame.transform.scale(self.skytexture, (D_W * 4, H_H))
 
-        # Empty projectiles and doors
         global DOORS
         DOORS = []
-        global PROJECTILES
-        PROJECTILES = []
         global EFFECTS
         EFFECTS = Effects()
         global WEAPON_MODEL
@@ -1440,10 +1317,6 @@ def update_gameobjects():
         d.move()
         if d.state == 0:
             del DOORS[c]
-    for c, p in enumerate(PROJECTILES):
-        p.update()
-        if p.to_delete:
-            del PROJECTILES[c]
     for e in ENEMIES:
         e.update()
     WEAPON_MODEL.update()
@@ -1487,7 +1360,7 @@ def draw_background():
 
 def draw_frame():
     # Sorting objects by perp_dist so those further away are drawn first
-    to_draw = WALLS + ENEMIES + OBJECTS + PROJECTILES
+    to_draw = WALLS + ENEMIES + OBJECTS
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
     for obj in to_draw:
         obj.draw()
