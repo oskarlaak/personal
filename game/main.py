@@ -1,5 +1,6 @@
 # TO DO:
-# Fix enemies missing frames
+# Projectile weapons
+# Fix weaponsheets
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -808,8 +809,7 @@ class Enemy(Drawable, Sprite):
             self.row = 5
             self.column = 0
         else:
-            rand = random.randint(0, 100)
-            if rand < self.pain_chance * 100:
+            if random.randint(0, 100) < self.pain_chance * 100:
                 self.status = 'hit'
                 self.anim_ticks = 0
                 self.row = 5
@@ -936,8 +936,8 @@ class Enemy(Drawable, Sprite):
                         elif not self.path:
                             self.angle = atan2(-self.delta_y, -self.delta_x)
                     moved = True
-
-            self.get_row_and_column(moved)
+            if not self.status == 'shooting':
+                self.get_row_and_column(moved)
 
         if moved:
             self.stationary_ticks = 0
