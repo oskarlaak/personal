@@ -444,10 +444,9 @@ def create_sidebar_objects():
     def create_texturegroups():
         tg_heights = {  # Texturegroup heights
             'Enemy': 177,
-            'Object-dynamic': 273,
-            'Object': 369,
-            'Door': 465,
-            'Wall': 561,
+            'Object': 273,
+            'Door': 369,
+            'Wall': 465,
             'Special': 657
         }
 
@@ -458,11 +457,15 @@ def create_sidebar_objects():
         for value in TILE_VALUES_INFO:
             info = (TILE_VALUES_INFO[value].type, TILE_VALUES_INFO[value].desc)
             if info not in infos:  # If the need to create a new texturegroup
+                y = tg_heights[info[0]]
                 x = start_x
                 for i in infos:  # For every texturegroup with same tpye, add 80 to x
                     if i[0] == info[0]:
                         x += 80
-                texturegroups.append(TextureGroup((x, tg_heights[info[0]]), value))
+                        if x >= 1500:
+                            x = start_x
+                            y += 96
+                texturegroups.append(TextureGroup((x, y), value))
                 infos.append(info)
             else:
                 texturegroups[-1].values.append(value)

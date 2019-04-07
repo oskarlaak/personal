@@ -1,5 +1,7 @@
 # TO DO:
 # Add more enemies
+# Add more sky textures
+# Maybe revisit leveleditor
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -1326,15 +1328,27 @@ def update_gameobjects():
     tile_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
     if tile_value < 0:
         OBJECTS.append(Object((int(PLAYER.x), int(PLAYER.y)), tile_value))
-        if TILE_VALUES_INFO[tile_value].type == 'Object-dynamic':
-            tile_desc = TILE_VALUES_INFO[tile_value].desc
-            if tile_desc == 'Health':
-                if PLAYER.hp < PLAYER.max_hp:
-                    PLAYER.hp += 20
-                    if PLAYER.hp > PLAYER.max_hp:
-                        PLAYER.hp = PLAYER.max_hp
-                    EFFECTS.update((0, 255, 0))
-                    TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
+        if TILE_VALUES_INFO[tile_value].desc == '+25 Health':
+            if PLAYER.hp < PLAYER.max_hp:
+                PLAYER.hp += 25
+                if PLAYER.hp > PLAYER.max_hp:
+                    PLAYER.hp = PLAYER.max_hp
+                EFFECTS.update((0, 255, 0))
+                TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
+        elif TILE_VALUES_INFO[tile_value].desc == '+10 Health':
+            if PLAYER.hp < PLAYER.max_hp:
+                PLAYER.hp += 10
+                if PLAYER.hp > PLAYER.max_hp:
+                    PLAYER.hp = PLAYER.max_hp
+                EFFECTS.update((0, 255, 0))
+                TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
+        elif TILE_VALUES_INFO[tile_value].desc == '+4 Health':
+            if PLAYER.hp < PLAYER.max_hp:
+                PLAYER.hp += 4
+                if PLAYER.hp > PLAYER.max_hp:
+                    PLAYER.hp = PLAYER.max_hp
+                EFFECTS.update((0, 255, 0))
+                TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
 
 
 def draw_background():

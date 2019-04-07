@@ -56,29 +56,32 @@ def get_tile_values_info(texture_size, enemy_info):
 
     try:
         # Wall textures
-        bloodycave_textures = pygame.image.load('../textures/walls/bloodycave.png').convert()
-        bluecellar_textures = pygame.image.load('../textures/walls/bluecellar.png').convert()
-        elevator_textures = pygame.image.load('../textures/walls/elevator.png').convert()
-        redbrick_textures = pygame.image.load('../textures/walls/redbrick.png').convert()
-        stone_textures = pygame.image.load('../textures/walls/stone.png').convert()
-        wood_textures = pygame.image.load('../textures/walls/wood.png').convert()
-        end_trigger_textures = pygame.image.load('../textures/walls/endtrigger.png').convert()
+        bloodycave = pygame.image.load('../textures/walls/bloodycave.png').convert()
+        bluebrick = pygame.image.load('../textures/walls/bluebrick.png').convert()
+        bluecellar = pygame.image.load('../textures/walls/bluecellar.png').convert()
+        browncobblestone = pygame.image.load('../textures/walls/browncobblestone.png').convert()
+        brownstone = pygame.image.load('../textures/walls/brownstone.png').convert()
+        cobblestone = pygame.image.load('../textures/walls/cobblestone.png').convert()
+        elevator = pygame.image.load('../textures/walls/elevator.png').convert()
+        metal = pygame.image.load('../textures/walls/metal.png').convert()
+        purplecave = pygame.image.load('../textures/walls/purplecave.png').convert()
+        redbrick = pygame.image.load('../textures/walls/redbrick.png').convert()
+        stone = pygame.image.load('../textures/walls/stone.png').convert()
+        wood = pygame.image.load('../textures/walls/wood.png').convert()
+        end_trigger = pygame.image.load('../textures/walls/endtrigger.png').convert()
 
         # Door textures
-        dynamic_door_textures = pygame.image.load('../textures/doors/dynamic.png').convert()
-        static_door_textures = pygame.image.load('../textures/doors/static.png').convert()
+        dynamic_doors = pygame.image.load('../textures/doors/dynamic.png').convert()
+        static_doors = pygame.image.load('../textures/doors/static.png').convert()
 
         # Object sprites
-        nonsolid_sprites = pygame.image.load('../textures/objects/nonsolids.png').convert_alpha()
-        solid_sprites = pygame.image.load('../textures/objects/solids.png').convert_alpha()
+        nonsolids = pygame.image.load('../textures/objects/nonsolids.png').convert_alpha()
+        solids = pygame.image.load('../textures/objects/solids.png').convert_alpha()
 
         # Dynamic objects
-        ammo_sprite = pygame.image.load('../textures/objects/dynamic/ammo.png').convert_alpha()
-        health_sprite = pygame.image.load('../textures/objects/dynamic/health.png').convert_alpha()
-        machinegun = pygame.image.load('../textures/objects/dynamic/machinegun.png').convert_alpha()
-        chaingun = pygame.image.load('../textures/objects/dynamic/chaingun.png').convert_alpha()
-        plasmagun = pygame.image.load('../textures/objects/dynamic/plasmagun.png').convert_alpha()
-        rocketlauncher = pygame.image.load('../textures/objects/dynamic/rocketlauncher.png').convert_alpha()
+        first_aid = pygame.image.load('../textures/objects/dynamic/first_aid.png').convert_alpha()
+        food = pygame.image.load('../textures/objects/dynamic/food.png').convert_alpha()
+        dog_food = pygame.image.load('../textures/objects/dynamic/dog_food.png').convert_alpha()
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -97,41 +100,41 @@ def get_tile_values_info(texture_size, enemy_info):
 
         # Dynamic objects
         index -= 1
-        tile_values_info[index] = Tile(ammo_sprite, 'Object-dynamic', 'Ammo')
+        tile_values_info[index] = Tile(first_aid, 'Object', '+25 Health')
         index -= 1
-        tile_values_info[index] = Tile(health_sprite, 'Object-dynamic', 'Health')
+        tile_values_info[index] = Tile(food, 'Object', '+10 Health')
         index -= 1
-        tile_values_info[index] = Tile(machinegun, 'Object-dynamic', 'Machinegun')
-        index -= 1
-        tile_values_info[index] = Tile(chaingun, 'Object-dynamic', 'Chaingun')
-        index -= 1
-        tile_values_info[index] = Tile(plasmagun, 'Object-dynamic', 'Plasmagun')
-        index -= 1
-        tile_values_info[index] = Tile(rocketlauncher, 'Object-dynamic', 'Rocket launcher')
+        tile_values_info[index] = Tile(dog_food, 'Object', '+4 Health')
 
         # Other non-solid objects
         index -= 1
-        assign_texture_sheet(texture_size, texture_size, -1, nonsolid_sprites, 'Object', 'Non-solid')
+        assign_texture_sheet(texture_size, texture_size, -1, nonsolids, 'Object', 'Non-solid')
 
         # ---Positive values---
         # Solid objects
         index = 1
-        assign_texture_sheet(texture_size, texture_size, 1, solid_sprites, 'Object', 'Solid')
+        assign_texture_sheet(texture_size, texture_size, 1, solids, 'Object', 'Solid')
 
         # Doors
-        assign_texture_sheet(texture_size * 2, texture_size, 1, dynamic_door_textures, 'Door', 'Dynamic')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, static_door_textures, 'Door', 'Static')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, dynamic_doors, 'Door', 'Dynamic')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, static_doors, 'Door', 'Static')
 
         # Walls
-        assign_texture_sheet(texture_size * 2, texture_size, 1, bloodycave_textures, 'Wall', 'Bloodycave')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, bluecellar_textures, 'Wall', 'Bluecellar')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, elevator_textures, 'Wall', 'Elevator')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, redbrick_textures, 'Wall', 'Redbrick')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, stone_textures, 'Wall', 'Stone')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, wood_textures, 'Wall', 'Wood')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, bloodycave, 'Wall', 'Bloody Cave')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, bluebrick, 'Wall', 'Blue Brick')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, bluecellar, 'Wall', 'Blue Cellar')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, browncobblestone, 'Wall', 'Brown Cobblestone')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, brownstone, 'Wall', 'Brown Stone')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, cobblestone, 'Wall', 'Cobblestone')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, elevator, 'Wall', 'Elevator')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, metal, 'Wall', 'Metal')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, purplecave, 'Wall', 'Purple Cave')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, redbrick, 'Wall', 'Red Brick')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, stone, 'Wall', 'Stone')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, wood, 'Wall', 'Wood')
 
         # Both end trigger texture variants
-        assign_texture_sheet(texture_size * 2, texture_size, 1, end_trigger_textures, 'Wall', 'End-trigger')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, end_trigger, 'Wall', 'End-trigger')
 
         # For every enemy type in enemy_info, add value to tile_values_info
         for enemy_sheet in enemy_info:
