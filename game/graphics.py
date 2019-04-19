@@ -2,32 +2,6 @@ import pygame
 import sys
 
 
-def get_enemy_info():
-    try:
-        guard = pygame.image.load('../textures/enemies/guard.png').convert_alpha()
-        ss = pygame.image.load('../textures/enemies/ss.png').convert_alpha()
-        officer = pygame.image.load('../textures/enemies/officer.png').convert_alpha()
-
-    except pygame.error as loading_error:
-        sys.exit(loading_error)
-
-    else:
-        enemy_info = {
-            # spritesheet: (name, hp, speed, shooting_range, accuracy, memory, patience, pain_chance)
-            #
-            # Attributes description:
-            # shooting_range = maximum distance in units where enemy can shoot player from
-            # accuracy = 0 means distance doesn't matter to enemy at all, 1 means he's completely average shooter
-            # memory = the time in ticks enemy knows player's position, after player has disappeared from enemy's vision
-            # patience = the maximum time enemy stays standing still without an action
-            # pain_chance = 1 means enemy will be displayed getting hit for every bullet, 0 means that will never happen
-            guard:   (  'Guard', 100, 0.04, 10, 1.0,  90, 120, 0.90),
-            ss:      (     'SS', 100, 0.05, 20, 0.6, 150, 120, 0.75),
-            officer: ('Officer', 100, 0.06, 15, 0.7, 150,  90, 0.75)
-        }
-        return enemy_info
-
-
 def get_door_side_texture():
     try:
         door_side_texture = pygame.image.load('../textures/doors/side.png').convert()
@@ -138,8 +112,7 @@ def get_tile_values_info(texture_size, enemy_info):
 
         # For every enemy type in enemy_info, add value to tile_values_info
         for enemy_sheet in enemy_info:
-            enemy_name = enemy_info[enemy_sheet][0]
-            tile_values_info[index] = Tile(enemy_sheet, 'Enemy', enemy_name)
+            tile_values_info[index] = Tile(enemy_sheet, 'Enemy', enemy_info[enemy_sheet].type)
             index += 1
 
         return tile_values_info
@@ -147,9 +120,10 @@ def get_tile_values_info(texture_size, enemy_info):
 
 if __name__ == '__main__':
     # Prints out tile_values_info if executed directly
+    import game.enemies as enemies
     pygame.init()
     pygame.display.set_mode((1, 1))
-    tile_values_info = get_tile_values_info(64, get_enemy_info())
+    tile_values_info = get_tile_values_info(64, enemies.get_enemy_info())
 
     for value in sorted(tile_values_info):
         tile_obj = tile_values_info[value]

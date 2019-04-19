@@ -526,7 +526,7 @@ def get_tilevaluesinfo():
 
     else:
         # Get tile_values_info from graphics.py
-        tile_values_info = graphics.get_tile_values_info(64, graphics.get_enemy_info())
+        tile_values_info = graphics.get_tile_values_info(64, enemies.get_enemy_info())
 
         # Replace all textures in it with 64x64 pixel textures
         for value in tile_values_info:
@@ -555,6 +555,7 @@ def get_tilevaluesinfo():
 
 import math
 import game.graphics as graphics
+import game.enemies as enemies
 import pygame
 import sys
 import os

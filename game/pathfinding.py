@@ -214,6 +214,7 @@ def pathfind(start, end):
 if __name__ == '__main__':
     # When executed directly, visualizes paths being created by algorithm
     import game.graphics as graphics
+    import game.enemies as enemies
     import pygame
     from pygame.locals import *
 
@@ -234,7 +235,7 @@ if __name__ == '__main__':
         start = f.readline().split(',')
         start = (int(float(start[0])), int(float(start[1])))
 
-    setup(tilemap, graphics.get_tile_values_info(64, graphics.get_enemy_info()))
+    setup(tilemap, graphics.get_tile_values_info(64, enemies.get_enemy_info()))
     end_x, end_y = 0, 0
     running = True
     while running:

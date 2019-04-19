@@ -549,6 +549,7 @@ class Object(Drawable, Sprite):
 
 
 class Enemy(Drawable, Sprite):
+    type = 'Normal'
     turning_speed = 0.08  # Stationary enemy turning speed in radians per tick
     instant_alert_dist = 1.4
 
@@ -566,10 +567,14 @@ class Enemy(Drawable, Sprite):
         self.status = 'default'  # (default, shooting, hit, dead)
         self.chasing = False
 
-        # Take attributes from ENEMY_INFO based on spritesheet (enemy type)
-        # What each attribute means see graphics.py get_enemy_info() enemy_info dictionary description
-        self.name, self.hp, self.speed, self.shooting_range, self.accuracy,\
-        self.memory, self.patience, self.pain_chance = ENEMY_INFO[self.sheet]
+        # Take attributes from ENEMY_INFO based on spritesheet
+        self.hp = ENEMY_INFO[spritesheet].hp
+        self.speed = ENEMY_INFO[spritesheet].speed
+        self.shooting_range = ENEMY_INFO[spritesheet].shooting_range
+        self.dist_multiplier = ENEMY_INFO[spritesheet].dist_multiplier
+        self.memory = ENEMY_INFO[spritesheet].memory
+        self.patience = ENEMY_INFO[spritesheet].patience
+        self.pain_chance = ENEMY_INFO[spritesheet].pain_chance
 
         # Timed events tick variables (frames passed since some action)
         self.anim_ticks = 0
@@ -668,7 +673,7 @@ class Enemy(Drawable, Sprite):
             look = 8
         rand = random.randint(0, 255)
 
-        player_hit = rand < speed - dist * self.accuracy * look
+        player_hit = rand < speed - dist * self.dist_multiplier * look
         if player_hit:
             rand = random.randint(0, 255)
             if dist < 2:
@@ -847,6 +852,38 @@ class Enemy(Drawable, Sprite):
             self.calc_display_xy(self.angle_from_player)
 
 
+class Boss(Enemy):
+    type = 'Boss'
+
+    def __init__(self, spritesheet, pos):
+        self.x, self.y = pos
+
+        self.sheet = spritesheet
+        self.row = 0
+        self.column = 0
+
+        self.path = []
+        self.status = 'sleeping'
+
+        # Take attributes from ENEMY_INFO based on spritesheet
+        self.hp = ENEMY_INFO[spritesheet].hp
+        self.speed = ENEMY_INFO[spritesheet].speed
+        self.dist_multiplier = ENEMY_INFO[spritesheet].dist_multiplier
+        self.shot_columns = ENEMY_INFO[spritesheet].shot_columns
+
+        self.anim_ticks = 0
+
+    def hurt(self, damage):
+        self.hp -= damage
+        if self.hp <= 0:
+            self.status = 'dead'
+            self.anim_ticks = 0
+            self.row = 2
+
+    def update(self):
+        pass
+
+
 class Level:
     def load(self, level_nr):
         self.nr = level_nr
@@ -901,14 +938,19 @@ class Level:
         ENEMIES = []
         for row in range(len(TILEMAP)):
             for column in range(len(TILEMAP[row])):
-                if TILE_VALUES_INFO[TILEMAP[row][column]].type == 'Enemy':
+                tile = TILE_VALUES_INFO[TILEMAP[row][column]]
+                if tile.type == 'Enemy':
                     spritesheet = TILE_VALUES_INFO[TILEMAP[row][column]].texture
                     pos = (column + 0.5, row + 0.5)
-                    ENEMIES.append(Enemy(spritesheet, pos))
+                    if tile.desc == 'Normal':
+                        ENEMIES.append(Enemy(spritesheet, pos))
+                    elif tile.desc == 'Boss':
+                        ENEMIES.append(Boss(spritesheet, pos))
                     TILEMAP[row][column] = 0  # Clears tile
         # Process some stuff after enemies have been cleared from tilemap
         for e in ENEMIES:
-            e.get_home_room()
+            if e.type == 'Normal':
+                e.get_home_room()
 
         # Run pathfinding setup function
         pathfinding.setup(TILEMAP, TILE_VALUES_INFO)
@@ -1414,6 +1456,7 @@ if __name__ == '__main__':
 
     from game.settings import *
     import game.graphics as graphics
+    import game.enemies as enemies
     import game.weapons as weapons
     import game.pathfinding as pathfinding
 
@@ -1436,7 +1479,7 @@ if __name__ == '__main__':
     HUD = Hud()
 
     DOOR_SIDE_TEXTURE = graphics.get_door_side_texture()
-    ENEMY_INFO = graphics.get_enemy_info()
+    ENEMY_INFO = enemies.get_enemy_info()
     TILE_VALUES_INFO = graphics.get_tile_values_info(TEXTURE_SIZE, ENEMY_INFO)
     WEAPONS = weapons.get()
 
@@ -1444,5 +1487,5 @@ if __name__ == '__main__':
     PAUSED = False
 
     LEVEL = Level()
-    LEVEL.start(2)
+    LEVEL.start(1)
     pygame.quit()
