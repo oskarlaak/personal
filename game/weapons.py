@@ -50,7 +50,7 @@ def get():
         chainsaw = pygame.image.load('../textures/weapons/chainsaw.png').convert_alpha()
         pistol = pygame.image.load('../textures/weapons/pistol.png').convert_alpha()
         shotgun = pygame.image.load('../textures/weapons/shotgun.png').convert_alpha()
-        super_shotgun= pygame.image.load('../textures/weapons/super_shotgun.png').convert_alpha()
+        supershotgun = pygame.image.load('../textures/weapons/supershotgun.png').convert_alpha()
         chaingun = pygame.image.load('../textures/weapons/chaingun.png').convert_alpha()
 
     except pygame.error as loading_error:
@@ -58,10 +58,10 @@ def get():
 
     else:
         weapons = [None]  # Makes it so first weapon is index 1 instead of 0
-        weapons.append(        Melee(        'Fists',         fists, 3, 15, range(2, 21), False, 1.25))
-        weapons.append(        Melee(     'Chainsaw',      chainsaw, 1,  4, range(2, 21),  True, 1.25))
-        weapons.append(HitscanWeapon(       'Pistol',        pistol, 1, 12, range(5, 16), False, 0.096))
-        weapons.append(      Shotgun(      'Shotgun',       shotgun, 1, 32, range(5, 16), False, 0.171,  7))
-        weapons.append(      Shotgun('Super Shotgun', super_shotgun, 1, 54, range(5, 16), False, 0.342, 20))
-        weapons.append(HitscanWeapon(     'Chaingun',      chaingun, 1,  4, range(5, 16),  True, 0.096))
+        weapons.append(        Melee(        'Fists',        fists, 3, 15, range(2, 21), False, 1.25))
+        weapons.append(        Melee(     'Chainsaw',     chainsaw, 1,  4, range(2, 21),  True, 1.25))
+        weapons.append(HitscanWeapon(       'Pistol',       pistol, 1, 12, range(5, 16), False, 0.096))
+        weapons.append(      Shotgun(      'Shotgun',      shotgun, 1, 32, range(5, 16), False, 0.171,  7))
+        weapons.append(      Shotgun('Super Shotgun', supershotgun, 1, 54, range(5, 16), False, 0.342, 20))
+        weapons.append(HitscanWeapon(     'Chaingun',     chaingun, 1,  4, range(5, 16),  True, 0.096))
         return weapons

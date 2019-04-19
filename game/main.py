@@ -1,10 +1,10 @@
 # TO DO:
 # Add more enemies
-# Add more sky textures
 # Maybe revisit leveleditor
 
 # NOTES:
 # Game's tick rate is capped at 30
+# All timed events are tick based
 # All angles are in radians
 
 
@@ -300,20 +300,48 @@ class Effects:
 
 
 class TransitionEffect:
-    speed = 20
-    column_width = 20
+    rect_size = 16
+
+    def clear(self, colour):
+        class EffectColumn:
+            def __init__(self, x, y):
+                self.x = x
+                self.y = y
+
+            def draw(self):
+                pygame.draw.rect(DISPLAY, colour, (self.x, self.y, TransitionEffect.rect_size, D_H - self.y))
+
+        effect_columns = [EffectColumn(x*TransitionEffect.rect_size, -x*TransitionEffect.rect_size)
+                          for x in range(int(D_W / TransitionEffect.rect_size))]
+        while effect_columns:
+            pygame.mouse.get_rel()
+            pygame.event.clear()
+
+            send_rays()
+            draw_frame()
+            HUD.draw()
+
+            for c, b in enumerate(effect_columns):
+                b.y += TransitionEffect.rect_size
+                if b.y >= D_H:
+                    del effect_columns[c]
+                else:
+                    b.draw()
+
+            pygame.display.flip()
+            CLOCK.tick(30)
 
     def cover(self, colour):
         class EffectColumn:
             def __init__(self, x):
                 self.x = x
-                self.y = -TransitionEffect.speed
+                self.y = -TransitionEffect.rect_size
 
             def draw(self):
-                self.rect = (self.x, self.y, TransitionEffect.column_width, TransitionEffect.speed)
+                self.rect = (self.x, self.y, TransitionEffect.rect_size, TransitionEffect.rect_size)
                 pygame.draw.rect(DISPLAY, colour, self.rect)
 
-        empty_columns = [x*TransitionEffect.column_width for x in range(int(D_W / TransitionEffect.column_width))]
+        empty_columns = [x*TransitionEffect.rect_size for x in range(int(D_W / TransitionEffect.rect_size))]
         effect_columns = []
         while True:
             pygame.mouse.get_rel()
@@ -325,7 +353,7 @@ class TransitionEffect:
 
             rects_drawn = []
             for c, b in enumerate(effect_columns):
-                b.y += TransitionEffect.speed
+                b.y += TransitionEffect.rect_size
                 if b.y >= D_H:
                     del effect_columns[c]
                 else:
@@ -335,36 +363,6 @@ class TransitionEffect:
             if not effect_columns:
                 break
             pygame.display.update(rects_drawn)
-            CLOCK.tick(30)
-
-    def clear(self, colour):
-        class EffectColumn:
-            def __init__(self, x, y):
-                self.x = x
-                self.y = y
-
-            def draw(self):
-                pygame.draw.rect(DISPLAY, colour, (self.x, self.y, TransitionEffect.column_width, D_H - self.y))
-
-        effect_columns = [EffectColumn(x*TransitionEffect.column_width, -x*TransitionEffect.speed)
-                          for x in range(int(D_W / TransitionEffect.column_width))]
-        while effect_columns:
-            pygame.mouse.get_rel()
-            pygame.event.clear()
-
-            draw_background()
-            send_rays()
-            draw_frame()
-            HUD.draw()
-
-            for c, b in enumerate(effect_columns):
-                b.y += TransitionEffect.speed
-                if b.y >= D_H:
-                    del effect_columns[c]
-                else:
-                    b.draw()
-
-            pygame.display.flip()
             CLOCK.tick(30)
 
 
@@ -475,18 +473,18 @@ class Drawable:
         self.height = int(D_H * multiplier)
 
 
-class Wall(Drawable):
-    def __init__(self, perp_dist, texture, column, count):
+class WallColumn(Drawable):
+    def __init__(self, perp_dist, texture, texture_column, display_x):
         self.perp_dist = perp_dist  # Needs saving to sort by it later
-        self.image = texture.subsurface(column, 0, 1, TEXTURE_SIZE)  # Cropping 1 pixel wide column out of texture
+        self.image = texture.subsurface(texture_column, 0, 1, TEXTURE_SIZE)
 
         self.height = int(Drawable.constant / self.perp_dist)
         if self.height > D_H:
             self.adjust_image_height()
 
-        self.display_x = count * Wall.width
+        self.display_x = display_x
         self.display_y = (D_H - self.height) / 2
-        self.image = pygame.transform.scale(self.image, (Wall.width, self.height))
+        self.image = pygame.transform.scale(self.image, (WallColumn.width, self.height))
 
     def draw(self):
         DISPLAY.blit(self.image, (self.display_x, self.display_y))
@@ -928,7 +926,6 @@ class Level:
         game_loop()
 
     def restart(self, enemy=None):
-        draw_background()
         send_rays()
         draw_frame()
         pygame.display.flip()
@@ -957,7 +954,6 @@ class Level:
                 for e in ENEMIES:
                     e.update_for_drawing()
 
-                draw_background()
                 send_rays()
                 draw_frame()
 
@@ -969,7 +965,6 @@ class Level:
         self.start(self.nr, True)
 
     def finish(self):
-        draw_background()
         send_rays()
         draw_frame()
         HUD.draw()
@@ -981,12 +976,11 @@ class Level:
 
 
 def fixed_angle(angle):
-    # Function made for angles to stay between -pi and pi
-    # For example 3.18 will be turned to -3.10
+    # Makes sure all angles stay between -pi and pi
 
-    if angle > pi:  # 3.14+
+    while angle > pi:  # 3.14+
         angle -= 2 * pi
-    elif angle < -pi:  # 3.14-
+    while angle < -pi:  # 3.14-
         angle += 2 * pi
     return angle
 
@@ -1039,7 +1033,7 @@ def send_rays():
             texture = TILE_VALUES_INFO[tile_value].texture
 
         # Create Wall object
-        WALLS.append(Wall(perp_dist, texture, column, c))
+        WALLS.append(WallColumn(perp_dist, texture, column, c * WallColumn.width))
 
 
 def raycast(rayangle, start_pos):
@@ -1351,10 +1345,10 @@ def update_gameobjects():
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
 
 
-def draw_background():
+def draw_frame():
     if LEVEL.skytexture:
         # x_offset is a value ranging from 0 to 1
-        x_offset = (PLAYER.viewangle + pi) / (2*pi)
+        x_offset = (PLAYER.viewangle + pi) / (2 * pi)
         x = x_offset * LEVEL.skytexture.get_width()
 
         if x_offset <= 0.75:
@@ -1371,8 +1365,6 @@ def draw_background():
         pygame.draw.rect(DISPLAY, LEVEL.ceiling_colour, ((0, 0), (D_W, H_H)))  # Ceiling
     pygame.draw.rect(DISPLAY, LEVEL.floor_colour, ((0, H_H), (D_W, H_H)))  # Floor
 
-
-def draw_frame():
     # Sorting objects by perp_dist so those further away are drawn first
     to_draw = WALLS + ENEMIES + OBJECTS
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
@@ -1380,7 +1372,7 @@ def draw_frame():
         obj.draw()
 
 
-def draw_pause_screen():
+def draw_pause_overlay():
     pause_overlay = pygame.Surface((D_W, D_H))
     pause_overlay.set_alpha(128)
     pause_overlay.fill((0, 0, 0))
@@ -1397,13 +1389,12 @@ def game_loop():
             PLAYER.handle_movement()
             update_gameobjects()
 
-        draw_background()
         send_rays()
         draw_frame()
         HUD.draw()
 
         if PAUSED:
-            draw_pause_screen()
+            draw_pause_overlay()
 
         pygame.display.flip()
         CLOCK.tick(30)
@@ -1428,7 +1419,7 @@ if __name__ == '__main__':
 
     # Make class constants
     Drawable.constant = 0.6 * D_H
-    Wall.width = int(D_W / RAYS_AMOUNT)
+    WallColumn.width = int(D_W / RAYS_AMOUNT)
     Enemy.fov = FOV  # Enemies share the same fov as player
 
     # Pygame stuff
@@ -1453,5 +1444,5 @@ if __name__ == '__main__':
     PAUSED = False
 
     LEVEL = Level()
-    LEVEL.start(1)
+    LEVEL.start(2)
     pygame.quit()

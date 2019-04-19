@@ -79,9 +79,9 @@ def get_tile_values_info(texture_size, enemy_info):
         solids = pygame.image.load('../textures/objects/solids.png').convert_alpha()
 
         # Dynamic objects
-        first_aid = pygame.image.load('../textures/objects/dynamic/first_aid.png').convert_alpha()
+        firstaid = pygame.image.load('../textures/objects/dynamic/firstaid.png').convert_alpha()
         food = pygame.image.load('../textures/objects/dynamic/food.png').convert_alpha()
-        dog_food = pygame.image.load('../textures/objects/dynamic/dog_food.png').convert_alpha()
+        dogfood = pygame.image.load('../textures/objects/dynamic/dogfood.png').convert_alpha()
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -100,11 +100,11 @@ def get_tile_values_info(texture_size, enemy_info):
 
         # Dynamic objects
         index -= 1
-        tile_values_info[index] = Tile(first_aid, 'Object', '+25 Health')
+        tile_values_info[index] = Tile(firstaid, 'Object', '+25 Health')
         index -= 1
         tile_values_info[index] = Tile(food, 'Object', '+10 Health')
         index -= 1
-        tile_values_info[index] = Tile(dog_food, 'Object', '+4 Health')
+        tile_values_info[index] = Tile(dogfood, 'Object', '+4 Health')
 
         # Other non-solid objects
         index -= 1
