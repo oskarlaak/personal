@@ -1,6 +1,10 @@
 # TO DO:
-# Add more enemies
-# Maybe revisit leveleditor
+# Add dog - just as normal enemy but with reduced shooting range and 0 patience
+# Make hans and gretel grõsse have 3 shot animation sprites instead of 2
+# Fix officer hit anim sprite
+# Bosses dropping keys
+# Doors with keys
+# Revisit leveleditor
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -9,11 +13,10 @@
 
 
 class Player:
-    max_ammo = 150
-    max_hp = 1000
-
-    speed = 0.15  # Must be < half_hitbox, otherwise collisions will not work
-    half_hitbox = 0.2
+    max_hp = 100
+    speed = 0.15  # Must be < half_hitbox, otherwise player can clip through walls
+    hitbox_size = 0.4
+    half_hitbox = hitbox_size / 2
 
     def __init__(self, pos, angle):
         self.x, self.y = pos
@@ -21,7 +24,7 @@ class Player:
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
 
-        self.hp = 1000
+        self.hp = Player.max_hp
         self.weapon_nr = 1
 
     def hurt(self, damage, enemy):
@@ -157,7 +160,7 @@ class Player:
 
 class Door:
     speed = 0.05
-    open_ticks = 60
+    open_ticks = 90
 
     def __init__(self, map_pos, tile_value):
         self.x, self.y = map_pos
@@ -236,7 +239,7 @@ class WeaponModel:
             self.column += 1
 
             if self.column > weapon.animation_frames:  # If finished shot animation
-                # If weapon automatic, has magazine ammo and mouse down
+                # If weapon automatic and mouse down
                 if weapon.automatic and pygame.mouse.get_pressed()[0]:
                     self.column = 1  # Keep going
                 else:
@@ -372,18 +375,6 @@ class Hud:
     font_h = 28
 
     def draw(self):
-        def dynamic_colour(current, maximum):
-            ratio = current / maximum  # 1 is completely green, 0 completely red
-            if ratio < 0.5:
-                r = 255
-                g = int(ratio * 2 * 255)
-            else:
-                ratio = 1 - ratio
-                g = 255
-                r = int(ratio * 2 * 255)
-            b = 0
-            return r, g, b
-
         def render_text(text, colour, background=None):
             return GAME_FONT.render(text, False, colour, background)
 
@@ -416,6 +407,7 @@ class Hud:
                 DISPLAY.blit(number, (D_W - number.get_width() - Hud.safezone_w, y))
                 y += Hud.font_h
 
+        BOSSHEALTHBAR.draw()
         EFFECTS.draw()
 
 
@@ -490,7 +482,7 @@ class WallColumn(Drawable):
         DISPLAY.blit(self.image, (self.display_x, self.display_y))
 
 
-class Sprite:
+class Sprite(Drawable):
     animation_ticks = 5  # Sprite animation frames delay
 
     def draw(self):
@@ -525,7 +517,7 @@ class Sprite:
         self.display_y = (D_H - self.height * y_multiplier) / 2
 
 
-class Object(Drawable, Sprite):
+class Object(Sprite):
     def __init__(self, map_pos, tilevalue):
         self.x = map_pos[0] + 0.5
         self.y = map_pos[1] + 0.5
@@ -548,10 +540,9 @@ class Object(Drawable, Sprite):
         return (self.x, self.y) == (other.x, other.y)
 
 
-class Enemy(Drawable, Sprite):
+class Enemy(Sprite):
     type = 'Normal'
-    turning_speed = 0.08  # Stationary enemy turning speed in radians per tick
-    instant_alert_dist = 1.4
+    instant_alert_dist = 1
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = pos
@@ -568,13 +559,14 @@ class Enemy(Drawable, Sprite):
         self.chasing = False
 
         # Take attributes from ENEMY_INFO based on spritesheet
-        self.hp = ENEMY_INFO[spritesheet].hp
-        self.speed = ENEMY_INFO[spritesheet].speed
-        self.shooting_range = ENEMY_INFO[spritesheet].shooting_range
-        self.dist_multiplier = ENEMY_INFO[spritesheet].dist_multiplier
-        self.memory = ENEMY_INFO[spritesheet].memory
-        self.patience = ENEMY_INFO[spritesheet].patience
-        self.pain_chance = ENEMY_INFO[spritesheet].pain_chance
+        self.hp = ENEMY_INFO[self.sheet].hp
+        self.speed = ENEMY_INFO[self.sheet].speed
+        self.shooting_range = ENEMY_INFO[self.sheet].shooting_range
+        self.accuracy = ENEMY_INFO[self.sheet].accuracy
+        self.damage_multiplier = ENEMY_INFO[self.sheet].damage_multiplier
+        self.memory = ENEMY_INFO[self.sheet].memory
+        self.patience = ENEMY_INFO[self.sheet].patience
+        self.pain_chance = ENEMY_INFO[self.sheet].pain_chance
 
         # Timed events tick variables (frames passed since some action)
         self.anim_ticks = 0
@@ -647,7 +639,10 @@ class Enemy(Drawable, Sprite):
         return None
 
     def ready_to_shoot(self):
-        return self.dist_squared < self.shooting_range**2 and can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
+        if self.type == 'Normal':
+            return self.dist_squared < self.shooting_range**2 and can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
+        elif self.type == 'Boss':
+            return can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
 
     def stop_animation(self):
         self.status = 'default'
@@ -673,20 +668,22 @@ class Enemy(Drawable, Sprite):
             look = 8
         rand = random.randint(0, 255)
 
-        player_hit = rand < speed - dist * self.dist_multiplier * look
+        player_hit = rand < (speed - dist * look) * self.accuracy
         if player_hit:
             rand = random.randint(0, 255)
             if dist < 2:
-                damage = rand / 4
-            elif dist > 4:
-                damage = rand / 16
-            else:
                 damage = rand / 8
-            PLAYER.hurt(int(damage), self)
+            elif dist > 4:
+                damage = rand / 32
+            else:
+                damage = rand / 16
+            PLAYER.hurt(int(damage * self.damage_multiplier), self)
 
     def hurt(self, damage):
         self.hp -= damage
         if self.hp <= 0:
+            self.hp = 0
+            self.chasing = False
             self.status = 'dead'
             self.anim_ticks = 0
             self.row = 5
@@ -708,10 +705,12 @@ class Enemy(Drawable, Sprite):
                     tile_y = int(self.y) + y
                     if TILEMAP[tile_y][tile_x] <= 0:  # If tile steppable
                         available_tiles.append((tile_x, tile_y))
+        if available_tiles:
+            self.path = pathfinding.pathfind((self.x, self.y) ,random.choice(available_tiles))
+        else:
+            self.path = []
 
-        self.path = pathfinding.pathfind((self.x, self.y) ,random.choice(available_tiles))
-
-    def update(self):
+    def handle_doors_underneath(self):
         # If door underneath enemy, create a door obj if it isn't there already and start opening it immediately
         tile_value = TILEMAP[int(self.y)][int(self.x)]
         if TILE_VALUES_INFO[tile_value].type == 'Door':
@@ -723,6 +722,9 @@ class Enemy(Drawable, Sprite):
                 d = Door((int(self.x), int(self.y)), tile_value)
                 d.state = 1
                 DOORS.append(d)
+
+    def update(self):
+        self.handle_doors_underneath()
 
         moved = False
         saw_player = False
@@ -758,7 +760,7 @@ class Enemy(Drawable, Sprite):
                     if self.ready_to_shoot():
                         self.shoot()
 
-                elif self.column > 2:
+                elif self.column == 3:
                     self.column = 2
 
                     if random.randint(0, 1) == 0:
@@ -798,29 +800,30 @@ class Enemy(Drawable, Sprite):
             else:
                 if not self.path:
                     self.path = pathfinding.pathfind((self.x, self.y), self.target_tile)
-                step_x, step_y = self.path[0]
-                if not self.can_step(step_x, step_y):
-                    if self.chasing and random.randint(0, 1) == 0:
-                        self.start_shooting()
-                    else:
-                        self.strafe()
-                else:
-                    step_x += 0.5
-                    step_y += 0.5
-                    self.angle = atan2(step_y - self.y, step_x - self.x)
-                    self.x += cos(self.angle) * self.speed
-                    self.y += sin(self.angle) * self.speed
-
-                    if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
-                        self.x = step_x
-                        self.y = step_y
-                        self.path = pathfinding.pathfind((self.x, self.y), self.target_tile)
-
-                        if self.chasing and self.ready_to_shoot():
+                if self.path:
+                    step_x, step_y = self.path[0]
+                    if not self.can_step(step_x, step_y):
+                        if self.chasing and random.randint(0, 1) == 0:
                             self.start_shooting()
-                        elif not self.path:
-                            self.angle = atan2(-self.delta_y, -self.delta_x)
-                    moved = True
+                        else:
+                            self.strafe()
+                    else:
+                        step_x += 0.5
+                        step_y += 0.5
+                        self.angle = atan2(step_y - self.y, step_x - self.x)
+                        self.x += cos(self.angle) * self.speed
+                        self.y += sin(self.angle) * self.speed
+
+                        if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
+                            self.x = step_x
+                            self.y = step_y
+                            self.path = pathfinding.pathfind((self.x, self.y), self.target_tile)
+
+                            if self.chasing and self.ready_to_shoot():
+                                self.start_shooting()
+                            elif not self.path:
+                                self.angle = atan2(-self.delta_y, -self.delta_x)
+                        moved = True
             if not self.status == 'shooting':
                 self.get_row_and_column(moved)
 
@@ -856,32 +859,144 @@ class Boss(Enemy):
     type = 'Boss'
 
     def __init__(self, spritesheet, pos):
-        self.x, self.y = pos
+        self.x, self.y = self.home = pos
 
         self.sheet = spritesheet
+        self.death_frames = int(self.sheet.get_height() / TEXTURE_SIZE - 2) * 4
         self.row = 0
         self.column = 0
 
         self.path = []
         self.status = 'sleeping'
+        self.chasing = False
 
         # Take attributes from ENEMY_INFO based on spritesheet
-        self.hp = ENEMY_INFO[spritesheet].hp
+        self.max_hp = self.hp = ENEMY_INFO[spritesheet].hp
         self.speed = ENEMY_INFO[spritesheet].speed
-        self.dist_multiplier = ENEMY_INFO[spritesheet].dist_multiplier
+        self.accuracy = ENEMY_INFO[spritesheet].accuracy
+        self.damage_multiplier = ENEMY_INFO[self.sheet].damage_multiplier
         self.shot_columns = ENEMY_INFO[spritesheet].shot_columns
 
         self.anim_ticks = 0
 
+    def stop_animation(self):
+        self.status = 'default'
+        self.anim_ticks = 0
+        self.row = 0
+        self.column = 0
+
     def hurt(self, damage):
         self.hp -= damage
         if self.hp <= 0:
+            self.hp = 0
+            self.chasing = False
             self.status = 'dead'
             self.anim_ticks = 0
             self.row = 2
+            self.column = 0
 
     def update(self):
-        pass
+        self.handle_doors_underneath()
+
+        self.delta_x = self.x - PLAYER.x
+        self.delta_y = self.y - PLAYER.y
+        self.angle_from_player = atan2(self.delta_y, self.delta_x)
+        self.dist_squared = self.delta_x**2 + self.delta_y**2
+
+        if self.status == 'dead':
+            if self.column < 3:
+                self.anim_ticks += 1
+                if self.anim_ticks == Sprite.animation_ticks:
+                    self.anim_ticks = 0
+                    self.column += 1
+                    if self.death_frames == 8 and self.column == 3:
+                        if self.row == 2:
+                            self.column = 0
+                            self.row += 1
+
+        elif self.status == 'shooting':
+            self.row = 1
+
+            self.anim_ticks += 1
+            if self.anim_ticks == Sprite.animation_ticks:
+                self.anim_ticks = 0
+                self.column += 1
+                if self.column in self.shot_columns:
+                    if self.ready_to_shoot():
+                        self.shoot()
+
+                elif self.column == 4:
+                    self.column = 3
+                    self.stop_animation()
+
+        elif self.status == 'sleeping':
+            if can_see((self.x, self.y), (PLAYER.x, PLAYER.y)) or self.get_nearby_alerted_enemy():
+                BOSSHEALTHBAR.start_showing(self)
+                self.status = 'default'
+                self.chasing = True
+
+        else:
+            if not self.path:
+                self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
+            step_x, step_y = self.path[0]
+            if not self.can_step(step_x, step_y):
+                if random.randint(0, 1) == 0:
+                    self.start_shooting()
+                else:
+                    self.strafe()
+            else:
+                step_x += 0.5
+                step_y += 0.5
+                angle = atan2(step_y - self.y, step_x - self.x)
+                self.x += cos(angle) * self.speed
+                self.y += sin(angle) * self.speed
+
+                if abs(self.x - step_x) < self.speed and abs(self.y - step_y) < self.speed:
+                    self.x = step_x
+                    self.y = step_y
+                    self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
+
+                    if self.ready_to_shoot():
+                        self.start_shooting()
+
+            self.anim_ticks += 1
+            if self.anim_ticks == Sprite.animation_ticks:
+                self.anim_ticks = 0
+                self.column += 1
+                if self.column == 4:
+                    self.column = 0
+
+        self.update_for_drawing()
+
+
+class BossHealthBar:
+    w = 400
+    h = 24
+    def __init__(self):
+        self.visible = False
+        self.x = (D_W - BossHealthBar.w) / 2
+        self.y = -64
+
+    def start_showing(self, boss):
+        self.boss = boss
+        self.boss_image = self.boss.sheet.subsurface(0, 0, 64, 64)
+        self.visible = True
+
+    def draw(self):
+        if self.visible:
+            if self.boss.hp == 0:
+                self.y -= 8
+                if self.y == -64:
+                    self.visible = False
+            elif self.y < 24:
+                self.y += 8
+
+            colour = dynamic_colour(self.boss.hp, self.boss.max_hp)
+            health_percentage = self.boss.hp / self.boss.max_hp
+
+            pygame.draw.rect(DISPLAY, colour, (self.x, self.y, BossHealthBar.w * health_percentage, BossHealthBar.h))
+            pygame.draw.rect(DISPLAY, (0, 0, 0), (self.x, self.y, BossHealthBar.w, BossHealthBar.h), 4)
+            DISPLAY.blit(self.boss_image, (self.x - 32, self.y + BossHealthBar.h / 2 - 32))
 
 
 class Level:
@@ -932,6 +1047,8 @@ class Level:
         EFFECTS = Effects()
         global WEAPON_MODEL
         WEAPON_MODEL = WeaponModel()
+        global BOSSHEALTHBAR
+        BOSSHEALTHBAR = BossHealthBar()
 
         # Enemies
         global ENEMIES
@@ -960,7 +1077,7 @@ class Level:
         update_gameobjects()
 
         if previously_died:
-            colour = (255, 0, 0)
+            colour = (150, 0, 0)
         else:
             colour = (0, 0, 0)
         TransitionEffect().clear(colour)
@@ -1002,7 +1119,7 @@ class Level:
                 pygame.display.flip()
                 CLOCK.tick(30)
 
-        TransitionEffect().cover((255, 0, 0))
+        TransitionEffect().cover((150, 0, 0))
 
         self.start(self.nr, True)
 
@@ -1044,6 +1161,19 @@ def can_see(from_, to, viewangle=0.0, fov=0.0):
     ray_dist_squared = (start_x - ray_x) ** 2 + (start_y - ray_y) ** 2
     end_dist_squared = (start_x - end_x) ** 2 + (start_y - end_y) ** 2
     return ray_dist_squared > end_dist_squared  # Returns True if interception farther than end point
+
+
+def dynamic_colour(current, maximum):
+    ratio = current / maximum  # 1 is completely green, 0 completely red
+    if ratio < 0.5:
+        r = 255
+        g = int(ratio * 2 * 255)
+    else:
+        ratio = 1 - ratio
+        g = 255
+        r = int(ratio * 2 * 255)
+    b = 0
+    return r, g, b
 
 
 def send_rays():
@@ -1461,7 +1591,7 @@ if __name__ == '__main__':
     import game.pathfinding as pathfinding
 
     # Make class constants
-    Drawable.constant = 0.6 * D_H
+    Drawable.constant = 0.65 * D_H
     WallColumn.width = int(D_W / RAYS_AMOUNT)
     Enemy.fov = FOV  # Enemies share the same fov as player
 
