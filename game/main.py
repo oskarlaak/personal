@@ -1,7 +1,5 @@
 # TO DO:
-# Add dog - just as normal enemy but with reduced shooting range and 0 patience
 # Make hans and gretel grõsse have 3 shot animation sprites instead of 2
-# Fix officer hit anim sprite
 # Bosses dropping keys
 # Doors with keys
 # Revisit leveleditor
@@ -623,7 +621,7 @@ class Enemy(Sprite):
             self.anim_ticks = 0
 
     def can_step(self, step_x, step_y):
-        if (int(PLAYER.x), int(PLAYER.y)) == (step_x, step_y):
+        if (int(PLAYER.x), int(PLAYER.y)) == (step_x, step_y) and self.shooting_range > 1:
             return False
 
         for e in ENEMIES:
@@ -639,10 +637,7 @@ class Enemy(Sprite):
         return None
 
     def ready_to_shoot(self):
-        if self.type == 'Normal':
-            return self.dist_squared < self.shooting_range**2 and can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
-        elif self.type == 'Boss':
-            return can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
+        return self.dist_squared < self.shooting_range**2 and can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
 
     def stop_animation(self):
         self.status = 'default'
@@ -763,7 +758,9 @@ class Enemy(Sprite):
                 elif self.column == 3:
                     self.column = 2
 
-                    if random.randint(0, 1) == 0:
+                    if (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
+                        self.column = 0  # Continues shooting
+                    elif random.randint(0, 1) == 0 and self.ready_to_shoot():
                         self.column = 0  # Continues shooting
                     else:
                         self.stop_animation()
@@ -801,9 +798,10 @@ class Enemy(Sprite):
                 if not self.path:
                     self.path = pathfinding.pathfind((self.x, self.y), self.target_tile)
                 if self.path:
+                    moved = True
                     step_x, step_y = self.path[0]
                     if not self.can_step(step_x, step_y):
-                        if self.chasing and random.randint(0, 1) == 0:
+                        if self.chasing and random.randint(0, 1) == 0 and self.ready_to_shoot():
                             self.start_shooting()
                         else:
                             self.strafe()
@@ -823,7 +821,6 @@ class Enemy(Sprite):
                                 self.start_shooting()
                             elif not self.path:
                                 self.angle = atan2(-self.delta_y, -self.delta_x)
-                        moved = True
             if not self.status == 'shooting':
                 self.get_row_and_column(moved)
 
@@ -884,6 +881,19 @@ class Boss(Enemy):
         self.anim_ticks = 0
         self.row = 0
         self.column = 0
+
+    def can_step(self, step_x, step_y):
+        if (int(PLAYER.x), int(PLAYER.y)) == (step_x, step_y):
+            return False
+
+        for e in ENEMIES:
+            if not self == e and not e.status == 'dead':
+                if (int(e.x), int(e.y)) == (step_x, step_y):
+                    return False
+        return True
+
+    def ready_to_shoot(self):
+        return can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
 
     def hurt(self, damage):
         self.hp -= damage
