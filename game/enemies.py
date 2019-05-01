@@ -45,11 +45,11 @@ def get_enemy_info():
 
     else:
         enemy_info = {
-            generalfettgesicht: Boss( 525, 0.04, 0.90, 1.25, (1, 2, 3)),
-            gretelgrosse:       Boss( 525, 0.05, 1.00, 1.00, (1, 2, 3)),
-            hansgrosse:         Boss( 525, 0.05, 1.33, 1.00, (1, 2, 3)),
-            hitler:             Boss(1050, 0.04, 1.00, 1.50, (1, 2, 3)),
-            ottogiftmacher:     Boss( 525, 0.04, 0.50, 2.00,    (1, 3)),
+            generalfettgesicht: Boss( 500, 0.04, 0.90, 1.25,    [2, 4, 5, 6, 7]),
+            gretelgrosse:       Boss( 500, 0.05, 1.00, 1.00, [2, 3, 4, 5, 6, 7]),
+            hansgrosse:         Boss( 500, 0.05, 1.33, 1.00, [2, 3, 4, 5, 6, 7]),
+            hitler:             Boss(1000, 0.06, 1.00, 1.50,    [3, 4, 5, 6, 7]),
+            ottogiftmacher:     Boss( 500, 0.04, 0.75, 2.00,                [4]),
             guard:    Enemy(20, 0.04, 10, 1.00, 1.00,  90,  90, 1.00),
             guarddog: Enemy( 1, 0.06,  1, 9.99, 0.75,  90,   0, 0.00),
             mutant:   Enemy(30, 0.04, 15, 1.00, 1.50,  90, 180, 0.75),

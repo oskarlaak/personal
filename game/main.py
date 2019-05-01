@@ -1,7 +1,5 @@
 # TO DO:
-# Make hans and gretel grõsse have 3 shot animation sprites instead of 2
-# Bosses dropping keys
-# Doors with keys
+# Better HUD
 # Revisit leveleditor
 
 # NOTES:
@@ -24,6 +22,8 @@ class Player:
 
         self.hp = Player.max_hp
         self.weapon_nr = 1
+        self.weapon_loadout = [1]
+        self.has_key = False
 
     def hurt(self, damage, enemy):
         EFFECTS.update((255, 0, 0))
@@ -394,14 +394,17 @@ class Hud:
         DISPLAY.blit(hp_amount, (Hud.safezone_w, D_H - Hud.font_h - Hud.safezone_h))
 
         # Loadout HUD
-        y = 300
+        y = 400
         for w in WEAPONS:
             if w:
+                weapon_nr = WEAPONS.index(w)
                 if w == WEAPON_MODEL.weapon:
                     colour = (255, 255, 255)
+                elif weapon_nr in PLAYER.weapon_loadout:
+                    colour = (128, 128, 128)
                 else:
-                    colour = (64, 64, 64)
-                number = render_text(str(WEAPONS.index(w)), colour)
+                    colour = (32, 32, 32)
+                number = render_text(str(weapon_nr), colour)
                 DISPLAY.blit(number, (D_W - number.get_width() - Hud.safezone_w, y))
                 y += Hud.font_h
 
@@ -859,7 +862,6 @@ class Boss(Enemy):
         self.x, self.y = self.home = pos
 
         self.sheet = spritesheet
-        self.death_frames = int(self.sheet.get_height() / TEXTURE_SIZE - 2) * 4
         self.row = 0
         self.column = 0
 
@@ -904,6 +906,7 @@ class Boss(Enemy):
             self.anim_ticks = 0
             self.row = 2
             self.column = 0
+            PLAYER.has_key = True
 
     def update(self):
         self.handle_doors_underneath()
@@ -914,15 +917,11 @@ class Boss(Enemy):
         self.dist_squared = self.delta_x**2 + self.delta_y**2
 
         if self.status == 'dead':
-            if self.column < 3:
+            if self.column < 7:
                 self.anim_ticks += 1
                 if self.anim_ticks == Sprite.animation_ticks:
                     self.anim_ticks = 0
                     self.column += 1
-                    if self.death_frames == 8 and self.column == 3:
-                        if self.row == 2:
-                            self.column = 0
-                            self.row += 1
 
         elif self.status == 'shooting':
             self.row = 1
@@ -935,8 +934,8 @@ class Boss(Enemy):
                     if self.ready_to_shoot():
                         self.shoot()
 
-                elif self.column == 4:
-                    self.column = 3
+                elif self.column == 8:
+                    self.column = 7
                     self.stop_animation()
 
         elif self.status == 'sleeping':
@@ -1466,22 +1465,23 @@ def events():
                     tile_value = TILEMAP[y][x]
                     tile_type = TILE_VALUES_INFO[tile_value].type
                     tile_desc = TILE_VALUES_INFO[tile_value].desc
-                    if tile_type == 'Door' and tile_desc == 'Dynamic':
-                        for d in DOORS:
-                            # If found the right door and it's not in motion already
-                            if x == d.x and y == d.y:
-                                d.state = 1
-                                break
+                    if tile_type == 'Door' and tile_desc != 'Static':
+                        if PLAYER.has_key or tile_desc == 'Dynamic':
+                            for d in DOORS:
+                                # If found the right door and it's not in motion already
+                                if x == d.x and y == d.y:
+                                    d.state = 1
+                                    break
                     elif tile_type == 'Wall' and tile_desc == 'End-trigger':
                         TILEMAP[y][x] += 1  # Change trigger block texture
                         LEVEL.finish()
 
                 elif not WEAPON_MODEL.shooting:
                     key = pygame.key.name(event.key)
-                    numbers = (str(x) for x in range(1, 10))  # Skips 0 bc that can't be weapon slot
+                    numbers = (str(x) for x in range(1, 10))
                     if key in numbers:
                         key = int(key)
-                        if key != PLAYER.weapon_nr and key <= len(WEAPONS) - 1:
+                        if key in PLAYER.weapon_loadout and key != PLAYER.weapon_nr:
                             WEAPON_MODEL.switching = key
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
@@ -1504,26 +1504,41 @@ def update_gameobjects():
     tile_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
     if tile_value < 0:
         OBJECTS.append(Object((int(PLAYER.x), int(PLAYER.y)), tile_value))
-        if TILE_VALUES_INFO[tile_value].desc == '+25 Health':
-            if PLAYER.hp < PLAYER.max_hp:
-                PLAYER.hp += 25
-                if PLAYER.hp > PLAYER.max_hp:
-                    PLAYER.hp = PLAYER.max_hp
-                EFFECTS.update((0, 255, 0))
-                TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
-        elif TILE_VALUES_INFO[tile_value].desc == '+10 Health':
-            if PLAYER.hp < PLAYER.max_hp:
-                PLAYER.hp += 10
-                if PLAYER.hp > PLAYER.max_hp:
-                    PLAYER.hp = PLAYER.max_hp
-                EFFECTS.update((0, 255, 0))
-                TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
-        elif TILE_VALUES_INFO[tile_value].desc == '+4 Health':
-            if PLAYER.hp < PLAYER.max_hp:
-                PLAYER.hp += 4
-                if PLAYER.hp > PLAYER.max_hp:
-                    PLAYER.hp = PLAYER.max_hp
-                EFFECTS.update((0, 255, 0))
+        if TILE_VALUES_INFO[tile_value].desc == 'Dynamic':
+            colour = None
+            if tile_value == -1:
+                if not 5 in PLAYER.weapon_loadout:
+                    PLAYER.weapon_loadout.append(5)
+                colour = (0, 0, 255)
+            elif tile_value == -2:
+                if not 4 in PLAYER.weapon_loadout:
+                    PLAYER.weapon_loadout.append(4)
+                colour = (0, 0, 255)
+            elif tile_value == -3:
+                if not 3 in PLAYER.weapon_loadout:
+                    PLAYER.weapon_loadout.append(3)
+                colour = (0, 0, 255)
+            elif tile_value == -4:
+                if not 2 in PLAYER.weapon_loadout:
+                    PLAYER.weapon_loadout.append(2)
+                colour = (0, 0, 255)
+            elif tile_value == -5:
+                PLAYER.has_key = True
+                colour = (255, 255, 0)
+            elif tile_value == -6:
+                if PLAYER.hp < PLAYER.max_hp:
+                    PLAYER.hp += 10
+                    if PLAYER.hp > PLAYER.max_hp:
+                        PLAYER.hp = PLAYER.max_hp
+                    colour = (0, 255, 0)
+            elif tile_value == -7:
+                if PLAYER.hp < PLAYER.max_hp:
+                    PLAYER.hp += 25
+                    if PLAYER.hp > PLAYER.max_hp:
+                        PLAYER.hp = PLAYER.max_hp
+                    colour = (0, 255, 0)
+            if colour:
+                EFFECTS.update(colour)
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
 
 

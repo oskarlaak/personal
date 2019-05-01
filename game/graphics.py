@@ -47,15 +47,12 @@ def get_tile_values_info(texture_size, enemy_info):
         # Door textures
         dynamic_doors = pygame.image.load('../textures/doors/dynamic.png').convert()
         static_doors = pygame.image.load('../textures/doors/static.png').convert()
+        locked_doors = pygame.image.load('../textures/doors/locked.png').convert()
 
         # Object sprites
         nonsolids = pygame.image.load('../textures/objects/nonsolids.png').convert_alpha()
         solids = pygame.image.load('../textures/objects/solids.png').convert_alpha()
-
-        # Dynamic objects
-        firstaid = pygame.image.load('../textures/objects/dynamic/firstaid.png').convert_alpha()
-        food = pygame.image.load('../textures/objects/dynamic/food.png').convert_alpha()
-        dogfood = pygame.image.load('../textures/objects/dynamic/dogfood.png').convert_alpha()
+        dynamics = pygame.image.load('../textures/objects/dynamics.png').convert_alpha()
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -65,23 +62,18 @@ def get_tile_values_info(texture_size, enemy_info):
         # Last on is used to assign whole texture sheets (usually same themed textures) at once with same description
         tile_values_info = {}
 
-        # Creates a global index var bc it's needed in assign_texture_sheet()
+        # Creating a global index var bc it's needed in assign_texture_sheet()
         global index
         index = 0
 
         # ---Negative values---
         tile_values_info[index] = Tile(None, 'Empty', '')
+        index -= 1
 
         # Dynamic objects
-        index -= 1
-        tile_values_info[index] = Tile(firstaid, 'Object', '+25 Health')
-        index -= 1
-        tile_values_info[index] = Tile(food, 'Object', '+10 Health')
-        index -= 1
-        tile_values_info[index] = Tile(dogfood, 'Object', '+4 Health')
+        assign_texture_sheet(texture_size, texture_size, -1, dynamics, 'Object', 'Dynamic')
 
         # Other non-solid objects
-        index -= 1
         assign_texture_sheet(texture_size, texture_size, -1, nonsolids, 'Object', 'Non-solid')
 
         # ---Positive values---
@@ -92,6 +84,7 @@ def get_tile_values_info(texture_size, enemy_info):
         # Doors
         assign_texture_sheet(texture_size * 2, texture_size, 1, dynamic_doors, 'Door', 'Dynamic')
         assign_texture_sheet(texture_size * 2, texture_size, 1, static_doors, 'Door', 'Static')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, locked_doors, 'Door', 'Locked')
 
         # Walls
         assign_texture_sheet(texture_size * 2, texture_size, 1, bloodycave, 'Wall', 'Bloody Cave')

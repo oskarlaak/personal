@@ -57,10 +57,10 @@ def get():
 
     else:
         weapons = [None,  # Makes it so first weapon is index 1 instead of 0
-                Melee(     'Chainsaw',     chainsaw, 1,  4, range(2, 21),  True, 1.25),
         HitscanWeapon(       'Pistol',       pistol, 1,  9, range(10, 16), False, 0.096),
-              Shotgun(      'Shotgun',      shotgun, 1, 32, range(5, 11), False, 0.171,  7),
-              Shotgun('Super Shotgun', supershotgun, 1, 50, range(5, 11), False, 0.342, 20),
-        HitscanWeapon(     'Chaingun',     chaingun, 1,  4, range(10, 16),  True, 0.096)
+              Shotgun(      'Shotgun',      shotgun, 1, 32, range( 5, 11), False, 0.171,  7),
+        HitscanWeapon(     'Chaingun',     chaingun, 1,  4, range(10, 16),  True, 0.096),
+              Shotgun('Super Shotgun', supershotgun, 1, 50, range( 5, 11), False, 0.342, 20),
+                Melee(     'Chainsaw',     chainsaw, 1,  4, range( 2, 21),  True, 1.25)
         ]
         return weapons

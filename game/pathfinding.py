@@ -15,7 +15,7 @@ def get_neighbour_doors(pos):
                     if TILEMAP[pos_y][pos_x] <= 0:
                         unvisited.append((pos_x, pos_y))
                     elif TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].type == 'Door' and \
-                            TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].desc == 'Dynamic':
+                            TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].desc != 'Static':
                         visited.append((pos_x, pos_y))
                         doors_found.append((pos_x, pos_y))
 
@@ -49,7 +49,7 @@ def setup(tilemap, tile_values_info):
     for row in range(len(TILEMAP)):
         for column in range(len(TILEMAP[row])):
             if TILE_VALUES_INFO[TILEMAP[row][column]].type == 'Door'\
-                    and TILE_VALUES_INFO[TILEMAP[row][column]].desc == 'Dynamic':
+                    and TILE_VALUES_INFO[TILEMAP[row][column]].desc != 'Static':
                 DOORS.append(Door((column, row)))
 
     # Getting all door neighbours
