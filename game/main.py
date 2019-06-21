@@ -1,6 +1,8 @@
 # TO DO:
 # Better HUD
-# Revisit leveleditor
+# Maybe make enemies chase player better
+# Make enemies faster and have better memory
+# Add multiple healthbars with multiple bosses or make sure you can only fight one boss at once
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -568,6 +570,7 @@ class Enemy(Sprite):
         self.memory = ENEMY_INFO[self.sheet].memory
         self.patience = ENEMY_INFO[self.sheet].patience
         self.pain_chance = ENEMY_INFO[self.sheet].pain_chance
+        self.shot_columns = ENEMY_INFO[self.sheet].shot_columns
 
         # Timed events tick variables (frames passed since some action)
         self.anim_ticks = 0
@@ -582,12 +585,12 @@ class Enemy(Sprite):
 
         def get_unvisited(pos):
             # Gets new unvisited points
-            all_points = visited + unvisited
-            for x in (-1, 0, 1):  # -1, 0, 1
-                for y in (-1, 0, 1):  # -1, 0, 1
-                    pos_x, pos_y = (pos[0] + x, pos[1] + y)
-                    if (pos_x, pos_y) not in all_points and TILEMAP[pos_y][pos_x] <= 0:
-                        unvisited.append((pos_x, pos_y))
+            pos_offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+            for pos_offset in pos_offsets:
+                pos_x = pos[0] + pos_offset[0]
+                pos_y = pos[1] + pos_offset[1]
+                if (pos_x, pos_y) not in visited + unvisited and TILEMAP[pos_y][pos_x] <= 0:
+                    unvisited.append((pos_x, pos_y))
 
         visited = [(int(self.x), int(self.y))]
         unvisited = []
@@ -670,11 +673,11 @@ class Enemy(Sprite):
         if player_hit:
             rand = random.randint(0, 255)
             if dist < 2:
-                damage = rand / 8
+                damage = rand / 4
             elif dist > 4:
-                damage = rand / 32
-            else:
                 damage = rand / 16
+            else:
+                damage = rand / 8
             PLAYER.hurt(int(damage * self.damage_multiplier), self)
 
     def hurt(self, damage):
@@ -696,13 +699,13 @@ class Enemy(Sprite):
     def strafe(self):
         # Gets new path to a random empty neighbour tile (if possible)
         available_tiles = []
-        for x in (-1, 0, 1):
-            for y in (-1, 0, 1):
-                if x != 0 and y != 0:
-                    tile_x = int(self.x) + x
-                    tile_y = int(self.y) + y
-                    if TILEMAP[tile_y][tile_x] <= 0:  # If tile steppable
-                        available_tiles.append((tile_x, tile_y))
+        pos_offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+        for pos_offset in pos_offsets:
+            tile_x = int(self.x) + pos_offset[0]
+            tile_y = int(self.y) + pos_offset[1]
+            if TILEMAP[tile_y][tile_x] <= 0:  # If tile steppable
+                available_tiles.append((tile_x, tile_y))
+
         if available_tiles:
             self.path = pathfinding.pathfind((self.x, self.y) ,random.choice(available_tiles))
         else:
@@ -754,12 +757,12 @@ class Enemy(Sprite):
                 self.anim_ticks = 0
 
                 self.column += 1
-                if self.column == 2:
+                if self.column in self.shot_columns:
                     if self.ready_to_shoot():
                         self.shoot()
 
-                elif self.column == 3:
-                    self.column = 2
+                elif self.column == 6:
+                    self.column = 5
 
                     if (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
                         self.column = 0  # Continues shooting

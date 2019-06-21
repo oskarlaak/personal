@@ -1,7 +1,3 @@
-# TO DO
-# Level editor README file describing how to use it
-
-
 class TextureBox:
     def draw_box_outline_and_arrows(self):
         if self.active:
@@ -300,6 +296,15 @@ def draw_sidebar():
     DISPLAY.blit(activeitem_text, (1152 + 32, 0 + 16))
     DISPLAY.blit(item_type, (1152 + 32,  20 + 16))
     DISPLAY.blit(item_description, (1152 + 32, 40 + 16))
+
+    # Map position mouse is hovering over
+    if MOUSE_X < 1024:
+        tile_x = int(MOUSE_X / TILEMAP.tile_size) + TILEMAP.offset[0]
+        tile_y = int(MOUSE_Y / TILEMAP.tile_size) + TILEMAP.offset[1]
+        tile_pos_text = ' x:{} y:{}'.format(tile_x, tile_y)
+    else:
+        tile_pos_text = ' None'
+    DISPLAY.blit(FONT.render(tile_pos_text, False, WHITE), (1024, 1024 - FONT_SIZE))
 
     # Draw texturegroups
     for tg in TEXTUREGROUPS:

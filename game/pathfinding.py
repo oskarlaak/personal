@@ -7,17 +7,19 @@ class Door:
 def get_neighbour_doors(pos):
     # Returns a list of doors that can be reached from given location
     def get_unvisited(pos):
-        all_points = visited + unvisited
-        for x in (-1, 0, 1):
-            for y in (-1, 0, 1):
-                pos_x, pos_y = (pos[0] + x, pos[1] + y)
-                if (pos_x, pos_y) not in all_points:
-                    if TILEMAP[pos_y][pos_x] <= 0:
-                        unvisited.append((pos_x, pos_y))
-                    elif TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].type == 'Door' and \
-                            TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].desc != 'Static':
-                        visited.append((pos_x, pos_y))
-                        doors_found.append((pos_x, pos_y))
+        # Right, down, left, up
+        pos_offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+        for pos_offset in pos_offsets:
+            pos_x = pos[0] + pos_offset[0]
+            pos_y = pos[1] + pos_offset[1]
+
+            if (pos_x, pos_y) not in visited + unvisited:
+                if TILEMAP[pos_y][pos_x] <= 0:
+                    unvisited.append((pos_x, pos_y))
+                elif TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].type == 'Door' and \
+                        TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].desc != 'Static':
+                    visited.append((pos_x, pos_y))
+                    doors_found.append((pos_x, pos_y))
 
     doors_found = []
 
@@ -54,9 +56,10 @@ def setup(tilemap, tile_values_info):
 
     # Getting all door neighbours
     for parent_door in DOORS:
-        neighbours = get_neighbour_doors(parent_door.pos)
-        for child_door in DOORS:
-            if child_door.pos in neighbours:
+        child_door_positions = get_neighbour_doors(parent_door.pos)
+        for d in DOORS:
+            if d.pos in child_door_positions:
+                child_door = d
                 parent_door.neighbours.append(child_door)
 
 
@@ -78,17 +81,39 @@ def a_star(start, end):
         while path[-1] != start:
             # Get neighbour points
             while True:
-                point_x, point_y = path[-1]
+                #try:
+                x, y = path[-1]
+                #except IndexError:
+                #    pass
                 neighbours = []
-                for x in (-1, 0, 1):
-                    for y in (-1, 0, 1):
-                        pos = (point_x + x, point_y + y)
-                        if pos in visited and pos not in path:
-                            neighbours.append(pos)
+
+                point_made = []
+                # Right, down, left, up
+                pos_offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+                for pos_offset in pos_offsets:
+                    pos_x = x + pos_offset[0]
+                    pos_y = y + pos_offset[1]
+
+                    if TILEMAP[pos_y][pos_x] <= 0:
+                        point_made.append(True)
+                    else:
+                        point_made.append(False)
+
+                    if (pos_x, pos_y) in visited and (pos_x, pos_y) not in path:
+                        neighbours.append((pos_x, pos_y))
+
+                for i in range(4):
+                    if point_made[i - 1] and point_made[i]:
+                        pos_x = x + pos_offsets[i - 1][0] + pos_offsets[i][0]
+                        pos_y = y + pos_offsets[i - 1][1] + pos_offsets[i][1]
+
+                        if (pos_x, pos_y) in visited and (pos_x, pos_y) not in path:
+                            neighbours.append((pos_x, pos_y))
+
                 if not neighbours:
                     # Delete that point from path and visited and find new neighbour points
                     del path[-1]
-                    del visited[visited.index((point_x, point_y))]
+                    del visited[visited.index((x, y))]
                     continue
                 else:
                     break
@@ -107,15 +132,30 @@ def a_star(start, end):
         return path[::-1]
 
     def get_unvisited(pos):
-        all_points = visited + unvisited
-        for x in (-1, 0, 1):
-            for y in (-1, 0, 1):
-                pos_x, pos_y = (pos[0] + x, pos[1] + y)
-                if (pos_x, pos_y) not in all_points and TILEMAP[pos_y][pos_x] <= 0:
+        point_made = []
+        # Right, down, left, up
+        pos_offsets = [(1, 0), (0, 1), (-1, 0), (0, -1)]
+        for pos_offset in pos_offsets:
+            pos_x = pos[0] + pos_offset[0]
+            pos_y = pos[1] + pos_offset[1]
+
+            if (pos_x, pos_y) not in visited + unvisited and TILEMAP[pos_y][pos_x] <= 0:
+                unvisited.append((pos_x, pos_y))
+                points.append(Point((pos_x, pos_y)))
+                point_made.append(True)
+            else:
+                point_made.append(False)
+
+        for i in range(4):
+            if point_made[i - 1] and point_made[i]:
+                pos_x = pos[0] + pos_offsets[i - 1][0] + pos_offsets[i][0]
+                pos_y = pos[1] + pos_offsets[i - 1][1] + pos_offsets[i][1]
+
+                if (pos_x, pos_y) not in visited + unvisited and TILEMAP[pos_y][pos_x] <= 0:
                     unvisited.append((pos_x, pos_y))
                     points.append(Point((pos_x, pos_y)))
 
-    end_value = TILEMAP[end[1]][end[0]]  # Remember end value
+    end_value = TILEMAP[end[1]][end[0]]  # Remember tilemap value at end pos
     TILEMAP[end[1]][end[0]] = 0  # Modify tilemap in case end location is a door
 
     points = []  # List storing Point class objects
@@ -124,7 +164,7 @@ def a_star(start, end):
     unvisited = []  # Unvisited points that can be visited next step
     current = start  # Stores current point pos
 
-    while current != end:  # Quits if end position is in visited
+    while True:
         get_unvisited(current)  # Get new unvisited options
         if not unvisited:  # If path cannot be created
             return []  # Return emtpy list
@@ -140,6 +180,8 @@ def a_star(start, end):
         del points[winner_index]  # Remove the same pos Point obj from points
         del unvisited[winner_index]  # Remove that point from unvisited
         visited.append(current)  # Add current to visited
+        if current == end:  # Quits if end position is in visited
+            break
 
     TILEMAP[end[1]][end[0]] = end_value  # Change back tilemap
     return get_path()
@@ -177,7 +219,11 @@ def pathfind(start, end):
     while doors_path[-1].pos not in end_doors:
         # Find best neighbour door
         while True:
-            door = doors_path[-1]
+            try:
+                door = doors_path[-1]
+            except IndexError:
+                print('error at')
+                print(start, end)
             neighbours = []
             for n in door.neighbours:
                 if n not in visited_doors:
@@ -222,7 +268,7 @@ if __name__ == '__main__':
     DISPLAY = pygame.display.set_mode((1024, 1024))
     CLOCK = pygame.time.Clock()
 
-    level_nr = 2
+    level_nr = 1
     tilemap = []
     with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
         for line in f:
@@ -236,6 +282,13 @@ if __name__ == '__main__':
         start = (int(float(start[0])), int(float(start[1])))
 
     setup(tilemap, graphics.get_tile_values_info(64, enemies.get_enemy_info()))
+
+    a = (56, 58)
+    b = (50, 61)
+    print('from {}\nto {}\n'.format(a, b), a_star(a, b))
+
+    ### IGNORE NOW FOR SIMPLICITY
+
     end_x, end_y = 0, 0
     running = True
     while running:

@@ -6,7 +6,8 @@ def get_enemy_info():
     class Enemy:
         type = 'Normal'
 
-        def __init__(self, hp, speed, shooting_range, accuracy, damage_multiplier, memory, patience, pain_chance):
+        def __init__(self, hp, speed, shooting_range, accuracy, damage_multiplier,
+                     memory, patience, pain_chance, shot_columns):
             self.hp = hp
             self.speed = speed
             self.shooting_range = shooting_range  # Max shooting range
@@ -14,7 +15,8 @@ def get_enemy_info():
             self.damage_multiplier = damage_multiplier
             self.memory = memory  # Time in ticks enemy knows player's pos after player has disappeared from enemy's POV
             self.patience = patience  # Max time in ticks enemy will remain without action
-            self.pain_chance = pain_chance  # From 0 to 1, how likely player will be shown hurt when shot
+            self.pain_chance = pain_chance  # From 0 tro 1, how likely player will be shown hurt when shot
+            self.shot_columns = shot_columns
 
     class Boss:
         type = 'Boss'
@@ -45,15 +47,15 @@ def get_enemy_info():
 
     else:
         enemy_info = {
-            generalfettgesicht: Boss( 500, 0.04, 0.90, 1.25,    [2, 4, 5, 6, 7]),
+            generalfettgesicht: Boss( 500, 0.04, 0.90, 1.25, [2, 4, 5, 6, 7]),
             gretelgrosse:       Boss( 500, 0.05, 1.00, 1.00, [2, 3, 4, 5, 6, 7]),
-            hansgrosse:         Boss( 500, 0.05, 1.33, 1.00, [2, 3, 4, 5, 6, 7]),
-            hitler:             Boss(1000, 0.06, 1.00, 1.50,    [3, 4, 5, 6, 7]),
-            ottogiftmacher:     Boss( 500, 0.04, 0.75, 2.00,                [4]),
-            guard:    Enemy(20, 0.04, 10, 1.00, 1.00,  90,  90, 1.00),
-            guarddog: Enemy( 1, 0.06,  1, 9.99, 0.75,  90,   0, 0.00),
-            mutant:   Enemy(30, 0.04, 15, 1.00, 1.50,  90, 180, 0.75),
-            officer:  Enemy(40, 0.06, 15, 1.00, 1.25, 150,  90, 0.75),
-            ss:       Enemy(50, 0.05, 20, 1.33, 1.50, 150, 180, 0.50)
+            hansgrosse:         Boss( 500, 0.05, 1.50, 1.00, [2, 3, 4, 5, 6, 7]),
+            hitler:             Boss(1000, 0.06, 1.00, 1.50, [3, 4, 5, 6, 7]),
+            ottogiftmacher:     Boss( 500, 0.04, 0.75, 2.00, [4]),
+            guard:    Enemy(20, 0.06, 10, 1.00, 1.00, 150,  90, 1.00, [4]),
+            guarddog: Enemy( 1, 0.07,  1, 9.99, 1.50,  90,   0, 0.00, [3]),
+            mutant:   Enemy(30, 0.06, 15, 1.00, 1.50,  90, 180, 0.75, [1, 3]),
+            officer:  Enemy(40, 0.08, 15, 1.00, 1.25, 300,  90, 0.75, [2, 4]),
+            ss:       Enemy(50, 0.06, 20, 1.50, 1.50, 300, 180, 0.50, [3, 4, 5])
         }
         return enemy_info
