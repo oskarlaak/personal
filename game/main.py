@@ -1,8 +1,5 @@
 # TO DO:
-# Better HUD
-# Maybe make enemies chase player better
-# Make enemies faster and have better memory
-# Add multiple healthbars with multiple bosses or make sure you can only fight one boss at once
+# Create some levels to test the game
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -17,7 +14,8 @@ class Player:
     half_hitbox = hitbox_size / 2
 
     def __init__(self, pos, angle):
-        self.x, self.y = pos
+        self.x = pos[0] + 0.0000001
+        self.y = pos[1] + 0.0000001
         self.viewangle = angle + 0.0000001
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
@@ -302,73 +300,6 @@ class Effects:
             self.alpha -= 16
 
 
-class TransitionEffect:
-    rect_size = 16
-
-    def clear(self, colour):
-        class EffectColumn:
-            def __init__(self, x, y):
-                self.x = x
-                self.y = y
-
-            def draw(self):
-                pygame.draw.rect(DISPLAY, colour, (self.x, self.y, TransitionEffect.rect_size, D_H - self.y))
-
-        effect_columns = [EffectColumn(x*TransitionEffect.rect_size, -x*TransitionEffect.rect_size)
-                          for x in range(int(D_W / TransitionEffect.rect_size))]
-        while effect_columns:
-            pygame.mouse.get_rel()
-            pygame.event.clear()
-
-            send_rays()
-            draw_frame()
-            HUD.draw()
-
-            for c, b in enumerate(effect_columns):
-                b.y += TransitionEffect.rect_size
-                if b.y >= D_H:
-                    del effect_columns[c]
-                else:
-                    b.draw()
-
-            pygame.display.flip()
-            CLOCK.tick(30)
-
-    def cover(self, colour):
-        class EffectColumn:
-            def __init__(self, x):
-                self.x = x
-                self.y = -TransitionEffect.rect_size
-
-            def draw(self):
-                self.rect = (self.x, self.y, TransitionEffect.rect_size, TransitionEffect.rect_size)
-                pygame.draw.rect(DISPLAY, colour, self.rect)
-
-        empty_columns = [x*TransitionEffect.rect_size for x in range(int(D_W / TransitionEffect.rect_size))]
-        effect_columns = []
-        while True:
-            pygame.mouse.get_rel()
-            pygame.event.clear()
-
-            if empty_columns:
-                effect_columns.append(EffectColumn(empty_columns[0]))
-                del empty_columns[0]
-
-            rects_drawn = []
-            for c, b in enumerate(effect_columns):
-                b.y += TransitionEffect.rect_size
-                if b.y >= D_H:
-                    del effect_columns[c]
-                else:
-                    b.draw()
-                    rects_drawn.append(b.rect)
-
-            if not effect_columns:
-                break
-            pygame.display.update(rects_drawn)
-            CLOCK.tick(30)
-
-
 class Hud:
     safezone_w = 5
     safezone_h = 5
@@ -379,15 +310,16 @@ class Hud:
             return GAME_FONT.render(text, False, colour, background)
 
         # FPS counter
-        fps_counter = render_text(str(ceil(CLOCK.get_fps())), (0, 255, 0))
-        DISPLAY.blit(fps_counter, (Hud.safezone_w, Hud.safezone_h))
+        if SHOW_FPS:
+            fps_counter = render_text(str(ceil(CLOCK.get_fps())), (0, 255, 0))
+            DISPLAY.blit(fps_counter, (Hud.safezone_w, Hud.safezone_h))
 
         # Weapon HUD
         WEAPON_MODEL.draw()
         current_weapon = WEAPON_MODEL.weapon
 
         weapon_name = render_text(str(current_weapon.name), (255, 255, 255))
-        DISPLAY.blit(weapon_name, (D_W - weapon_name.get_width() - Hud.safezone_w, D_H - Hud.font_h - Hud.safezone_h))
+        DISPLAY.blit(weapon_name, (D_W - weapon_name.get_width() - Hud.safezone_w, D_H - Hud.font_h*2 - Hud.safezone_h))
 
         # Player hp HUD
         hp_text = render_text('HP:', (255, 255, 255))
@@ -396,19 +328,20 @@ class Hud:
         DISPLAY.blit(hp_amount, (Hud.safezone_w, D_H - Hud.font_h - Hud.safezone_h))
 
         # Loadout HUD
-        y = 400
-        for w in WEAPONS:
+        x = D_W - Hud.safezone_w
+        for w in reversed(WEAPONS):
             if w:
                 weapon_nr = WEAPONS.index(w)
-                if w == WEAPON_MODEL.weapon:
+                if w == WEAPON_MODEL.weapon:  # If equipped
                     colour = (255, 255, 255)
-                elif weapon_nr in PLAYER.weapon_loadout:
+                elif weapon_nr in PLAYER.weapon_loadout:  # If picked up
                     colour = (128, 128, 128)
-                else:
+                else:  # If not picked up
                     colour = (32, 32, 32)
                 number = render_text(str(weapon_nr), colour)
-                DISPLAY.blit(number, (D_W - number.get_width() - Hud.safezone_w, y))
-                y += Hud.font_h
+                x -= number.get_width()
+                DISPLAY.blit(number, (x, D_H - Hud.font_h - Hud.safezone_h))
+                x -= 10
 
         BOSSHEALTHBAR.draw()
         EFFECTS.draw()
@@ -942,7 +875,7 @@ class Boss(Enemy):
                     self.stop_animation()
 
         elif self.status == 'sleeping':
-            if can_see((self.x, self.y), (PLAYER.x, PLAYER.y)) or self.get_nearby_alerted_enemy():
+            if can_see((self.x, self.y), (PLAYER.x, PLAYER.y)):  #or self.get_nearby_alerted_enemy():
                 BOSSHEALTHBAR.start_showing(self)
                 self.status = 'default'
                 self.chasing = True
@@ -991,7 +924,6 @@ class BossHealthBar:
 
     def start_showing(self, boss):
         self.boss = boss
-        self.boss_image = self.boss.sheet.subsurface(0, 0, 64, 64)
         self.visible = True
 
     def draw(self):
@@ -1006,9 +938,11 @@ class BossHealthBar:
             colour = dynamic_colour(self.boss.hp, self.boss.max_hp)
             health_percentage = self.boss.hp / self.boss.max_hp
 
+            pygame.draw.rect(DISPLAY, (0, 0, 0), (self.x - 4, self.y - 4, BossHealthBar.w + 8, BossHealthBar.h + 8))
             pygame.draw.rect(DISPLAY, colour, (self.x, self.y, BossHealthBar.w * health_percentage, BossHealthBar.h))
-            pygame.draw.rect(DISPLAY, (0, 0, 0), (self.x, self.y, BossHealthBar.w, BossHealthBar.h), 4)
-            DISPLAY.blit(self.boss_image, (self.x - 32, self.y + BossHealthBar.h / 2 - 32))
+
+            boss_image = self.boss.sheet.subsurface(self.boss.column * 64, self.boss.row * 64, 64, 64)
+            DISPLAY.blit(boss_image, (self.x - 32, self.y + BossHealthBar.h / 2 - 32))
 
 
 class Level:
@@ -1084,15 +1018,9 @@ class Level:
         # Run pathfinding setup function
         pathfinding.setup(TILEMAP, TILE_VALUES_INFO)
 
-    def start(self, level_nr, previously_died=False):
+    def start(self, level_nr):
         self.load(level_nr)
         update_gameobjects()
-
-        if previously_died:
-            colour = (150, 0, 0)
-        else:
-            colour = (0, 0, 0)
-        TransitionEffect().clear(colour)
 
         game_loop()
 
@@ -1103,6 +1031,7 @@ class Level:
         CLOCK.tick(30)
 
         # Turn towards enemy
+        overlay_alpha = 0
         if enemy:
             turn_speed = 0.05
             angle_to_enemy = atan2(enemy.delta_y, enemy.delta_x)
@@ -1128,21 +1057,89 @@ class Level:
                 send_rays()
                 draw_frame()
 
+                if overlay_alpha != 128:
+                    overlay_alpha += 8
+                black_overlay = pygame.Surface((D_W, D_H))
+                black_overlay.set_alpha(overlay_alpha)
+                black_overlay.fill((0, 0, 0))
+                DISPLAY.blit(black_overlay, (0, 0))
+
                 pygame.display.flip()
                 CLOCK.tick(30)
 
-        TransitionEffect().cover((150, 0, 0))
+        global QUIT
+        text_alpha = 0
+        continued = False
+        while not continued:
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == K_ESCAPE:
+                        QUIT = True
+                        continued = True
+                    elif event.key == K_SPACE:
+                        continued = True
 
-        self.start(self.nr, True)
+            send_rays()
+            draw_frame()
+
+            text_alpha -= 15
+            if text_alpha < -255:
+                text_alpha = 255
+
+            if overlay_alpha != 128:
+                overlay_alpha += 8
+            black_overlay = pygame.Surface((D_W, D_H))
+            black_overlay.set_alpha(overlay_alpha)
+            black_overlay.fill((0, 0, 0))
+            DISPLAY.blit(black_overlay, (0, 0))
+
+            you_died = GAME_FONT.render('YOU DIED', False, (255, 255, 255))
+            you_died.set_alpha(abs(text_alpha))
+            DISPLAY.blit(you_died, ((D_W - you_died.get_width()) / 2, (D_H - you_died.get_height()) / 2))
+
+            pygame.display.flip()
+            CLOCK.tick(30)
+
+        pygame.mouse.get_rel()
+        pygame.event.clear()
+        self.start(self.nr)
 
     def finish(self):
-        send_rays()
-        draw_frame()
-        HUD.draw()
-        pygame.display.flip()
-        CLOCK.tick(30)
+        global QUIT
+        overlay_alpha = 0
+        text_alpha = 0
+        continued = False
+        while not continued:
+            for event in pygame.event.get():
+                if event.type == pygame.KEYDOWN:
+                    if event.key == K_ESCAPE:
+                        QUIT = True
+                        continued = True
+                    elif event.key == K_SPACE:
+                        continued = True
 
-        TransitionEffect().cover((0, 0, 0))
+            send_rays()
+            draw_frame()
+
+            text_alpha -= 15
+            if text_alpha < -255:
+                text_alpha = 255
+
+            if overlay_alpha != 128:
+                overlay_alpha += 8
+            black_overlay = pygame.Surface((D_W, D_H))
+            black_overlay.set_alpha(overlay_alpha)
+            black_overlay.fill((0, 0, 0))
+            DISPLAY.blit(black_overlay, (0, 0))
+
+            level_finished = GAME_FONT.render('LEVEL FINISHED', False, (255, 255, 255))
+            level_finished.set_alpha(abs(text_alpha))
+            DISPLAY.blit(level_finished, ((D_W - level_finished.get_width()) / 2,
+                                          (D_H - level_finished.get_height()) / 2))
+
+            pygame.display.flip()
+            CLOCK.tick(30)
+
         self.start(self.nr + 1)
 
 
@@ -1445,6 +1442,7 @@ def simple_raycast(rayangle, start_pos, side_needed=False):
 
 def events():
     global PAUSED
+    global SHOW_FPS
     global QUIT
 
     if PAUSED:
@@ -1452,6 +1450,8 @@ def events():
             if event.type == pygame.KEYDOWN:
                 if event.key == K_ESCAPE:
                     PAUSED = False
+                elif event.key == K_F1:
+                    SHOW_FPS = not SHOW_FPS
                 elif event.key == K_RETURN:
                     QUIT = True
         pygame.mouse.get_rel()
@@ -1461,6 +1461,8 @@ def events():
             if event.type == pygame.KEYDOWN:
                 if event.key == K_ESCAPE:
                     PAUSED = True
+                elif event.key == K_F1:
+                    SHOW_FPS = not SHOW_FPS
 
                 if event.key == K_e:
                     x = int(PLAYER.x + PLAYER.dir_x)
@@ -1643,7 +1645,8 @@ if __name__ == '__main__':
 
     QUIT = False
     PAUSED = False
+    SHOW_FPS = False
 
     LEVEL = Level()
-    LEVEL.start(1)
+    LEVEL.start(2)
     pygame.quit()
