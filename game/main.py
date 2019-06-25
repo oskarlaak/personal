@@ -1,5 +1,6 @@
 # TO DO:
 # Create some levels to test the game
+# Figure out why objects keep disappearing near enemies
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -13,17 +14,25 @@ class Player:
     hitbox_size = 0.4
     half_hitbox = hitbox_size / 2
 
-    def __init__(self, pos, angle):
+    def __init__(self):
+        self.weapon_nr = 1
+        self.saved_weapon_loadout = [1]
+
+    def setup(self, pos, angle):
         self.x = pos[0] + 0.0000001
         self.y = pos[1] + 0.0000001
         self.viewangle = angle + 0.0000001
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
-
         self.hp = Player.max_hp
-        self.weapon_nr = 1
-        self.weapon_loadout = [1]
         self.has_key = False
+
+        self.weapon_loadout = self.saved_weapon_loadout[:]
+        if self.weapon_nr not in self.weapon_loadout:
+            self.weapon_nr = 1
+
+    def save_weapon_loadout(self):
+        self.saved_weapon_loadout = self.weapon_loadout
 
     def hurt(self, damage, enemy):
         EFFECTS.update((255, 0, 0))
@@ -318,11 +327,11 @@ class Hud:
         WEAPON_MODEL.draw()
         current_weapon = WEAPON_MODEL.weapon
 
-        weapon_name = render_text(str(current_weapon.name), (255, 255, 255))
+        weapon_name = render_text(str(current_weapon.name), (0, 0, 0))
         DISPLAY.blit(weapon_name, (D_W - weapon_name.get_width() - Hud.safezone_w, D_H - Hud.font_h*2 - Hud.safezone_h))
 
         # Player hp HUD
-        hp_text = render_text('HP:', (255, 255, 255))
+        hp_text = render_text('HP:', (0, 0, 0))
         hp_amount = render_text(str(PLAYER.hp), dynamic_colour(PLAYER.hp, Player.max_hp))
         DISPLAY.blit(hp_text, (Hud.safezone_w, D_H - Hud.font_h*2 - Hud.safezone_h))
         DISPLAY.blit(hp_amount, (Hud.safezone_w, D_H - Hud.font_h - Hud.safezone_h))
@@ -333,11 +342,11 @@ class Hud:
             if w:
                 weapon_nr = WEAPONS.index(w)
                 if w == WEAPON_MODEL.weapon:  # If equipped
-                    colour = (255, 255, 255)
+                    colour = (0, 255, 0)
                 elif weapon_nr in PLAYER.weapon_loadout:  # If picked up
-                    colour = (128, 128, 128)
+                    colour = (0, 128, 0)
                 else:  # If not picked up
-                    colour = (32, 32, 32)
+                    colour = (0, 32, 0)
                 number = render_text(str(weapon_nr), colour)
                 x -= number.get_width()
                 DISPLAY.blit(number, (x, D_H - Hud.font_h - Hud.safezone_h))
@@ -478,7 +487,6 @@ class Object(Sprite):
 
 class Enemy(Sprite):
     type = 'Normal'
-    instant_alert_dist = 1
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = pos
@@ -497,6 +505,7 @@ class Enemy(Sprite):
         # Take attributes from ENEMY_INFO based on spritesheet
         self.hp = ENEMY_INFO[self.sheet].hp
         self.speed = ENEMY_INFO[self.sheet].speed
+        self.wandering_radius = ENEMY_INFO[self.sheet].wandering_radius
         self.shooting_range = ENEMY_INFO[self.sheet].shooting_range
         self.accuracy = ENEMY_INFO[self.sheet].accuracy
         self.damage_multiplier = ENEMY_INFO[self.sheet].damage_multiplier
@@ -525,9 +534,9 @@ class Enemy(Sprite):
                 if (pos_x, pos_y) not in visited + unvisited and TILEMAP[pos_y][pos_x] <= 0:
                     unvisited.append((pos_x, pos_y))
 
-        visited = [(int(self.x), int(self.y))]
+        visited = [(self.home[0], self.home[1])]
         unvisited = []
-        get_unvisited((int(self.x), int(self.y)))
+        get_unvisited((self.home[0], self.home[1]))
 
         while unvisited:  # While there is unscanned/unvisited points
             current = unvisited[0]  # Get new point
@@ -535,7 +544,10 @@ class Enemy(Sprite):
             visited.append(current)  # Add point to visited
             get_unvisited(current)  # Scan new points from that location
 
-        self.home_room = visited
+        self.home_room = []
+        for room_point in visited:
+            if (self.home[0] - room_point[0])**2 + (self.home[1] - room_point[1])**2 <= self.wandering_radius**2:
+                self.home_room.append(room_point)
 
     def get_row_and_column(self, moved):
         angle = fixed_angle(-self.angle_from_player + self.angle) + pi
@@ -705,8 +717,7 @@ class Enemy(Sprite):
                         self.stop_animation()
 
         else:
-            if can_see((self.x, self.y), (PLAYER.x, PLAYER.y), self.angle, Enemy.fov) or \
-                    self.dist_squared <= Enemy.instant_alert_dist**2:
+            if can_see((self.x, self.y), (PLAYER.x, PLAYER.y)):
                 saw_player = True
                 self.chasing = True
                 self.target_tile = (int(PLAYER.x), int(PLAYER.y))
@@ -724,10 +735,10 @@ class Enemy(Sprite):
             if (self.x - 0.5, self.y - 0.5) == self.target_tile:
                 if self.stationary_ticks >= self.patience:
                     if (self.x - 0.5, self.y - 0.5) == self.home:
-                        if random.randint(0, 2) == 0:
+                        if random.randint(0, 1) == 0:
                             self.target_tile = random.choice(self.home_room)
                         else:
-                            self.angle = fixed_angle(2 * pi * random.random())
+                            self.angle = atan2(-self.delta_y, -self.delta_x)
                             moved = True
                     else:
                         self.target_tile = self.home
@@ -875,7 +886,7 @@ class Boss(Enemy):
                     self.stop_animation()
 
         elif self.status == 'sleeping':
-            if can_see((self.x, self.y), (PLAYER.x, PLAYER.y)):  #or self.get_nearby_alerted_enemy():
+            if can_see((self.x, self.y), (PLAYER.x, PLAYER.y)):
                 BOSSHEALTHBAR.start_showing(self)
                 self.status = 'default'
                 self.chasing = True
@@ -965,7 +976,7 @@ class Level:
             player_pos = [float(i) for i in player_pos]
             player_angle = float(f.readline().replace('\n', ''))
             global PLAYER
-            PLAYER = Player(player_pos, player_angle)
+            PLAYER.setup(player_pos, player_angle)
 
         # Background
         with open('../levels/{}/background.txt'.format(level_nr), 'r') as f:
@@ -1105,6 +1116,8 @@ class Level:
         self.start(self.nr)
 
     def finish(self):
+        PLAYER.save_weapon_loadout()
+
         global QUIT
         overlay_alpha = 0
         text_alpha = 0
@@ -1511,23 +1524,8 @@ def update_gameobjects():
         OBJECTS.append(Object((int(PLAYER.x), int(PLAYER.y)), tile_value))
         if TILE_VALUES_INFO[tile_value].desc == 'Dynamic':
             colour = None
-            if tile_value == -1:
-                if not 5 in PLAYER.weapon_loadout:
-                    PLAYER.weapon_loadout.append(5)
-                colour = (0, 0, 255)
-            elif tile_value == -2:
-                if not 4 in PLAYER.weapon_loadout:
-                    PLAYER.weapon_loadout.append(4)
-                colour = (0, 0, 255)
-            elif tile_value == -3:
-                if not 3 in PLAYER.weapon_loadout:
-                    PLAYER.weapon_loadout.append(3)
-                colour = (0, 0, 255)
-            elif tile_value == -4:
-                if not 2 in PLAYER.weapon_loadout:
-                    PLAYER.weapon_loadout.append(2)
-                colour = (0, 0, 255)
-            elif tile_value == -5:
+            # First handle all now-weapon pickups
+            if tile_value == -5:
                 PLAYER.has_key = True
                 colour = (255, 255, 0)
             elif tile_value == -6:
@@ -1542,6 +1540,28 @@ def update_gameobjects():
                     if PLAYER.hp > PLAYER.max_hp:
                         PLAYER.hp = PLAYER.max_hp
                     colour = (0, 255, 0)
+            # Then handle weapon pickups
+            if not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
+                if tile_value == -1:
+                    if not 5 in PLAYER.weapon_loadout:
+                        PLAYER.weapon_loadout.append(5)
+                        WEAPON_MODEL.switching = 5
+                    colour = (0, 0, 255)
+                elif tile_value == -2:
+                    if not 4 in PLAYER.weapon_loadout:
+                        PLAYER.weapon_loadout.append(4)
+                        WEAPON_MODEL.switching = 4
+                    colour = (0, 0, 255)
+                elif tile_value == -3:
+                    if not 3 in PLAYER.weapon_loadout:
+                        PLAYER.weapon_loadout.append(3)
+                        WEAPON_MODEL.switching = 3
+                    colour = (0, 0, 255)
+                elif tile_value == -4:
+                    if not 2 in PLAYER.weapon_loadout:
+                        PLAYER.weapon_loadout.append(2)
+                        WEAPON_MODEL.switching = 2
+                    colour = (0, 0, 255)
             if colour:
                 EFFECTS.update(colour)
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
@@ -1623,7 +1643,6 @@ if __name__ == '__main__':
     # Make class constants
     Drawable.constant = 0.65 * D_H
     WallColumn.width = int(D_W / RAYS_AMOUNT)
-    Enemy.fov = FOV  # Enemies share the same fov as player
 
     # Pygame stuff
     pygame.init()
@@ -1647,6 +1666,7 @@ if __name__ == '__main__':
     PAUSED = False
     SHOW_FPS = False
 
+    PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(2)
+    LEVEL.start(3)
     pygame.quit()

@@ -6,10 +6,11 @@ def get_enemy_info():
     class Enemy:
         type = 'Normal'
 
-        def __init__(self, hp, speed, shooting_range, accuracy, damage_multiplier,
-                     memory, patience, pain_chance, shot_columns):
+        def __init__(self, hp, speed, wandering_radius, shooting_range, accuracy,
+                     damage_multiplier, memory, patience, pain_chance, shot_columns):
             self.hp = hp
             self.speed = speed
+            self.wandering_radius = wandering_radius
             self.shooting_range = shooting_range  # Max shooting range
             self.accuracy = accuracy  # 0 will never hit, 1 is normal, can go higher
             self.damage_multiplier = damage_multiplier
@@ -52,10 +53,10 @@ def get_enemy_info():
             hansgrosse:         Boss( 500, 0.05, 1.50, 1.00, [2, 3, 4, 5, 6, 7]),
             hitler:             Boss(1000, 0.06, 1.00, 1.50, [3, 4, 5, 6, 7]),
             ottogiftmacher:     Boss( 500, 0.04, 0.75, 2.00, [4]),
-            guard:    Enemy(20, 0.07,  8, 1.00, 1.00, 300,  60, 1.00, [4]),
-            guarddog: Enemy( 1, 0.08,  1, 9.99, 1.50, 100,   0, 0.00, [3]),
-            mutant:   Enemy(30, 0.07, 15, 1.00, 1.50, 400, 180, 0.75, [1, 3]),
-            officer:  Enemy(40, 0.09, 15, 1.00, 1.25, 500,  90, 0.75, [2, 4]),
-            ss:       Enemy(50, 0.07, 20, 1.50, 1.50, 500, 180, 0.50, [3, 4, 5])
+            guard:    Enemy(20, 0.07, 2,  8, 1.00, 1.00, 300,  60, 1.00, [4]),
+            guarddog: Enemy( 1, 0.08, 4,  1, 9.99, 1.50, 100,   0, 0.00, [3]),
+            mutant:   Enemy(30, 0.07, 9, 15, 1.00, 1.50, 400, 180, 0.75, [1, 3]),
+            officer:  Enemy(40, 0.09, 2, 15, 1.00, 1.25, 500,  90, 0.75, [2, 4]),
+            ss:       Enemy(50, 0.07, 3, 20, 1.50, 1.50, 500, 180, 0.50, [3, 4, 5])
         }
         return enemy_info

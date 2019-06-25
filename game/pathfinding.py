@@ -283,12 +283,6 @@ if __name__ == '__main__':
 
     setup(tilemap, graphics.get_tile_values_info(64, enemies.get_enemy_info()))
 
-    a = (56, 58)
-    b = (50, 61)
-    print('from {}\nto {}\n'.format(a, b), a_star(a, b))
-
-    ### IGNORE NOW FOR SIMPLICITY
-
     end_x, end_y = 0, 0
     running = True
     while running:
