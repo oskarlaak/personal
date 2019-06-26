@@ -37,13 +37,11 @@ def get_neighbour_doors(pos):
 
 
 def setup(tilemap, tile_values_info):
-    # Pathfinding setup
-
     # Creating 3 global variables for itself to use later
+    global DOORS
     global TILEMAP
     global TILE_VALUES_INFO
-    global DOORS
-    TILEMAP = tilemap
+    TILEMAP = tilemap[:]
     TILE_VALUES_INFO = tile_values_info
 
     # Scanning through tilemap and getting all the doors
@@ -167,6 +165,7 @@ def a_star(start, end):
     while True:
         get_unvisited(current)  # Get new unvisited options
         if not unvisited:  # If path cannot be created
+            TILEMAP[end[1]][end[0]] = end_value  # Change back tilemap
             return []  # Return emtpy list
 
         # Find the best point's index

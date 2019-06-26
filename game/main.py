@@ -1,6 +1,6 @@
 # TO DO:
 # Create some levels to test the game
-# Figure out why objects keep disappearing near enemies
+# Make it so shotgun bullets spread equally to make them less useful at longer ranges
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -1517,8 +1517,12 @@ def update_gameobjects():
         e.update()
     WEAPON_MODEL.update()
 
-    # Checking if player is standing on an object,
-    # bc raycast() will miss objects player is standing on
+    handle_objects_under_player()
+
+
+def handle_objects_under_player():
+    # Checking if player is standing on an object bc raycast() will miss objects player is standing on
+    # Also picks up objects if they can be picked up
     tile_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
     if tile_value < 0:
         OBJECTS.append(Object((int(PLAYER.x), int(PLAYER.y)), tile_value))
