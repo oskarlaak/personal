@@ -34,7 +34,7 @@ def get():
         def __init__(self, name, weapon_sheet, shot_column, fire_delay, damage_range, automatic, spread):
             super().__init__(name, weapon_sheet, shot_column, fire_delay, damage_range, automatic)
             camera_plane_dist = 0.5 / math.tan(FOV / 2)
-            self.max_spread = int(math.tan(spread) * camera_plane_dist * D_W)
+            self.max_x_spread = int(math.tan(spread) * camera_plane_dist * D_W)
 
     class Shotgun(Weapon):
         type = 'shotgun'
@@ -42,7 +42,7 @@ def get():
         def __init__(self, name, weapon_sheet, shot_column, fire_delay, damage_range, automatic, spread, shot_bullets):
             super().__init__(name, weapon_sheet, shot_column, fire_delay, damage_range, automatic)
             camera_plane_dist = 0.5 / math.tan(FOV / 2)
-            self.max_spread = int(math.tan(spread) * camera_plane_dist * D_W)
+            self.max_x_spread = int(math.tan(spread) * camera_plane_dist * D_W)
             self.shot_bullets = shot_bullets
 
     try:

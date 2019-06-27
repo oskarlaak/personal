@@ -1,6 +1,6 @@
 # TO DO:
 # Create some levels to test the game
-# Make it so shotgun bullets spread equally to make them less useful at longer ranges
+# Update enemies shoot() function so they do less damage up close
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -221,15 +221,18 @@ class WeaponModel:
         self.update()
 
     def shoot(self, weapon):
-        def bullet_hitscan(max_spread, max_range=False):
+        def bullet_hitscan(x_spread, max_range=False):
+            # Moving weapon x and y behind the player so enemies up close will be harder to miss
+            weapon_x = PLAYER.x - PLAYER.dir_x / 5
+            weapon_y = PLAYER.y - PLAYER.dir_y / 5
             shootable_enemies = []
             for e in ENEMIES:
-                if not e.status == 'dead' and can_see((PLAYER.x, PLAYER.y), (e.x, e.y), PLAYER.viewangle, FOV):
+                if not e.status == 'dead' and can_see((weapon_x, weapon_y), (e.x, e.y), PLAYER.viewangle, FOV):
                     shootable_enemies.append(e)
             shootable_enemies.sort(key=lambda x: x.dist_squared)  # Sort for closest dist first
 
             for e in shootable_enemies:
-                enemy_center_display_x = e.display_x + random.randint(-max_spread, max_spread) + (e.width / 2)
+                enemy_center_display_x = e.display_x + x_spread + (e.width / 2)
                 x_offset = abs(H_W - enemy_center_display_x)
                 hittable_offset = e.width / 2
                 if hittable_offset > x_offset:  # If bullet more or less on enemy
@@ -258,11 +261,12 @@ class WeaponModel:
                     bullet_hitscan(0, weapon.range)
 
                 elif weapon.type == 'hitscan':
-                    bullet_hitscan(weapon.max_spread)
+                    bullet_hitscan(random.randint(-weapon.max_x_spread, weapon.max_x_spread))
 
                 elif weapon.type == 'shotgun':
-                    for _ in range(weapon.shot_bullets):
-                        bullet_hitscan(weapon.max_spread)
+                    x_spread_difference = (weapon.max_x_spread * 2) / (weapon.shot_bullets - 1)
+                    for i in range(weapon.shot_bullets):
+                        bullet_hitscan(-weapon.max_x_spread + round(i * x_spread_difference))
 
     def switch_weapons(self):
         self.ticks += 1
