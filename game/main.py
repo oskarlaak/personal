@@ -1,6 +1,6 @@
 # TO DO:
-# Create some levels to test the game
-# Update enemies shoot() function so they do less damage up close
+# Improve gameplay by playtesting
+# Think about adding a "boss door"
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -46,9 +46,10 @@ class Player:
     def handle_movement(self):
         # Checks for movement (WASD)
         keys_pressed = pygame.key.get_pressed()
-        self.moving = False
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
+        old_x = self.x
+        old_y = self.y
 
         # Vector based movement, bc otherwise player could move faster diagonally
         if keys_pressed[K_w] or keys_pressed[K_a] or keys_pressed[K_s] or keys_pressed[K_d]:
@@ -72,11 +73,11 @@ class Player:
 
             movement_vector = numpy.asarray([[movement_x, movement_y]])  # Needed for normalize() function
             if abs(movement_vector[0][0]) + abs(movement_vector[0][1]) > 0.1:
-                self.moving = True
                 normalized_vector = normalize(movement_vector)[0]  # [0] because vector is inside of list
 
                 PLAYER.move(normalized_vector[0] * Player.speed,
                             normalized_vector[1] * Player.speed)
+        self.total_movement = sqrt((self.x - old_x)**2 + (self.y - old_y)**2)
 
     def move(self, x_move, y_move):
         def one_point_collision(y, x):
@@ -604,29 +605,19 @@ class Enemy(Sprite):
         self.anim_ticks = 0
 
     def shoot(self):
-        # Player shot hit and damage logic / enemy hitscan
-        # https://wolfenstein.fandom.com/wiki/Damage
+        # Modified enemy shot hit and damage calculation logic from original wolfenstein
 
-        dist = sqrt(self.dist_squared)
-        if PLAYER.moving:
-            speed = 160
-        else:
-            speed = 256
-        if can_see((PLAYER.x, PLAYER.y), (self.x, self.y), PLAYER.viewangle, FOV):
-            look = 16
-        else:
-            look = 8
-        rand = random.randint(0, 255)
+        # speed_factor ranges between 24 (when player's running) and 32 (when not)
+        speed_factor = 24 + (32 - 24) * (1 - PLAYER.total_movement / PLAYER.speed)
 
-        player_hit = rand < (speed - dist * look) * self.accuracy
+        dist_from_player = sqrt(self.dist_squared)
+
+        player_hit = random.randint(0, int(32 / self.accuracy)) < speed_factor - dist_from_player
         if player_hit:
-            rand = random.randint(0, 255)
-            if dist < 2:
-                damage = rand / 4
-            elif dist > 4:
-                damage = rand / 16
+            if dist_from_player < 2:
+                damage = random.randint(1, 55)
             else:
-                damage = rand / 8
+                damage = random.randint(1, 35)
             PLAYER.hurt(int(damage * self.damage_multiplier), self)
 
     def hurt(self, damage):
