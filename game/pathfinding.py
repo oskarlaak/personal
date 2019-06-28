@@ -17,7 +17,8 @@ def get_neighbour_doors(pos):
                 if TILEMAP[pos_y][pos_x] <= 0:
                     unvisited.append((pos_x, pos_y))
                 elif TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].type == 'Door' and \
-                        TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].desc != 'Static':
+                        TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].desc != 'Static' and \
+                        TILE_VALUES_INFO[TILEMAP[pos_y][pos_x]].desc != 'Boss':
                     visited.append((pos_x, pos_y))
                     doors_found.append((pos_x, pos_y))
 
@@ -48,8 +49,9 @@ def setup(tilemap, tile_values_info):
     DOORS = []
     for row in range(len(TILEMAP)):
         for column in range(len(TILEMAP[row])):
-            if TILE_VALUES_INFO[TILEMAP[row][column]].type == 'Door'\
-                    and TILE_VALUES_INFO[TILEMAP[row][column]].desc != 'Static':
+            if TILE_VALUES_INFO[TILEMAP[row][column]].type == 'Door' and \
+                    TILE_VALUES_INFO[TILEMAP[row][column]].desc != 'Static' and \
+                    TILE_VALUES_INFO[TILEMAP[row][column]].desc != 'Boss':
                 DOORS.append(Door((column, row)))
 
     # Getting all door neighbours
@@ -200,6 +202,9 @@ def pathfind(start, end):
 
     # If start and end in different rooms
     # Get best starting door
+    if not start_doors:
+        return []
+
     best_dist = 9999
     for start_door in start_doors:
         door_dist = squared_dist(start_door, end)
@@ -221,8 +226,7 @@ def pathfind(start, end):
             try:
                 door = doors_path[-1]
             except IndexError:
-                print('error at')
-                print(start, end)
+                return []
             neighbours = []
             for n in door.neighbours:
                 if n not in visited_doors:

@@ -46,8 +46,9 @@ def get_tile_values_info(texture_size, enemy_info):
 
         # Door textures
         dynamic_doors = pygame.image.load('../textures/doors/dynamic.png').convert()
-        static_doors = pygame.image.load('../textures/doors/static.png').convert()
-        locked_doors = pygame.image.load('../textures/doors/locked.png').convert()
+        static_door = pygame.image.load('../textures/doors/static.png').convert()
+        locked_door = pygame.image.load('../textures/doors/locked.png').convert()
+        boss_door = pygame.image.load('../textures/doors/boss.png').convert()
 
         # Object sprites
         nonsolids = pygame.image.load('../textures/objects/nonsolids.png').convert_alpha()
@@ -83,8 +84,9 @@ def get_tile_values_info(texture_size, enemy_info):
 
         # Doors
         assign_texture_sheet(texture_size * 2, texture_size, 1, dynamic_doors, 'Door', 'Dynamic')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, static_doors, 'Door', 'Static')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, locked_doors, 'Door', 'Locked')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, static_door, 'Door', 'Static')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, locked_door, 'Door', 'Locked')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, boss_door, 'Door', 'Boss')
 
         # Walls
         assign_texture_sheet(texture_size * 2, texture_size, 1, bloodycave, 'Wall', 'Bloody Cave')

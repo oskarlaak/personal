@@ -1,11 +1,13 @@
 # TO DO:
 # Improve gameplay by playtesting
-# Think about adding a "boss door"
 
 # NOTES:
 # Game's tick rate is capped at 30
 # All timed events are tick based
 # All angles are in radians
+# Enemies can travel through Dynamic and Locked doors, but not Static or Boss doors
+# Killing a boss gives the player a key
+# There is no support for multiple bosses in one level
 
 
 class Player:
@@ -167,6 +169,7 @@ class Player:
 
 
 class Door:
+    type = 'Normal'
     speed = 0.05
     open_ticks = 90
 
@@ -184,6 +187,66 @@ class Door:
     def move(self):
         if self.state > 0:
             if self.state == 1:  # Opening
+                self.opened_state += Door.speed
+                if self.opened_state > 1:
+                    TILEMAP[self.y][self.x] = 0  # Make tile walkable
+                    self.opened_state = 1
+                    self.state += 1
+
+            elif self.state == 2:  # Staying open
+                self.ticks += 1
+                if self.ticks >= Door.open_ticks:  # If time for door to close
+                    # Checking if player is not in door's way
+                    safe_dist = 0.5 + Player.half_hitbox
+                    if abs(self.x + 0.5 - PLAYER.x) > safe_dist or abs(self.y + 0.5 - PLAYER.y) > safe_dist:
+                        TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
+                        self.ticks = 0
+                        self.state += 1
+
+            elif self.state == 3:  # Closing
+                self.opened_state -= Door.speed
+                if self.opened_state < 0:
+                    self.opened_state = 0
+                    self.state = 0
+
+
+class BossDoor(Door):
+    # Boss door stays unlocked until both of the door sides have been visited
+    # This makes sure that once you've gone to the other side of the door there's no going back
+    # Going through the door also automatically "wakes up" the boss in the level if there is one
+    type = 'Boss'
+
+    def __init__(self, map_pos, tile_value):
+        super().__init__(map_pos, tile_value)
+
+        self.locked = False
+        if TILEMAP[self.y][self.x + 1] <= 0:
+            self.lock_triggers = [(self.x + 1, self.y), (self.x - 1, self.y)]
+        else:
+            self.lock_triggers = [(self.x, self.y + 1), (self.x, self.y - 1)]
+
+    def move(self):
+        if not self.locked:
+            # If all player's hitbox corners inside the same tile
+            if int(PLAYER.x + Player.half_hitbox) == int(PLAYER.x - Player.half_hitbox) and \
+                    int(PLAYER.y + Player.half_hitbox) == int(PLAYER.y - Player.half_hitbox):
+                # Check if player's inside one of the lock trigger positions
+                player_pos = (int(PLAYER.x), int(PLAYER.y))
+                if player_pos in self.lock_triggers:
+                    self.lock_triggers.remove(player_pos)
+                    if not self.lock_triggers:
+                        self.locked = True
+                        TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
+                        self.state = 3
+                        for e in ENEMIES:
+                            if e.type == 'Boss':
+                                BOSSHEALTHBAR.start_showing(e)
+                                e.status = 'default'
+                                e.chasing = True
+                                break
+
+        if self.state > 0:
+            if self.state == 1 and not self.locked:  # Opening
                 self.opened_state += Door.speed
                 if self.opened_state > 1:
                     TILEMAP[self.y][self.x] = 0  # Make tile walkable
@@ -258,13 +321,13 @@ class WeaponModel:
                     self.shooting = False
 
             if self.column == weapon.shot_column:
-                if weapon.type == 'melee':
+                if weapon.type == 'Melee':
                     bullet_hitscan(0, weapon.range)
 
-                elif weapon.type == 'hitscan':
+                elif weapon.type == 'Hitscan':
                     bullet_hitscan(random.randint(-weapon.max_x_spread, weapon.max_x_spread))
 
-                elif weapon.type == 'shotgun':
+                elif weapon.type == 'Shotgun':
                     x_spread_difference = (weapon.max_x_spread * 2) / (weapon.shot_bullets - 1)
                     for i in range(weapon.shot_bullets):
                         bullet_hitscan(-weapon.max_x_spread + round(i * x_spread_difference))
@@ -880,13 +943,7 @@ class Boss(Enemy):
                     self.column = 7
                     self.stop_animation()
 
-        elif self.status == 'sleeping':
-            if can_see((self.x, self.y), (PLAYER.x, PLAYER.y)):
-                BOSSHEALTHBAR.start_showing(self)
-                self.status = 'default'
-                self.chasing = True
-
-        else:
+        elif self.status == 'default':
             if not self.path:
                 self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
             step_x, step_y = self.path[0]
@@ -1294,7 +1351,7 @@ def raycast(rayangle, start_pos):
         if tile_value != 0:
             tile_type = TILE_VALUES_INFO[tile_value].type
 
-            if tile_type == 'Object' or tile_type == 'Object-dynamic':
+            if tile_type == 'Object':
                 for obj in OBJECTS:
                     if (obj.x - 0.5, obj.y - 0.5) == (map_x, map_y):
                         break
@@ -1318,8 +1375,12 @@ def raycast(rayangle, start_pos):
                         door = d
                         break
                 else:
-                    door = Door((map_x, map_y), tile_value)
-                    DOORS.append(door)
+                    if TILE_VALUES_INFO[tile_value].desc != 'Boss':  # If not Boss door
+                        door = Door((map_x, map_y), tile_value)
+                        DOORS.append(door)
+                    else:
+                        door = BossDoor((map_x, map_y), tile_value)
+                        DOORS.append(door)
 
                 if side == 0:  # If vertical ( | )
                     interception_y = (-0.5 + A) * tan_rayangle
@@ -1404,7 +1465,7 @@ def simple_raycast(rayangle, start_pos, side_needed=False):
         if tile_value != 0:
             tile_type = TILE_VALUES_INFO[tile_value].type
 
-            if tile_type == 'Object' or tile_type == 'Object-dynamic':
+            if tile_type == 'Object':
                 continue
 
             if tile_type == 'Door':
@@ -1479,7 +1540,7 @@ def events():
                     tile_type = TILE_VALUES_INFO[tile_value].type
                     tile_desc = TILE_VALUES_INFO[tile_value].desc
                     if tile_type == 'Door' and tile_desc != 'Static':
-                        if PLAYER.has_key or tile_desc == 'Dynamic':
+                        if PLAYER.has_key or tile_desc == 'Dynamic' or tile_desc == 'Boss':
                             for d in DOORS:
                                 # If found the right door and it's not in motion already
                                 if x == d.x and y == d.y:
@@ -1506,7 +1567,7 @@ def events():
 def update_gameobjects():
     for c, d in enumerate(DOORS):
         d.move()
-        if d.state == 0:
+        if d.type == 'Normal' and d.state == 0:  # Only deletes normal doors that are closed
             del DOORS[c]
     for e in ENEMIES:
         e.update()

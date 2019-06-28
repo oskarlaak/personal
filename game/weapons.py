@@ -21,7 +21,7 @@ def get():
             self.automatic = automatic
 
     class Melee(Weapon):
-        type = 'melee'
+        type = 'Melee'
 
         def __init__(self, name, weapon_sheet, shot_column, fire_delay, damage_range, automatic, range):
             super().__init__(name, weapon_sheet, shot_column, fire_delay, damage_range, automatic)
@@ -29,7 +29,7 @@ def get():
 
 
     class HitscanWeapon(Weapon):
-        type = 'hitscan'
+        type = 'Hitscan'
 
         def __init__(self, name, weapon_sheet, shot_column, fire_delay, damage_range, automatic, spread):
             super().__init__(name, weapon_sheet, shot_column, fire_delay, damage_range, automatic)
@@ -37,7 +37,7 @@ def get():
             self.max_x_spread = int(math.tan(spread) * camera_plane_dist * D_W)
 
     class Shotgun(Weapon):
-        type = 'shotgun'
+        type = 'Shotgun'
 
         def __init__(self, name, weapon_sheet, shot_column, fire_delay, damage_range, automatic, spread, shot_bullets):
             super().__init__(name, weapon_sheet, shot_column, fire_delay, damage_range, automatic)
