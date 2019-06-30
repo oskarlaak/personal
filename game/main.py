@@ -1,5 +1,6 @@
 # TO DO:
-# Improve gameplay by playtesting
+# Create levels
+# Balance bosses
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -244,6 +245,9 @@ class BossDoor(Door):
                                 e.status = 'default'
                                 e.chasing = True
                                 break
+                        else:
+                            for e in ENEMIES:
+                                print(e.type)
 
         if self.state > 0:
             if self.state == 1 and not self.locked:  # Opening
@@ -291,8 +295,19 @@ class WeaponModel:
             weapon_y = PLAYER.y - PLAYER.dir_y / 5
             shootable_enemies = []
             for e in ENEMIES:
-                if not e.status == 'dead' and can_see((weapon_x, weapon_y), (e.x, e.y), PLAYER.viewangle, FOV):
-                    shootable_enemies.append(e)
+                if not e.status == 'dead':
+                    angle = fixed_angle(e.angle_from_player + pi / 2)
+                    if e.type == 'Normal':
+                        dir_x = cos(angle) / 4
+                        dir_y = sin(angle) / 4
+                    else:
+                        dir_x = cos(angle) / 2
+                        dir_y = sin(angle) / 2
+                    enemy_left_side = (e.x - dir_x, e.y - dir_y)
+                    enemy_right_side = (e.x + dir_x, e.y + dir_y)
+                    if can_see((weapon_x, weapon_y), enemy_left_side, PLAYER.viewangle, FOV) or \
+                            can_see((weapon_x, weapon_y), enemy_right_side, PLAYER.viewangle, FOV):
+                        shootable_enemies.append(e)
             shootable_enemies.sort(key=lambda x: x.dist_squared)  # Sort for closest dist first
 
             for e in shootable_enemies:
@@ -775,7 +790,12 @@ class Enemy(Sprite):
                         self.stop_animation()
 
         else:
-            if can_see((self.x, self.y), (PLAYER.x, PLAYER.y)):
+            angle = fixed_angle(self.angle_from_player + pi / 2)
+            dir_x = cos(angle) / 4
+            dir_y = sin(angle) / 4
+            enemy_left_side = (self.x - dir_x, self.y - dir_y)
+            enemy_right_side = (self.x + dir_x, self.y + dir_y)
+            if can_see((PLAYER.x, PLAYER.y), enemy_left_side) or can_see((PLAYER.x, PLAYER.y), enemy_right_side):
                 saw_player = True
                 self.chasing = True
                 self.target_tile = (int(PLAYER.x), int(PLAYER.y))
@@ -1728,5 +1748,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(3)
+    LEVEL.start(1)
     pygame.quit()
