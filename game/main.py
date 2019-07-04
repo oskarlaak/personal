@@ -1,9 +1,11 @@
 # TO DO:
 # Create levels
-# Balance bosses
+# Balance enemies and weapons
+# MAYBE make bosses be able to shoot you better around corners
 
 # NOTES:
-# Game's tick rate is capped at 30
+# Game's tick rate is at 30
+# Due to bad optimization, levels can't have big open areas without being laggy
 # All timed events are tick based
 # All angles are in radians
 # Enemies can travel through Dynamic and Locked doors, but not Static or Boss doors
@@ -41,7 +43,11 @@ class Player:
         EFFECTS.update((255, 0, 0))
         self.hp -= damage
         if self.hp <= 0:
-            LEVEL.restart(enemy)
+            last_chance_hp = random.randint(1, 10)
+            if self.hp + damage > last_chance_hp:
+                self.hp = last_chance_hp
+            else:
+                LEVEL.restart(enemy)
 
     def rotate(self, radians):
         self.viewangle = fixed_angle(self.viewangle + radians)
@@ -51,8 +57,7 @@ class Player:
         keys_pressed = pygame.key.get_pressed()
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
-        old_x = self.x
-        old_y = self.y
+        old_pos = (self.x, self.y)
 
         # Vector based movement, bc otherwise player could move faster diagonally
         if keys_pressed[K_w] or keys_pressed[K_a] or keys_pressed[K_s] or keys_pressed[K_d]:
@@ -80,7 +85,7 @@ class Player:
 
                 PLAYER.move(normalized_vector[0] * Player.speed,
                             normalized_vector[1] * Player.speed)
-        self.total_movement = sqrt((self.x - old_x)**2 + (self.y - old_y)**2)
+        self.total_movement = sqrt(squared_dist(old_pos, (self.x, self.y)))
 
     def move(self, x_move, y_move):
         def one_point_collision(y, x):
@@ -222,35 +227,19 @@ class BossDoor(Door):
 
         self.locked = False
         if TILEMAP[self.y][self.x + 1] <= 0:
-            self.lock_triggers = [(self.x + 1, self.y), (self.x - 1, self.y)]
+            self.door_fronts = [(self.x + 1.5, self.y + 0.5), (self.x - 0.5, self.y + 0.5)]
         else:
-            self.lock_triggers = [(self.x, self.y + 1), (self.x, self.y - 1)]
+            self.door_fronts = [(self.x + 0.5, self.y + 1.5), (self.x + 0.5, self.y - 0.5)]
 
     def move(self):
-        if not self.locked:
-            # If all player's hitbox corners inside the same tile
-            if int(PLAYER.x + Player.half_hitbox) == int(PLAYER.x - Player.half_hitbox) and \
-                    int(PLAYER.y + Player.half_hitbox) == int(PLAYER.y - Player.half_hitbox):
-                # Check if player's inside one of the lock trigger positions
-                player_pos = (int(PLAYER.x), int(PLAYER.y))
-                if player_pos in self.lock_triggers:
-                    self.lock_triggers.remove(player_pos)
-                    if not self.lock_triggers:
-                        self.locked = True
-                        TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
-                        self.state = 3
-                        for e in ENEMIES:
-                            if e.type == 'Boss':
-                                BOSSHEALTHBAR.start_showing(e)
-                                e.status = 'default'
-                                e.chasing = True
-                                break
-                        else:
-                            for e in ENEMIES:
-                                print(e.type)
-
         if self.state > 0:
             if self.state == 1 and not self.locked:  # Opening
+                if self.opened_state == 0 and len(self.door_fronts) == 2:
+                    player_pos = (PLAYER.x, PLAYER.y)
+                    if squared_dist(player_pos, self.door_fronts[0]) < squared_dist(player_pos, self.door_fronts[1]):
+                        del self.door_fronts[0]
+                    else:
+                        del self.door_fronts[1]
                 self.opened_state += Door.speed
                 if self.opened_state > 1:
                     TILEMAP[self.y][self.x] = 0  # Make tile walkable
@@ -259,10 +248,22 @@ class BossDoor(Door):
 
             elif self.state == 2:  # Staying open
                 self.ticks += 1
-                if self.ticks >= Door.open_ticks:  # If time for door to close
-                    # Checking if player is not in door's way
-                    safe_dist = 0.5 + Player.half_hitbox
-                    if abs(self.x + 0.5 - PLAYER.x) > safe_dist or abs(self.y + 0.5 - PLAYER.y) > safe_dist:
+                safe_dist = 0.5 + Player.half_hitbox
+                if abs(self.x + 0.5 - PLAYER.x) > safe_dist or abs(self.y + 0.5 - PLAYER.y) > safe_dist:
+                    player_pos = (PLAYER.x, PLAYER.y)
+                    if squared_dist(player_pos, self.door_fronts[0]) < 1:
+                        # "Spawn boss"
+                        TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
+                        self.locked = True
+                        self.state += 1
+                        for e in ENEMIES:
+                            if e.type == 'Boss':
+                                BOSSHEALTHBAR.start_showing(e)
+                                e.status = 'default'
+                                e.chasing = True
+                                break
+
+                    elif self.ticks >= Door.open_ticks:
                         TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
                         self.ticks = 0
                         self.state += 1
@@ -275,7 +276,7 @@ class BossDoor(Door):
 
 
 class WeaponModel:
-    switch_ticks = 20
+    switch_ticks = 6
     w = h = 576
 
     def __init__(self):
@@ -305,20 +306,27 @@ class WeaponModel:
                         dir_y = sin(angle) / 2
                     enemy_left_side = (e.x - dir_x, e.y - dir_y)
                     enemy_right_side = (e.x + dir_x, e.y + dir_y)
-                    if can_see((weapon_x, weapon_y), enemy_left_side, PLAYER.viewangle, FOV) or \
-                            can_see((weapon_x, weapon_y), enemy_right_side, PLAYER.viewangle, FOV):
-                        shootable_enemies.append(e)
-            shootable_enemies.sort(key=lambda x: x.dist_squared)  # Sort for closest dist first
+                    enemy_center = (e.x, e.y)
+                    hittable_amount = 0
+                    if can_see((weapon_x, weapon_y), enemy_left_side, PLAYER.viewangle, FOV):
+                        hittable_amount += 0.33
+                    if can_see((weapon_x, weapon_y), enemy_right_side, PLAYER.viewangle, FOV):
+                        hittable_amount += 0.33
+                    if can_see((weapon_x, weapon_y), enemy_center, PLAYER.viewangle, FOV):
+                        hittable_amount += 0.33
+                    if hittable_amount:
+                        shootable_enemies.append((e, hittable_amount))
+            shootable_enemies.sort(key=lambda x: x[0].dist_squared)  # Sort for closest dist first
 
-            for e in shootable_enemies:
+            for e, hittable_amount in shootable_enemies:
                 enemy_center_display_x = e.display_x + x_spread + (e.width / 2)
                 x_offset = abs(H_W - enemy_center_display_x)
-                hittable_offset = e.width / 2
+                hittable_offset = e.width / 2 * hittable_amount
                 if hittable_offset > x_offset:  # If bullet more or less on enemy
                     if not max_range:
-                        e.hurt(random.choice(weapon.damage_range))
+                        e.hurt(weapon.damage)
                     elif e.dist_squared <= max_range ** 2:
-                        e.hurt(random.choice(weapon.damage_range))
+                        e.hurt(weapon.damage)
                     break
 
         # Shooting animation system
@@ -629,7 +637,7 @@ class Enemy(Sprite):
 
         self.home_room = []
         for room_point in visited:
-            if (self.home[0] - room_point[0])**2 + (self.home[1] - room_point[1])**2 <= self.wandering_radius**2:
+            if squared_dist(self.home, room_point) <= self.wandering_radius**2:
                 self.home_room.append(room_point)
 
     def get_row_and_column(self, moved):
@@ -693,9 +701,11 @@ class Enemy(Sprite):
         player_hit = random.randint(0, int(32 / self.accuracy)) < speed_factor - dist_from_player
         if player_hit:
             if dist_from_player < 2:
-                damage = random.randint(1, 55)
+                damage = random.randint(20, 30)
+            elif dist_from_player > 4:
+                damage = random.randint(0, 10)
             else:
-                damage = random.randint(1, 35)
+                damage = random.randint(10, 20)
             PLAYER.hurt(int(damage * self.damage_multiplier), self)
 
     def hurt(self, damage):
@@ -1228,6 +1238,10 @@ class Level:
         self.start(self.nr + 1)
 
 
+def squared_dist(from_, to):
+    return (from_[0] - to[0])**2 + (from_[1] - to[1])**2
+
+
 def fixed_angle(angle):
     # Makes sure all angles stay between -pi and pi
 
@@ -1252,9 +1266,7 @@ def can_see(from_, to, viewangle=0.0, fov=0.0):
 
     # Check if there is something between end and start point
     ray_x, ray_y = simple_raycast(angle_to_end, from_)
-    ray_dist_squared = (start_x - ray_x) ** 2 + (start_y - ray_y) ** 2
-    end_dist_squared = (start_x - end_x) ** 2 + (start_y - end_y) ** 2
-    return ray_dist_squared > end_dist_squared  # Returns True if interception farther than end point
+    return squared_dist(from_, (ray_x, ray_y)) > squared_dist(from_, to)  # True if interception farther than end point
 
 
 def dynamic_colour(current, maximum):
@@ -1748,5 +1760,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(1)
+    LEVEL.start(5)
     pygame.quit()
