@@ -1,7 +1,6 @@
 # TO DO:
-# Create levels
 # Balance enemies and weapons
-# MAYBE make bosses be able to shoot you better around corners
+# Create levels
 
 # NOTES:
 # Game's tick rate is at 30
@@ -11,6 +10,12 @@
 # Enemies can travel through Dynamic and Locked doors, but not Static or Boss doors
 # Killing a boss gives the player a key
 # There is no support for multiple bosses in one level
+
+# Sound Channels:
+# 0 = door and pickup sounds
+# 1 = player's weapon sounds
+# 2 - 6 = normal enemy sounds
+# 7 = boss sounds
 
 
 class Player:
@@ -47,6 +52,8 @@ class Player:
             if self.hp + damage > last_chance_hp:
                 self.hp = last_chance_hp
             else:
+                for channel_id in range(8):
+                    pygame.mixer.Channel(channel_id).fadeout(150)
                 LEVEL.restart(enemy)
 
     def rotate(self, radians):
@@ -176,7 +183,7 @@ class Player:
 
 class Door:
     type = 'Normal'
-    speed = 0.05
+    speed = 0.065
     open_ticks = 90
 
     def __init__(self, map_pos, tile_value):
@@ -190,9 +197,17 @@ class Door:
     def __eq__(self, other):
         return (self.x, self.y) == (other.x, other.y)
 
+    def play_sound(self, sound):
+        volume = (1 - sqrt(squared_dist((PLAYER.x, PLAYER.y), (self.x + 0.5, self.y + 0.5))) / 32) ** 2
+        if volume > 0:
+            sound.set_volume(volume)
+            sound.play()
+
     def move(self):
         if self.state > 0:
             if self.state == 1:  # Opening
+                if self.opened_state == 0:
+                    self.play_sound(self.open_sound)
                 self.opened_state += Door.speed
                 if self.opened_state > 1:
                     TILEMAP[self.y][self.x] = 0  # Make tile walkable
@@ -210,6 +225,8 @@ class Door:
                         self.state += 1
 
             elif self.state == 3:  # Closing
+                if self.opened_state == 1:
+                    self.play_sound(self.close_sound)
                 self.opened_state -= Door.speed
                 if self.opened_state < 0:
                     self.opened_state = 0
@@ -234,12 +251,14 @@ class BossDoor(Door):
     def move(self):
         if self.state > 0:
             if self.state == 1 and not self.locked:  # Opening
-                if self.opened_state == 0 and len(self.door_fronts) == 2:
-                    player_pos = (PLAYER.x, PLAYER.y)
-                    if squared_dist(player_pos, self.door_fronts[0]) < squared_dist(player_pos, self.door_fronts[1]):
-                        del self.door_fronts[0]
-                    else:
-                        del self.door_fronts[1]
+                if self.opened_state == 0:
+                    self.play_sound(self.open_sound)
+                    if len(self.door_fronts) == 2:
+                        player_pos = (PLAYER.x, PLAYER.y)
+                        if squared_dist(player_pos, self.door_fronts[0]) < squared_dist(player_pos, self.door_fronts[1]):
+                            del self.door_fronts[0]
+                        else:
+                            del self.door_fronts[1]
                 self.opened_state += Door.speed
                 if self.opened_state > 1:
                     TILEMAP[self.y][self.x] = 0  # Make tile walkable
@@ -269,6 +288,8 @@ class BossDoor(Door):
                         self.state += 1
 
             elif self.state == 3:  # Closing
+                if self.opened_state == 1:
+                    self.play_sound(self.close_sound)
                 self.opened_state -= Door.speed
                 if self.opened_state < 0:
                     self.opened_state = 0
@@ -280,6 +301,8 @@ class WeaponModel:
     w = h = 576
 
     def __init__(self):
+        self.sound_channel = pygame.mixer.Channel(1)
+
         self.shooting = False
         self.switching = 0
 
@@ -355,10 +378,13 @@ class WeaponModel:
                     for i in range(weapon.shot_bullets):
                         bullet_hitscan(-weapon.max_x_spread + round(i * x_spread_difference))
 
+                self.sound_channel.play(self.weapon.sounds.fire)
+
     def switch_weapons(self):
         self.ticks += 1
         if self.ticks == WeaponModel.switch_ticks / 2:
             PLAYER.weapon_nr = self.switching  # Switches weapon model when halfway through
+            self.sound_channel.stop()
 
         if self.ticks <= WeaponModel.switch_ticks / 2:
             self.draw_y += 40
@@ -370,6 +396,13 @@ class WeaponModel:
 
     def update(self):
         self.weapon = WEAPONS[PLAYER.weapon_nr]
+
+        if self.weapon.sounds.idle:
+           if not self.shooting:
+                if self.sound_channel.get_sound() == self.weapon.sounds.idle:
+                    self.sound_channel.queue(self.weapon.sounds.idle)
+                else:
+                    self.sound_channel.play(self.weapon.sounds.idle)
 
         if self.shooting:
             self.shoot(self.weapon)
@@ -594,6 +627,8 @@ class Enemy(Sprite):
         self.chasing = False
 
         # Take attributes from ENEMY_INFO based on spritesheet
+        self.channel = pygame.mixer.Channel(ENEMY_INFO[self.sheet].id)
+        self.sounds = ENEMY_INFO[self.sheet].sounds
         self.hp = ENEMY_INFO[self.sheet].hp
         self.speed = ENEMY_INFO[self.sheet].speed
         self.wandering_radius = ENEMY_INFO[self.sheet].wandering_radius
@@ -691,8 +726,6 @@ class Enemy(Sprite):
         self.anim_ticks = 0
 
     def shoot(self):
-        # Modified enemy shot hit and damage calculation logic from original wolfenstein
-
         # speed_factor ranges between 24 (when player's running) and 32 (when not)
         speed_factor = 24 + (32 - 24) * (1 - PLAYER.total_movement / PLAYER.speed)
 
@@ -717,6 +750,7 @@ class Enemy(Sprite):
             self.anim_ticks = 0
             self.row = 5
             self.column = 0
+            self.play_sound(self.sounds.death)
         else:
             if random.randint(0, 100) < self.pain_chance * 100:
                 self.status = 'hit'
@@ -752,6 +786,16 @@ class Enemy(Sprite):
                 d.state = 1
                 DOORS.append(d)
 
+    def play_sound(self, sound, adjust_volume=True):
+        # Plays a required sound
+        # If enemy is far from enemy sound will be quieter
+        volume = 1
+        if adjust_volume:
+            volume -= sqrt(self.dist_squared) / 24
+        if volume > 0:
+            sound.set_volume(volume)
+            self.channel.play(sound)
+
     def update(self):
         self.handle_doors_underneath()
 
@@ -786,6 +830,7 @@ class Enemy(Sprite):
 
                 self.column += 1
                 if self.column in self.shot_columns:
+                    self.play_sound(self.sounds.attack)
                     if self.ready_to_shoot():
                         self.shoot()
 
@@ -807,7 +852,10 @@ class Enemy(Sprite):
             enemy_right_side = (self.x + dir_x, self.y + dir_y)
             if can_see((PLAYER.x, PLAYER.y), enemy_left_side) or can_see((PLAYER.x, PLAYER.y), enemy_right_side):
                 saw_player = True
-                self.chasing = True
+                if not self.chasing:
+                    self.chasing = True
+                    if self.sounds.appearance:
+                        self.play_sound(self.sounds.appearance)
                 self.target_tile = (int(PLAYER.x), int(PLAYER.y))
             elif self.last_saw_ticks < self.memory:
                 self.chasing = True
@@ -903,8 +951,11 @@ class Boss(Enemy):
         self.path = []
         self.status = 'sleeping'
         self.chasing = False
+        self.seen_player = False
 
         # Take attributes from ENEMY_INFO based on spritesheet
+        self.channel = pygame.mixer.Channel(ENEMY_INFO[self.sheet].id)
+        self.sounds = ENEMY_INFO[self.sheet].sounds
         self.max_hp = self.hp = ENEMY_INFO[spritesheet].hp
         self.speed = ENEMY_INFO[spritesheet].speed
         self.accuracy = ENEMY_INFO[spritesheet].accuracy
@@ -942,6 +993,7 @@ class Boss(Enemy):
             self.row = 2
             self.column = 0
             PLAYER.has_key = True
+            self.play_sound(self.sounds.death)
 
     def update(self):
         self.handle_doors_underneath()
@@ -966,6 +1018,8 @@ class Boss(Enemy):
                 self.anim_ticks = 0
                 self.column += 1
                 if self.column in self.shot_columns:
+                    if self.channel.get_sound() != self.sounds.appearance:
+                        self.play_sound(self.sounds.attack)
                     if self.ready_to_shoot():
                         self.shoot()
 
@@ -974,6 +1028,8 @@ class Boss(Enemy):
                     self.stop_animation()
 
         elif self.status == 'default':
+            if not self.channel.get_busy():
+                self.play_sound(self.sounds.step)
             if not self.path:
                 self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
             step_x, step_y = self.path[0]
@@ -993,6 +1049,9 @@ class Boss(Enemy):
                     self.x = step_x
                     self.y = step_y
                     self.path = pathfinding.pathfind((self.x, self.y), (PLAYER.x, PLAYER.y))
+                    if not self.seen_player and can_see((self.x, self.y), (PLAYER.x, PLAYER.y)):
+                        self.play_sound(self.sounds.appearance, False)
+                        self.seen_player = True
 
                     if self.ready_to_shoot():
                         self.start_shooting()
@@ -1017,6 +1076,7 @@ class BossHealthBar:
 
     def start_showing(self, boss):
         self.boss = boss
+        self.boss_image = self.boss.sheet.subsurface(0, 0, TEXTURE_SIZE, TEXTURE_SIZE)
         self.visible = True
 
     def draw(self):
@@ -1034,8 +1094,7 @@ class BossHealthBar:
             pygame.draw.rect(DISPLAY, (0, 0, 0), (self.x - 4, self.y - 4, BossHealthBar.w + 8, BossHealthBar.h + 8))
             pygame.draw.rect(DISPLAY, colour, (self.x, self.y, BossHealthBar.w * health_percentage, BossHealthBar.h))
 
-            boss_image = self.boss.sheet.subsurface(self.boss.column * 64, self.boss.row * 64, 64, 64)
-            DISPLAY.blit(boss_image, (self.x - 32, self.y + BossHealthBar.h / 2 - 32))
+            DISPLAY.blit(self.boss_image, (self.x - 32, self.y + BossHealthBar.h / 2 - 32))
 
 
 class Level:
@@ -1305,7 +1364,7 @@ def send_rays():
             x_diff = abs(d.x + 0.5 - ray_x)
             y_diff = abs(d.y + 0.5 - ray_y)
             if (x_diff == 0.5 and y_diff <= 0.5) or (y_diff == 0.5 and x_diff <= 0.5):
-                texture = DOOR_SIDE_TEXTURE
+                texture = Door.side_texture
                 break
         else:
             texture = TILE_VALUES_INFO[tile_value].texture
@@ -1551,6 +1610,7 @@ def events():
             if event.type == pygame.KEYDOWN:
                 if event.key == K_ESCAPE:
                     PAUSED = False
+                    update_sound_channels()
                 elif event.key == K_F1:
                     SHOW_FPS = not SHOW_FPS
                 elif event.key == K_RETURN:
@@ -1562,6 +1622,7 @@ def events():
             if event.type == pygame.KEYDOWN:
                 if event.key == K_ESCAPE:
                     PAUSED = True
+                    update_sound_channels()
                 elif event.key == K_F1:
                     SHOW_FPS = not SHOW_FPS
 
@@ -1616,6 +1677,7 @@ def handle_objects_under_player():
         OBJECTS.append(Object((int(PLAYER.x), int(PLAYER.y)), tile_value))
         if TILE_VALUES_INFO[tile_value].desc == 'Dynamic':
             colour = None
+            type = 0  # 0 = item, 1 = weapon
             # First handle all now-weapon pickups
             if tile_value == -5:
                 PLAYER.has_key = True
@@ -1639,24 +1701,32 @@ def handle_objects_under_player():
                         PLAYER.weapon_loadout.append(5)
                         WEAPON_MODEL.switching = 5
                     colour = (0, 0, 255)
+                    type = 1
                 elif tile_value == -2:
                     if not 4 in PLAYER.weapon_loadout:
                         PLAYER.weapon_loadout.append(4)
                         WEAPON_MODEL.switching = 4
                     colour = (0, 0, 255)
+                    type = 1
                 elif tile_value == -3:
                     if not 3 in PLAYER.weapon_loadout:
                         PLAYER.weapon_loadout.append(3)
                         WEAPON_MODEL.switching = 3
                     colour = (0, 0, 255)
+                    type = 1
                 elif tile_value == -4:
                     if not 2 in PLAYER.weapon_loadout:
                         PLAYER.weapon_loadout.append(2)
                         WEAPON_MODEL.switching = 2
                     colour = (0, 0, 255)
+                    type = 1
             if colour:
                 EFFECTS.update(colour)
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
+                if type == 0:
+                    ITEM_PICKUP_SOUND.play()
+                else:
+                    WEAPON_PICKUP_SOUND.play()
 
 
 def draw_frame():
@@ -1684,6 +1754,14 @@ def draw_frame():
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
     for obj in to_draw:
         obj.draw()
+
+
+def update_sound_channels():
+    for channel_id in range(8):
+        if PAUSED:
+            pygame.mixer.Channel(channel_id).pause()
+        else:
+            pygame.mixer.Channel(channel_id).unpause()
 
 
 def draw_pause_overlay():
@@ -1728,6 +1806,7 @@ if __name__ == '__main__':
 
     from game.settings import *
     import game.graphics as graphics
+    import game.sounds as sounds
     import game.enemies as enemies
     import game.weapons as weapons
     import game.pathfinding as pathfinding
@@ -1737,6 +1816,7 @@ if __name__ == '__main__':
     WallColumn.width = int(D_W / RAYS_AMOUNT)
 
     # Pygame stuff
+    pygame.mixer.pre_init(11025, -16, 1, 256)
     pygame.init()
     pygame.display.set_caption('Raycaster')
     DISPLAY = pygame.display.set_mode((D_W, D_H))
@@ -1749,10 +1829,16 @@ if __name__ == '__main__':
     GAME_FONT = pygame.font.Font('../font/LCD_Solid.ttf', 32)
     HUD = Hud()
 
-    DOOR_SIDE_TEXTURE = graphics.get_door_side_texture()
+    Door.side_texture = graphics.get_door_side_texture()
     ENEMY_INFO = enemies.get_enemy_info()
     TILE_VALUES_INFO = graphics.get_tile_values_info(TEXTURE_SIZE, ENEMY_INFO)
     WEAPONS = weapons.get()
+
+    # Sounds
+    Door.open_sound,\
+    Door.close_sound,\
+    ITEM_PICKUP_SOUND,\
+    WEAPON_PICKUP_SOUND = sounds.get()
 
     QUIT = False
     PAUSED = False
@@ -1760,5 +1846,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(5)
+    LEVEL.start(3)
     pygame.quit()
