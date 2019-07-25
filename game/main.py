@@ -1,5 +1,4 @@
 # TO DO:
-# Balance enemies and weapons
 # Create levels
 
 # NOTES:
@@ -313,13 +312,13 @@ class WeaponModel:
         self.update()
 
     def shoot(self, weapon):
-        def bullet_hitscan(x_spread, max_range=False):
+        def get_shootable_enemies():
             # Moving weapon x and y behind the player so enemies up close will be harder to miss
             weapon_x = PLAYER.x - PLAYER.dir_x / 5
             weapon_y = PLAYER.y - PLAYER.dir_y / 5
             shootable_enemies = []
             for e in ENEMIES:
-                if not e.status == 'dead':
+                if not e.status == 'dead' and e.needs_to_be_drawn:
                     angle = fixed_angle(e.angle_from_player + pi / 2)
                     if e.type == 'Normal':
                         dir_x = cos(angle) / 4
@@ -340,16 +339,17 @@ class WeaponModel:
                     if hittable_amount:
                         shootable_enemies.append((e, hittable_amount))
             shootable_enemies.sort(key=lambda x: x[0].dist_squared)  # Sort for closest dist first
+            return shootable_enemies
 
+        def bullet_hitscan(shootable_enemies, x_spread, max_range=False):
             for e, hittable_amount in shootable_enemies:
                 enemy_center_display_x = e.display_x + x_spread + (e.width / 2)
                 x_offset = abs(H_W - enemy_center_display_x)
                 hittable_offset = e.width / 2 * hittable_amount
                 if hittable_offset > x_offset:  # If bullet more or less on enemy
-                    if not max_range:
-                        e.hurt(weapon.damage)
-                    elif e.dist_squared <= max_range ** 2:
-                        e.hurt(weapon.damage)
+                    if not max_range or e.dist_squared <= max_range ** 2:
+                        pain = self.weapon.pain_chance * e.pain_chance * 100 >= random.randint(0, 100)
+                        e.hurt(weapon.damage, pain)
                     break
 
         # Shooting animation system
@@ -367,16 +367,18 @@ class WeaponModel:
                     self.shooting = False
 
             if self.column == weapon.shot_column:
+                shootable_enemies = get_shootable_enemies()
+
                 if weapon.type == 'Melee':
-                    bullet_hitscan(0, weapon.range)
+                    bullet_hitscan(shootable_enemies, 0, weapon.range)
 
                 elif weapon.type == 'Hitscan':
-                    bullet_hitscan(random.randint(-weapon.max_x_spread, weapon.max_x_spread))
+                    bullet_hitscan(shootable_enemies, random.randint(-weapon.max_x_spread, weapon.max_x_spread))
 
                 elif weapon.type == 'Shotgun':
                     x_spread_difference = (weapon.max_x_spread * 2) / (weapon.shot_bullets - 1)
                     for i in range(weapon.shot_bullets):
-                        bullet_hitscan(-weapon.max_x_spread + round(i * x_spread_difference))
+                        bullet_hitscan(shootable_enemies, -weapon.max_x_spread + round(i * x_spread_difference))
 
                 self.sound_channel.play(self.weapon.sounds.fire)
 
@@ -611,6 +613,7 @@ class Object(Sprite):
 
 class Enemy(Sprite):
     type = 'Normal'
+    max_draw_dist = 15  # Enemies farther than 15 units won't be drawn in the frame
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = pos
@@ -741,7 +744,7 @@ class Enemy(Sprite):
                 damage = random.randint(10, 20)
             PLAYER.hurt(int(damage * self.damage_multiplier), self)
 
-    def hurt(self, damage):
+    def hurt(self, damage, pain):
         self.hp -= damage
         if self.hp <= 0:
             self.hp = 0
@@ -751,12 +754,11 @@ class Enemy(Sprite):
             self.row = 5
             self.column = 0
             self.play_sound(self.sounds.death)
-        else:
-            if random.randint(0, 100) < self.pain_chance * 100:
-                self.status = 'hit'
-                self.anim_ticks = 0
-                self.row = 5
-                self.column = 7
+        elif pain:
+            self.status = 'hit'
+            self.anim_ticks = 0
+            self.row = 5
+            self.column = 7
 
     def strafe(self):
         # Gets new path to a random empty neighbour tile (if possible)
@@ -926,16 +928,19 @@ class Enemy(Sprite):
         self.update_for_drawing()
 
     def update_for_drawing(self):
-        self.perp_dist = self.delta_x * PLAYER.dir_x + self.delta_y * PLAYER.dir_y
-        if self.perp_dist > 0:
-            self.image = self.sheet.subsurface(self.column * TEXTURE_SIZE, self.row * TEXTURE_SIZE,
-                                               TEXTURE_SIZE, TEXTURE_SIZE)
+        self.needs_to_be_drawn = False
+        if squared_dist((self.x, self.y), (PLAYER.x, PLAYER.y)) < self.max_draw_dist**2:
+            self.needs_to_be_drawn = True
+            self.perp_dist = self.delta_x * PLAYER.dir_x + self.delta_y * PLAYER.dir_y
+            if self.perp_dist > 0:
+                self.image = self.sheet.subsurface(self.column * TEXTURE_SIZE, self.row * TEXTURE_SIZE,
+                                                   TEXTURE_SIZE, TEXTURE_SIZE)
 
-            self.height = self.width = int(Drawable.constant / self.perp_dist)
-            if self.height > D_H:
-                self.adjust_image_height()
+                self.height = self.width = int(Drawable.constant / self.perp_dist)
+                if self.height > D_H:
+                    self.adjust_image_height()
 
-            self.calc_display_xy(self.angle_from_player)
+                self.calc_display_xy(self.angle_from_player)
 
 
 class Boss(Enemy):
@@ -1750,7 +1755,10 @@ def draw_frame():
     pygame.draw.rect(DISPLAY, LEVEL.floor_colour, ((0, H_H), (D_W, H_H)))  # Floor
 
     # Sorting objects by perp_dist so those further away are drawn first
-    to_draw = WALLS + ENEMIES + OBJECTS
+    to_draw = WALLS + OBJECTS
+    for e in ENEMIES:
+        if e.needs_to_be_drawn:
+            to_draw.append(e)
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
     for obj in to_draw:
         obj.draw()
@@ -1846,5 +1854,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(3)
+    LEVEL.start(7)
     pygame.quit()

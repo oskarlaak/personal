@@ -93,14 +93,14 @@ def get_enemy_info():
             hitler:         Boss(7, EnemySounds(scheisse, chaingun, death_5, boss_step),
                                  666, 0.07, 1.00, 1.50, [3, 4, 5, 6, 7]),
             guard:   Enemy(2, EnemySounds(achtung, pistol, death_2),
-                           20, 0.07, 2,  7, 1.00, 1.00, 300,  60, 1.00, [4]),
+                           20, 0.07, 2, 4, 1.00, 1.00, 300,  60, 1.00, [4]),
             dog:     Enemy(3, EnemySounds(dog_attack, dog_attack, dog_death),
-                            5, 0.08, 4,  1, 9.99, 1.40, 100,   0, 0.00, [3]),
+                            5, 0.10, 4, 1, 9.99, 1.40, 100,   0, 0.00, [3]),
             officer: Enemy(4, EnemySounds(halt_1, pistol, death_3),
-                           40, 0.08, 2, 10, 1.10, 1.00, 500,  90, 0.85, [2, 4]),
+                           40, 0.08, 2, 6, 1.10, 1.00, 500,  90, 0.85, [2, 4]),
             ss:      Enemy(5, EnemySounds(halt_2, heavy_machine_gun, death_4),
-                           50, 0.06, 3, 15, 1.05, 1.10, 500, 180, 0.50, [3, 4, 5]),
+                           50, 0.06, 3, 7, 1.05, 1.10, 500, 180, 0.50, [3, 4, 5]),
             mutant:  Enemy(6, EnemySounds(None, pistol, death_2),
-                           30, 0.07, 5, 10, 1.00, 0.60, 400, 180, 0.75, [1, 3])
+                           30, 0.07, 5, 5, 1.00, 0.60, 400, 180, 0.75, [1, 3])
         }
         return enemy_info
