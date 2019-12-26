@@ -87,11 +87,11 @@ def get_enemy_info():
     else:
         enemy_info = {
             ottogiftmacher: Boss(7, EnemySounds(halten_sie, heavy_pistol, scheisse_koph, boss_step),
-                                 300, 0.09, 2.00, 2.00, [4]),
+                                 1000, 0.11, 5.00, 5.00, [3]),
             hansgrosse:     Boss(7, EnemySounds(guten_tag, chaingun, death_1, boss_step),
-                                 450, 0.09, 1.00, 1.00, [2, 3, 4, 5, 6, 7]),
+                                  666, 0.10, 1.00, 3.00, [2, 3, 4, 5, 6, 7]),
             hitler:         Boss(7, EnemySounds(scheisse, chaingun, death_5, boss_step),
-                                 666, 0.07, 1.00, 1.50, [3, 4, 5, 6, 7]),
+                                 1666, 0.07, 1.00, 3.50, [3, 4, 5, 6, 7]),
             guard:   Enemy(2, EnemySounds(achtung, pistol, death_2),
                            20, 0.07, 2, 4, 1.00, 1.00, 300,  60, 1.00, [4]),
             dog:     Enemy(3, EnemySounds(dog_attack, dog_attack, dog_death),

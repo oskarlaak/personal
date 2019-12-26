@@ -1,9 +1,12 @@
 # TO DO:
 # Create levels
+# Level number hud
+# Send messages when trying to unlock locked doors without key, picking stuff up
+# Add render_text as a function
 
 # NOTES:
 # Game's tick rate is at 30
-# Due to bad optimization, levels can't have big open areas without being laggy
+# Due to poor optimization, big open areas will drop fps
 # All timed events are tick based
 # All angles are in radians
 # Enemies can travel through Dynamic and Locked doors, but not Static or Boss doors
@@ -444,10 +447,18 @@ class Hud:
         def render_text(text, colour, background=None):
             return GAME_FONT.render(text, False, colour, background)
 
+        # Messages
+        y = Hud.safezone_h
+        for m in MESSAGES:
+            message = render_text(m.text, m.colour)
+            message.set_alpha(m.alpha)
+            DISPLAY.blit(message, (Hud.safezone_w, y))
+            y += Hud.font_h
+
         # FPS counter
         if SHOW_FPS:
             fps_counter = render_text(str(ceil(CLOCK.get_fps())), (0, 255, 0))
-            DISPLAY.blit(fps_counter, (Hud.safezone_w, Hud.safezone_h))
+            DISPLAY.blit(fps_counter, (D_W - Hud.safezone_w - fps_counter.get_width(), Hud.safezone_h))
 
         # Weapon HUD
         WEAPON_MODEL.draw()
@@ -480,6 +491,28 @@ class Hud:
 
         BOSSHEALTHBAR.draw()
         EFFECTS.draw()
+
+
+class Message:
+    display_ticks = 150  # How many ticks message stays on screen
+    fade_speed = 5  # Rate at which text alpha decreases after display_ticks has gone down to 0
+    max_amount = 10  # Max amount of messages that can be on screen
+
+    def __init__(self, text, colour=(255, 255, 255)):
+        self.text = text
+        self.colour = colour
+        self.ticks = Message.display_ticks
+        self.alpha = 255
+        if len(MESSAGES) > Message.max_amount:
+            del MESSAGES[0]
+
+    def update(self):
+        if self.ticks == 0:
+            self.alpha -= Message.fade_speed
+            if self.alpha <= 0:
+                MESSAGES.remove(self)
+        else:
+            self.ticks -= 1
 
 
 class CameraPlane:
@@ -945,6 +978,7 @@ class Enemy(Sprite):
 
 class Boss(Enemy):
     type = 'Boss'
+    pain_chance = 0.00
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = self.home = pos
@@ -988,7 +1022,7 @@ class Boss(Enemy):
     def ready_to_shoot(self):
         return can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
 
-    def hurt(self, damage):
+    def hurt(self, damage, pain):
         self.hp -= damage
         if self.hp <= 0:
             self.hp = 0
@@ -1176,9 +1210,11 @@ class Level:
         pathfinding.setup(TILEMAP, TILE_VALUES_INFO)
 
     def start(self, level_nr):
+        global TIME
+        TIME = 0
+
         self.load(level_nr)
         update_gameobjects()
-
         game_loop()
 
     def restart(self, enemy=None):
@@ -1265,6 +1301,15 @@ class Level:
         PLAYER.save_weapon_loadout()
 
         global QUIT
+        seconds = int(TIME / 30)  # Rounds time spent down, 45.8 seconds will display 45
+        minutes = 0
+        while seconds >= 60:
+            minutes += 1
+            seconds -= 60
+        dead = 0
+        for e in ENEMIES:
+            if e.status == 'dead':
+                dead += 1
         overlay_alpha = 0
         text_alpha = 0
         continued = False
@@ -1292,9 +1337,11 @@ class Level:
             DISPLAY.blit(black_overlay, (0, 0))
 
             level_finished = GAME_FONT.render('LEVEL FINISHED', False, (255, 255, 255))
-            level_finished.set_alpha(abs(text_alpha))
-            DISPLAY.blit(level_finished, ((D_W - level_finished.get_width()) / 2,
-                                          (D_H - level_finished.get_height()) / 2))
+            time_spent = GAME_FONT.render('TIME: {}m {}s'.format(minutes, seconds), False, (255, 255, 255))
+            kills = GAME_FONT.render('KILLS: {}/{}'.format(len(ENEMIES), dead), False, (255, 255, 255))
+            DISPLAY.blit(level_finished, ((D_W - level_finished.get_width()) / 2, 300))
+            DISPLAY.blit(time_spent, ((D_W - time_spent.get_width()) / 2, 400))
+            DISPLAY.blit(kills, ((D_W - kills.get_width()) / 2, 500))
 
             pygame.display.flip()
             CLOCK.tick(30)
@@ -1669,8 +1716,9 @@ def update_gameobjects():
             del DOORS[c]
     for e in ENEMIES:
         e.update()
+    for m in MESSAGES:
+        m.update()
     WEAPON_MODEL.update()
-
     handle_objects_under_player()
 
 
@@ -1782,12 +1830,14 @@ def draw_pause_overlay():
 
 
 def game_loop():
+    global TIME
     while not QUIT:
         events()
         if not PAUSED:
             PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
             PLAYER.handle_movement()
             update_gameobjects()
+            TIME += 1
 
         send_rays()
         draw_frame()
@@ -1835,6 +1885,7 @@ if __name__ == '__main__':
 
     CAMERA_PLANE = CameraPlane(RAYS_AMOUNT, FOV)
     GAME_FONT = pygame.font.Font('../font/LCD_Solid.ttf', 32)
+    MESSAGES = []
     HUD = Hud()
 
     Door.side_texture = graphics.get_door_side_texture()
@@ -1854,5 +1905,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(7)
+    LEVEL.start(1)
     pygame.quit()
