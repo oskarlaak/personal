@@ -1,8 +1,6 @@
 # TO DO:
 # Create levels
 # Level number hud
-# Send messages when trying to unlock locked doors without key, picking stuff up
-# Add render_text as a function
 
 # NOTES:
 # Game's tick rate is at 30
@@ -50,13 +48,13 @@ class Player:
         EFFECTS.update((255, 0, 0))
         self.hp -= damage
         if self.hp <= 0:
-            last_chance_hp = random.randint(1, 10)
-            if self.hp + damage > last_chance_hp:
-                self.hp = last_chance_hp
-            else:
-                for channel_id in range(8):
-                    pygame.mixer.Channel(channel_id).fadeout(150)
-                LEVEL.restart(enemy)
+            #last_chance_hp = random.randint(1, 10)
+            #if self.hp + damage > last_chance_hp:
+            #    self.hp = last_chance_hp
+            #else:
+            for channel_id in range(8):
+                pygame.mixer.Channel(channel_id).fadeout(150)
+            LEVEL.restart(enemy)
 
     def rotate(self, radians):
         self.viewangle = fixed_angle(self.viewangle + radians)
@@ -185,6 +183,7 @@ class Player:
 
 class Door:
     type = 'Normal'
+    locked = False  # Only needed to avoid AttributeError
     speed = 0.065
     open_ticks = 90
 
@@ -444,14 +443,10 @@ class Hud:
     font_h = 28
 
     def draw(self):
-        def render_text(text, colour, background=None):
-            return GAME_FONT.render(text, False, colour, background)
-
         # Messages
         y = Hud.safezone_h
-        for m in MESSAGES:
-            message = render_text(m.text, m.colour)
-            message.set_alpha(m.alpha)
+        for m in reversed(MESSAGES):
+            message = render_text(m.text, m.colour, m.alpha)
             DISPLAY.blit(message, (Hud.safezone_w, y))
             y += Hud.font_h
 
@@ -495,7 +490,7 @@ class Hud:
 
 class Message:
     display_ticks = 150  # How many ticks message stays on screen
-    fade_speed = 5  # Rate at which text alpha decreases after display_ticks has gone down to 0
+    fade_speed = 15  # Rate at which text alpha decreases after display_ticks has gone down to 0
     max_amount = 10  # Max amount of messages that can be on screen
 
     def __init__(self, text, colour=(255, 255, 255)):
@@ -503,7 +498,7 @@ class Message:
         self.colour = colour
         self.ticks = Message.display_ticks
         self.alpha = 255
-        if len(MESSAGES) > Message.max_amount:
+        if len(MESSAGES) == Message.max_amount:
             del MESSAGES[0]
 
     def update(self):
@@ -770,11 +765,11 @@ class Enemy(Sprite):
         player_hit = random.randint(0, int(32 / self.accuracy)) < speed_factor - dist_from_player
         if player_hit:
             if dist_from_player < 2:
-                damage = random.randint(20, 30)
+                damage = random.randint(21, 30)
             elif dist_from_player > 4:
-                damage = random.randint(0, 10)
+                damage = random.randint(1, 10)
             else:
-                damage = random.randint(10, 20)
+                damage = random.randint(11, 20)
             PLAYER.hurt(int(damage * self.damage_multiplier), self)
 
     def hurt(self, damage, pain):
@@ -1032,6 +1027,7 @@ class Boss(Enemy):
             self.row = 2
             self.column = 0
             PLAYER.has_key = True
+            MESSAGES.append(Message('Picked up a key'))
             self.play_sound(self.sounds.death)
 
     def update(self):
@@ -1211,7 +1207,9 @@ class Level:
 
     def start(self, level_nr):
         global TIME
+        global MESSAGES
         TIME = 0
+        MESSAGES = []
 
         self.load(level_nr)
         update_gameobjects()
@@ -1276,7 +1274,7 @@ class Level:
             draw_frame()
 
             text_alpha -= 15
-            if text_alpha < -255:
+            if text_alpha <= -255:
                 text_alpha = 255
 
             if overlay_alpha != 128:
@@ -1286,8 +1284,7 @@ class Level:
             black_overlay.fill((0, 0, 0))
             DISPLAY.blit(black_overlay, (0, 0))
 
-            you_died = GAME_FONT.render('YOU DIED', False, (255, 255, 255))
-            you_died.set_alpha(abs(text_alpha))
+            you_died = render_text('YOU DIED', (255, 255, 255), abs(text_alpha))
             DISPLAY.blit(you_died, ((D_W - you_died.get_width()) / 2, (D_H - you_died.get_height()) / 2))
 
             pygame.display.flip()
@@ -1326,7 +1323,7 @@ class Level:
             draw_frame()
 
             text_alpha -= 15
-            if text_alpha < -255:
+            if text_alpha <= -255:
                 text_alpha = 255
 
             if overlay_alpha != 128:
@@ -1336,12 +1333,14 @@ class Level:
             black_overlay.fill((0, 0, 0))
             DISPLAY.blit(black_overlay, (0, 0))
 
-            level_finished = GAME_FONT.render('LEVEL FINISHED', False, (255, 255, 255))
-            time_spent = GAME_FONT.render('TIME: {}m {}s'.format(minutes, seconds), False, (255, 255, 255))
-            kills = GAME_FONT.render('KILLS: {}/{}'.format(len(ENEMIES), dead), False, (255, 255, 255))
-            DISPLAY.blit(level_finished, ((D_W - level_finished.get_width()) / 2, 300))
-            DISPLAY.blit(time_spent, ((D_W - time_spent.get_width()) / 2, 400))
-            DISPLAY.blit(kills, ((D_W - kills.get_width()) / 2, 500))
+            level_finished = render_text('LEVEL FINISHED', (255, 255, 255))
+            time_spent = render_text('TIME: {}m {}s'.format(minutes, seconds), (255, 255, 255))
+            kills = render_text('KILLS: {}/{}'.format(len(ENEMIES), dead), (255, 255, 255))
+            press_space_to_continue = render_text('Press SPACE to continue', (255, 255, 255), abs(text_alpha))
+            DISPLAY.blit(level_finished, ((D_W - level_finished.get_width()) / 2, 256))
+            DISPLAY.blit(time_spent, ((D_W - time_spent.get_width()) / 2, 320))
+            DISPLAY.blit(kills, ((D_W - kills.get_width()) / 2, 384))
+            DISPLAY.blit(press_space_to_continue, ((D_W - press_space_to_continue.get_width()) / 2, 448))
 
             pygame.display.flip()
             CLOCK.tick(30)
@@ -1684,13 +1683,21 @@ def events():
                     tile_value = TILEMAP[y][x]
                     tile_type = TILE_VALUES_INFO[tile_value].type
                     tile_desc = TILE_VALUES_INFO[tile_value].desc
-                    if tile_type == 'Door' and tile_desc != 'Static':
-                        if PLAYER.has_key or tile_desc == 'Dynamic' or tile_desc == 'Boss':
-                            for d in DOORS:
-                                # If found the right door and it's not in motion already
-                                if x == d.x and y == d.y:
-                                    d.state = 1
-                                    break
+                    if tile_type == 'Door':
+                        if tile_desc != 'Static':
+                            if PLAYER.has_key or tile_desc == 'Dynamic' or tile_desc == 'Boss':
+                                for d in DOORS:
+                                    # If found the right door and it's not in motion already
+                                    if x == d.x and y == d.y:
+                                        if not d.locked:
+                                            d.state = 1
+                                        else:
+                                            MESSAGES.append(Message('This door is now locked'))
+                                        break
+                            else:
+                                MESSAGES.append(Message('Opening this door requires a key'))
+                        else:
+                            MESSAGES.append(Message('Cannot open this door'))
                     elif tile_type == 'Wall' and tile_desc == 'End-trigger':
                         TILEMAP[y][x] += 1  # Change trigger block texture
                         LEVEL.finish()
@@ -1734,18 +1741,21 @@ def handle_objects_under_player():
             # First handle all now-weapon pickups
             if tile_value == -5:
                 PLAYER.has_key = True
+                MESSAGES.append(Message('Picked up a key'))
                 colour = (255, 255, 0)
             elif tile_value == -6:
                 if PLAYER.hp < PLAYER.max_hp:
                     PLAYER.hp += 10
                     if PLAYER.hp > PLAYER.max_hp:
                         PLAYER.hp = PLAYER.max_hp
+                    MESSAGES.append(Message('Health +10'))
                     colour = (0, 255, 0)
             elif tile_value == -7:
                 if PLAYER.hp < PLAYER.max_hp:
                     PLAYER.hp += 25
                     if PLAYER.hp > PLAYER.max_hp:
                         PLAYER.hp = PLAYER.max_hp
+                    MESSAGES.append(Message('Health +25'))
                     colour = (0, 255, 0)
             # Then handle weapon pickups
             if not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
@@ -1779,6 +1789,7 @@ def handle_objects_under_player():
                 if type == 0:
                     ITEM_PICKUP_SOUND.play()
                 else:
+                    MESSAGES.append(Message('Picked up {}'.format(WEAPONS[tile_value + len(WEAPONS)].name)))
                     WEAPON_PICKUP_SOUND.play()
 
 
@@ -1825,8 +1836,14 @@ def draw_pause_overlay():
     pause_overlay.set_alpha(128)
     pause_overlay.fill((0, 0, 0))
     DISPLAY.blit(pause_overlay, (0, 0))
-    paused = GAME_FONT.render('PAUSED', False, (255, 255, 255))
+    paused = render_text('PAUSED', (255, 255, 255))
     DISPLAY.blit(paused, ((D_W - paused.get_width()) / 2, (D_H - paused.get_height()) / 2))
+
+
+def render_text(text, colour, alpha=255):
+    image = GAME_FONT.render(text, False, colour)
+    image.set_alpha(alpha)
+    return image
 
 
 def game_loop():
@@ -1885,7 +1902,6 @@ if __name__ == '__main__':
 
     CAMERA_PLANE = CameraPlane(RAYS_AMOUNT, FOV)
     GAME_FONT = pygame.font.Font('../font/LCD_Solid.ttf', 32)
-    MESSAGES = []
     HUD = Hud()
 
     Door.side_texture = graphics.get_door_side_texture()
@@ -1905,5 +1921,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(1)
+    LEVEL.start(3)
     pygame.quit()
