@@ -75,13 +75,13 @@ def get():
     else:
         weapons = [None,  # Makes it so first weapon is index 1 instead of 0
         HitscanWeapon('Pistol', WeaponSounds(pistol_sound), pistol,
-                      1,  9, 14, 0.75, False, 0.000),
+                      1,  9, 14, 0.75, False, 0.00),
               Shotgun('Shotgun', WeaponSounds(shotgun_sound), shotgun,
-                      1, 24, 10, 0.30, False, 0.220,  9),
+                      1, 28, 10, 0.15, False, 0.18,  7),
         HitscanWeapon('Chaingun', WeaponSounds(chaingun_sound), chaingun,
-                      1,  4, 14, 0.25,  True, 0.130),
+                      1,  4, 14, 0.25,  True, 0.12),
               Shotgun('Super Shotgun', WeaponSounds(supershotgun_sound), supershotgun,
-                      1, 50, 10, 0.45, False, 0.350, 20),
+                      1, 50, 10, 0.20, False, 0.25, 14),
                 Melee('Chainsaw', WeaponSounds(chainsaw_sound, chainsaw_idle), chainsaw,
                       1,  4, 40, 1.00,  True, 1.25)
         ]

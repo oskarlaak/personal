@@ -2,6 +2,11 @@
 # Create levels
 # Level number hud
 
+# Optimization:
+# Don't draw a sprite if it is too large
+# Optimize the system which detect which enemies to draw
+# Optimize raycasting
+
 # NOTES:
 # Game's tick rate is at 30
 # Due to poor optimization, big open areas will drop fps
@@ -344,15 +349,22 @@ class WeaponModel:
             return shootable_enemies
 
         def bullet_hitscan(shootable_enemies, x_spread, max_range=False):
+            # Each bullet can hit maximum 3 enemies
+            damage_multiplier = 1
             for e, hittable_amount in shootable_enemies:
                 enemy_center_display_x = e.display_x + x_spread + (e.width / 2)
                 x_offset = abs(H_W - enemy_center_display_x)
                 hittable_offset = e.width / 2 * hittable_amount
                 if hittable_offset > x_offset:  # If bullet more or less on enemy
                     if not max_range or e.dist_squared <= max_range ** 2:
-                        pain = self.weapon.pain_chance * e.pain_chance * 100 >= random.randint(0, 100)
-                        e.hurt(weapon.damage, pain)
-                    break
+                        pain = weapon.pain_chance * e.pain_chance > random.random()
+                        e.hurt(weapon.damage * damage_multiplier, pain)
+                        if damage_multiplier == 0.25:
+                            break
+                        else:
+                            damage_multiplier /= 2
+                    else:
+                        break
 
         # Shooting animation system
         self.ticks += 1
@@ -415,6 +427,10 @@ class WeaponModel:
             self.switch_weapons()
 
     def draw(self):
+        #pygame.draw.line(DISPLAY, (0, 255, 0), (H_W - self.weapon.max_x_spread, H_H - 10),
+        #                 (H_W - self.weapon.max_x_spread, H_H + 10), 2)
+        #pygame.draw.line(DISPLAY, (0, 255, 0), (H_W + self.weapon.max_x_spread, H_H - 10),
+        #                 (H_W + self.weapon.max_x_spread, H_H + 10), 2)
         weapon_image = self.weapon.weapon_sheet.subsurface(WeaponModel.w * self.column, 0, WeaponModel.w, WeaponModel.h)
         DISPLAY.blit(weapon_image, ((D_W - WeaponModel.w) / 2, D_H - WeaponModel.h + self.draw_y))
 
@@ -758,7 +774,7 @@ class Enemy(Sprite):
 
     def shoot(self):
         # speed_factor ranges between 24 (when player's running) and 32 (when not)
-        speed_factor = 24 + (32 - 24) * (1 - PLAYER.total_movement / PLAYER.speed)
+        speed_factor = 24 + 8 * (1 - PLAYER.total_movement / PLAYER.speed)
 
         dist_from_player = sqrt(self.dist_squared)
 
@@ -1921,5 +1937,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(3)
+    LEVEL.start(1)
     pygame.quit()
