@@ -1,11 +1,11 @@
 # TO DO:
 # Create levels
 # Level number hud
+# Add weapon speed penalties
 
 # Optimization:
 # Don't draw a sprite if it is too large
 # Optimize the system which detect which enemies to draw
-# Optimize raycasting
 
 # NOTES:
 # Game's tick rate is at 30
@@ -34,9 +34,9 @@ class Player:
         self.saved_weapon_loadout = [1]
 
     def setup(self, pos, angle):
-        self.x = pos[0] + 0.0000001
-        self.y = pos[1] + 0.0000001
-        self.viewangle = angle + 0.0000001
+        self.x = pos[0]
+        self.y = pos[1]
+        self.viewangle = angle
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
         self.hp = Player.max_hp
@@ -197,7 +197,7 @@ class Door:
         self.value = tile_value
 
         self.ticks = 0
-        self.opened_state = 0  # 1 is fully opened, 0 is fully closed
+        self.closed_state = 1  # 1 is fully closed, 0 is fully opened
         self.state = 0
 
     def __eq__(self, other):
@@ -212,12 +212,12 @@ class Door:
     def move(self):
         if self.state > 0:
             if self.state == 1:  # Opening
-                if self.opened_state == 0:
+                if self.closed_state == 1:
                     self.play_sound(self.open_sound)
-                self.opened_state += Door.speed
-                if self.opened_state > 1:
+                self.closed_state -= Door.speed
+                if self.closed_state <= 0:
                     TILEMAP[self.y][self.x] = 0  # Make tile walkable
-                    self.opened_state = 1
+                    self.closed_state = 0
                     self.state += 1
 
             elif self.state == 2:  # Staying open
@@ -231,11 +231,11 @@ class Door:
                         self.state += 1
 
             elif self.state == 3:  # Closing
-                if self.opened_state == 1:
+                if self.closed_state == 0:
                     self.play_sound(self.close_sound)
-                self.opened_state -= Door.speed
-                if self.opened_state < 0:
-                    self.opened_state = 0
+                self.closed_state += Door.speed
+                if self.closed_state >= 1:
+                    self.closed_state = 1
                     self.state = 0
 
 
@@ -257,7 +257,7 @@ class BossDoor(Door):
     def move(self):
         if self.state > 0:
             if self.state == 1 and not self.locked:  # Opening
-                if self.opened_state == 0:
+                if self.closed_state == 1:
                     self.play_sound(self.open_sound)
                     if len(self.door_fronts) == 2:
                         player_pos = (PLAYER.x, PLAYER.y)
@@ -265,10 +265,10 @@ class BossDoor(Door):
                             del self.door_fronts[0]
                         else:
                             del self.door_fronts[1]
-                self.opened_state += Door.speed
-                if self.opened_state > 1:
+                self.closed_state -= Door.speed
+                if self.closed_state <= 0:
                     TILEMAP[self.y][self.x] = 0  # Make tile walkable
-                    self.opened_state = 1
+                    self.closed_state = 0
                     self.state += 1
 
             elif self.state == 2:  # Staying open
@@ -294,11 +294,11 @@ class BossDoor(Door):
                         self.state += 1
 
             elif self.state == 3:  # Closing
-                if self.opened_state == 1:
+                if self.closed_state == 0:
                     self.play_sound(self.close_sound)
-                self.opened_state -= Door.speed
-                if self.opened_state < 0:
-                    self.opened_state = 0
+                self.closed_state += Door.speed
+                if self.closed_state >= 1:
+                    self.closed_state = 1
                     self.state = 0
 
 
@@ -581,7 +581,7 @@ class Drawable:
 
 
 class WallColumn(Drawable):
-    def __init__(self, perp_dist, texture, texture_column, display_x):
+    def __init__(self, texture, texture_column, perp_dist, display_x):
         self.perp_dist = perp_dist  # Needs saving to sort by it later
         self.image = texture.subsurface(texture_column, 0, 1, TEXTURE_SIZE)
 
@@ -1369,11 +1369,9 @@ def squared_dist(from_, to):
 
 
 def fixed_angle(angle):
-    # Makes sure all angles stay between -pi and pi
-
-    while angle > pi:  # 3.14+
+    while angle > pi:
         angle -= 2 * pi
-    while angle < -pi:  # 3.14-
+    while angle < -pi:
         angle += 2 * pi
     return angle
 
@@ -1391,8 +1389,8 @@ def can_see(from_, to, viewangle=0.0, fov=0.0):
             return False
 
     # Check if there is something between end and start point
-    ray_x, ray_y = simple_raycast(angle_to_end, from_)
-    return squared_dist(from_, (ray_x, ray_y)) > squared_dist(from_, to)  # True if interception farther than end point
+    collision_x, collision_y = raycast(from_, angle_to_end)
+    return squared_dist(from_, (collision_x, collision_y)) > squared_dist(from_, to)
 
 
 def dynamic_colour(current, maximum):
@@ -1414,257 +1412,149 @@ def send_rays():
     global OBJECTS
     OBJECTS = []
     for c, rayangle_offset in enumerate(CAMERA_PLANE.rayangle_offsets):
-        # Get the rayangle that's going to be raycasted
-        rayangle = fixed_angle(PLAYER.viewangle + rayangle_offset)
-
         # Get values from raycast()
-        tile_value, ray_x, ray_y, column = raycast(rayangle, (PLAYER.x, PLAYER.y))
-        delta_x = ray_x - PLAYER.x
-        delta_y = ray_y - PLAYER.y
+        collision_x, collision_y, texture, column =\
+            raycast((PLAYER.x, PLAYER.y), PLAYER.viewangle + rayangle_offset, True)
 
         # Calculate perpendicular distance (needed to avoid fisheye effect)
+        delta_x = collision_x - PLAYER.x
+        delta_y = collision_y - PLAYER.y
         perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
-        # Get wall texture
-        for d in DOORS:
-            # Ray x and y abs(distances) to door center position
-            x_diff = abs(d.x + 0.5 - ray_x)
-            y_diff = abs(d.y + 0.5 - ray_y)
-            if (x_diff == 0.5 and y_diff <= 0.5) or (y_diff == 0.5 and x_diff <= 0.5):
-                texture = Door.side_texture
-                break
-        else:
-            texture = TILE_VALUES_INFO[tile_value].texture
-
         # Create Wall object
-        WALLS.append(WallColumn(perp_dist, texture, column, c * WallColumn.width))
+        WALLS.append(WallColumn(texture, column, perp_dist, c * WallColumn.width))
 
 
-def raycast(rayangle, start_pos):
-    #   Variables depending
-    #     on the rayangle
-    #            |
-    #      A = 0 | A = 1
-    # -pi  B = 0 | B = 0  -
-    #     -------|------- 0 rad
-    #  pi  A = 0 | A = 1  +
-    #      B = 1 | B = 1
-    #            |
-
-    if abs(rayangle) > pi / 2:
-        A = 0
-    else:
-        A = 1
-    if rayangle < 0:
-        B = 0
-    else:
-        B = 1
-
-    ray_x, ray_y = start_pos
-    tan_rayangle = tan(rayangle)  # Calculating tay(rayangle) once to not calculate it over every step
-
-    while True:
-        # "if (x/y)_offset == (A/B)" only resets offset depending on the rayangle
-        # This will help to determine interception type correctly
-        # and it also prevents rays getting stuck on some angles
-
-        x_offset = ray_x - int(ray_x)
-        if x_offset == A:
-            x_offset = 1
-
-        y_offset = ray_y - int(ray_y)
-        if y_offset == B:
-            y_offset = 1
-
-        # Very simple system
-        # Every loop it blindly calculates vertical* gridline interception_y and checks it's distance
-        # to determine the interception type and to calculate other variables depending on that interception type
-        #
-        # *It calculates vertical gridline interception by default bc in those calculations
-        # there are no divisions which could bring up ZeroDivisionError
-
-        interception_y = (A - x_offset) * tan_rayangle
-        if int(ray_y - y_offset) == int(ray_y + interception_y):
-            # Hitting vertical gridline ( | )
-            interception_x = A - x_offset
-
-            ray_x += interception_x
-            ray_y += interception_y
-            map_y = int(ray_y)
-            map_x = int(ray_x) + (A - 1)
-            side = 0
-
-        else:
-            # Hitting horizontal gridline ( -- )
-            interception_x = (B - y_offset) / tan_rayangle
-            interception_y = B - y_offset
-
-            ray_x += interception_x
-            ray_y += interception_y
-            map_y = int(ray_y) + (B - 1)
-            map_x = int(ray_x)
-            side = 1
+def raycast(start_pos, rayangle, extra_values=False):
+    def check_collision(collision_x, collision_y, x_step, y_step):
+        # x_step is the distance needed to move in x to get to the next similar type interception
+        # y_step is the distance needed to move in y to get to the next similat type interception
 
         tile_value = TILEMAP[map_y][map_x]
-        if tile_value != 0:
-            tile_type = TILE_VALUES_INFO[tile_value].type
+        tile_type = TILE_VALUES_INFO[tile_value].type
+        tile_desc = TILE_VALUES_INFO[tile_value].desc
 
-            if tile_type == 'Object':
+        if tile_type == 'Object':
+            if extra_values:
                 for obj in OBJECTS:
-                    if (obj.x - 0.5, obj.y - 0.5) == (map_x, map_y):
+                    if (int(obj.x), int(obj.y)) == (map_x, map_y):
                         break
                 else:
                     OBJECTS.append(Object((map_x, map_y), tile_value))
-                continue
 
-            if tile_type == 'Door':
-                # Update (x/y)_offset values
-                x_offset = ray_x - int(ray_x)
-                if x_offset == A:
-                    x_offset = 1
+        elif tile_type == 'Door':
+            for d in DOORS:
+                if (d.x, d.y) == (map_x, map_y):
+                    door = d
+                    break
+            else:
+                if tile_desc == 'Boss':
+                    door = BossDoor((map_x, map_y), tile_value)
+                else:
+                    door = Door((map_x, map_y), tile_value)
+                DOORS.append(door)
 
-                y_offset = ray_y - int(ray_y)
-                if y_offset == B:
-                    y_offset = 1
+            collision_x += x_step / 2
+            collision_y += y_step / 2
+            if (int(collision_x), int(collision_y)) == (door.x, door.y):
+                if x_step == 1 or x_step == -1:
+                    surface_offset = collision_y - int(collision_y)
+                else:
+                    surface_offset = collision_x - int(collision_x)
+                if surface_offset < door.closed_state:
+                    if extra_values:
+                        texture = TILE_VALUES_INFO[tile_value].texture
+                        column = int(TEXTURE_SIZE * abs(surface_offset - door.closed_state))
+                        return collision_x, collision_y, texture, column
+                    else:
+                        return collision_x, collision_y
 
-                # Add door to DOORS if it's not in it already
+        else:  # elif tile_type == 'Wall':
+            if extra_values:
                 for d in DOORS:
-                    if (d.x, d.y) == (map_x, map_y):
-                        door = d
+                    if (d.x, d.y) == (x - a, y - b):
+                        texture = Door.side_texture
                         break
                 else:
-                    if TILE_VALUES_INFO[tile_value].desc != 'Boss':  # If not Boss door
-                        door = Door((map_x, map_y), tile_value)
-                        DOORS.append(door)
-                    else:
-                        door = BossDoor((map_x, map_y), tile_value)
-                        DOORS.append(door)
-
-                if side == 0:  # If vertical ( | )
-                    interception_y = (-0.5 + A) * tan_rayangle
-                    offset = ray_y + interception_y - int(ray_y + interception_y)
-                    if int(ray_y - y_offset) == int(ray_y + interception_y) and offset > door.opened_state:
-                        ray_x += (-0.5 + A)
-                        ray_y += interception_y
-                        column = int(TEXTURE_SIZE * (offset - door.opened_state))
-                    else:
-                        continue
-
-                else:  # If horizontal ( -- )
-                    interception_x = (-0.5 + B) / tan_rayangle
-                    offset = ray_x + interception_x - int(ray_x + interception_x)
-                    if int(ray_x - x_offset) == int(ray_x + interception_x) and offset > door.opened_state:
-                        ray_x += interception_x
-                        ray_y += (-0.5 + B)
-                        column = int(TEXTURE_SIZE * (offset - door.opened_state))
-                    else:
-                        continue
-
-            else:  # If wall
-                if side == 0:
-                    offset = abs(ray_y - int(ray_y) - (1 - A))
+                    texture = TILE_VALUES_INFO[tile_value].texture
+                if x_step == 1 or x_step == -1:
+                    surface_offset = collision_y - int(collision_y)
+                    column = int(TEXTURE_SIZE * abs(a - surface_offset))
+                    column += TEXTURE_SIZE
                 else:
-                    offset = abs(ray_x - int(ray_x) - B)
-                column = int(TEXTURE_SIZE * offset)
+                    surface_offset = collision_x - int(collision_x)
+                    column = int(TEXTURE_SIZE * abs(b - surface_offset))
+                return collision_x, collision_y, texture, column
+            else:
+                return collision_x, collision_y
 
-            if side == 0:
-                column += TEXTURE_SIZE  # Makes block sides different
+    def interception_horizontal():
+        if a:
+            return x_intercept < x
+        else:
+            return x_intercept > x
 
-            return tile_value, ray_x, ray_y, column
+    def interception_vertical():
+        if b:
+            return y_intercept < y
+        else:
+            return y_intercept > y
 
-
-def simple_raycast(rayangle, start_pos, side_needed=False):
-    # Used to only get the ray interception point without creating objects that are in the way
-
-    if abs(rayangle) > pi / 2:
-        A = 0
-    else:
-        A = 1
-    if rayangle < 0:
-        B = 0
-    else:
-        B = 1
-
-    ray_x, ray_y = start_pos
+    # https://www.youtube.com/watch?v=eOCQfxRQ2pY
+    #
+    #      a = 0 | a = 1
+    # -pi  b = 0 | b = 0  -
+    #     -------|------- 0 rad
+    #  pi  a = 0 | a = 1  +
+    #      b = 1 | b = 1
+    rayangle = fixed_angle(rayangle + 0.000001)
     tan_rayangle = tan(rayangle)
+    x = int(start_pos[0])
+    y = int(start_pos[1])
+    dx = start_pos[0] - x + 0.000001
+    dy = start_pos[1] - y + 0.000001
+
+    if abs(rayangle) < pi / 2:
+        a = 1
+        tile_step_x = 1
+        y_step = tan_rayangle
+    else:
+        a = 0
+        tile_step_x = -1
+        y_step = -tan_rayangle
+    if rayangle > 0:
+        b = 1
+        tile_step_y = 1
+        x_step = 1 / tan_rayangle
+    else:
+        b = 0
+        tile_step_y = -1
+        x_step = 1 / -tan_rayangle
+
+    x_intercept = x + dx + (b - dy) / tan_rayangle
+    y_intercept = y + dy + (a - dx) * tan_rayangle
+    x += a
+    y += b
 
     while True:
-        x_offset = ray_x - int(ray_x)
-        if x_offset == A:
-            x_offset = 1
-
-        y_offset = ray_y - int(ray_y)
-        if y_offset == B:
-            y_offset = 1
-
-        interception_y = (A - x_offset) * tan_rayangle
-        if int(ray_y - y_offset) == int(ray_y + interception_y):
-            # Hitting vertical gridline ( | )
-            interception_x = A - x_offset
-
-            ray_x += interception_x
-            ray_y += interception_y
-            map_y = int(ray_y)
-            map_x = int(ray_x) + (A - 1)
-            side = 0
-
-        else:
-            # Hitting horizontal gridline ( -- )
-            interception_x = (B - y_offset) / tan_rayangle
-            interception_y = B - y_offset
-
-            ray_x += interception_x
-            ray_y += interception_y
-            map_y = int(ray_y) + (B - 1)
-            map_x = int(ray_x)
-            side = 1
-
-        tile_value = TILEMAP[map_y][map_x]
-        if tile_value != 0:
-            tile_type = TILE_VALUES_INFO[tile_value].type
-
-            if tile_type == 'Object':
-                continue
-
-            if tile_type == 'Door':
-                # Update (x/y)_offset values
-                x_offset = ray_x - int(ray_x)
-                if x_offset == A:
-                    x_offset = 1
-
-                y_offset = ray_y - int(ray_y)
-                if y_offset == B:
-                    y_offset = 1
-
-                for d in DOORS:
-                    if (d.x, d.y) == (map_x, map_y):
-                        door = d
-                        break
-                else:
-                    # Create a closed door
-                    door = Door((map_x, map_y), tile_value)
-
-                if side == 0:  # If vertical ( | )
-                    interception_y = (-0.5 + A) * tan_rayangle
-                    offset = ray_y + interception_y - int(ray_y + interception_y)
-                    if int(ray_y - y_offset) == int(ray_y + interception_y) and offset > door.opened_state:
-                        ray_x += (-0.5 + A)
-                        ray_y += interception_y
-                    else:
-                        continue
-
-                else:  # If horizontal ( -- )
-                    interception_x = (-0.5 + B) / tan_rayangle
-                    offset = ray_x + interception_x - int(ray_x + interception_x)
-                    if int(ray_x - x_offset) == int(ray_x + interception_x) and offset > door.opened_state:
-                        ray_x += interception_x
-                        ray_y += (-0.5 + B)
-                    else:
-                        continue
-            if not side_needed:
-                return ray_x, ray_y
-            else:
-                return ray_x, ray_y, side
+        while interception_horizontal():
+            map_x = int(x_intercept)
+            map_y = y - (1 - b)
+            if TILEMAP[map_y][map_x]:
+                collision = check_collision(x_intercept, y, x_step, tile_step_y)
+                if collision:
+                    return collision
+            y += tile_step_y
+            x_intercept += x_step
+        while interception_vertical():
+            map_x = x - (1 - a)
+            map_y = int(y_intercept)
+            if TILEMAP[map_y][map_x]:
+                collision = check_collision(x, y_intercept, tile_step_x, y_step)
+                if collision:
+                    return collision
+            x += tile_step_x
+            y_intercept += y_step
 
 
 def events():
@@ -1937,5 +1827,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(1)
+    LEVEL.start(8)
     pygame.quit()
