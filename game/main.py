@@ -2,10 +2,11 @@
 # Create levels
 # Level number hud
 # Add weapon speed penalties
-
-# Optimization:
-# Don't draw a sprite if it is too large
-# Optimize the system which detect which enemies to draw
+# Make Bosses not shoot immediately when appearing
+# Add more enemy spritesheet visual descriptions like amount of shot columns and so
+# Move leveleditor textures to texture folder
+# Revisit shooting system
+# Draw only non-transparent parts of sprites somehow - maybe some lookout table that tells non-transparent rect
 
 # NOTES:
 # Game's tick rate is at 30
@@ -26,8 +27,7 @@
 class Player:
     max_hp = 100
     speed = 0.15  # Must be < half_hitbox, otherwise player can clip through walls
-    hitbox_size = 0.4
-    half_hitbox = hitbox_size / 2
+    half_hitbox = 0.2
 
     def __init__(self):
         self.weapon_nr = 1
@@ -240,7 +240,7 @@ class Door:
 
 
 class BossDoor(Door):
-    # Boss door stays unlocked until both of the door sides have been visited
+    # Boss door is a one way door that stays unlocked until both of the door sides have been visited
     # This makes sure that once you've gone to the other side of the door there's no going back
     # Going through the door also automatically "wakes up" the boss in the level if there is one
     type = 'Boss'
@@ -352,10 +352,9 @@ class WeaponModel:
             # Each bullet can hit maximum 3 enemies
             damage_multiplier = 1
             for e, hittable_amount in shootable_enemies:
-                enemy_center_display_x = e.display_x + x_spread + (e.width / 2)
-                x_offset = abs(H_W - enemy_center_display_x)
+                shot_x_offset = abs(H_W - e.display_pos) + x_spread
                 hittable_offset = e.width / 2 * hittable_amount
-                if hittable_offset > x_offset:  # If bullet more or less on enemy
+                if hittable_offset > shot_x_offset:  # If bullet more or less on enemy
                     if not max_range or e.dist_squared <= max_range ** 2:
                         pain = weapon.pain_chance * e.pain_chance > random.random()
                         e.hurt(weapon.damage * damage_multiplier, pain)
@@ -512,40 +511,36 @@ class Message:
     def __init__(self, text, colour=(255, 255, 255)):
         self.text = text
         self.colour = colour
-        self.ticks = Message.display_ticks
+        self.ticks = 0
         self.alpha = 255
         if len(MESSAGES) == Message.max_amount:
             del MESSAGES[0]
 
     def update(self):
-        if self.ticks == 0:
+        if self.ticks == Message.display_ticks:
             self.alpha -= Message.fade_speed
             if self.alpha <= 0:
                 MESSAGES.remove(self)
         else:
-            self.ticks -= 1
+            self.ticks += 1
 
 
 class CameraPlane:
-    len = 1
+    half_len = 0.5
 
     def __init__(self, rays_amount, fov):
-        # Creates a list of rayangle offsets which will be added to player's viewangle to send rays every frame
-        # Bc these angle offsets do not change during the game, they are calculated before the game loop starts
-        #
-        # These offsets are calculated,
-        # so that later each casted ray will be equal distance away from other rays on the theoretical camera plane
-        # Else the player will see things with a weird fisheye effect
-        #
-        # Note that in 2D rendering, camera plane is actually a single line, rather than a plane
-        # Also fov has to be < pi (and not <= pi) for it to work properly
+        # Creates a list of rayangle offsets which will be added to player's viewangle when sending rays every frame
+        # Bc these offsets do not change during the game, they are calculated before the game starts
+        # Offsets are calculated so that each ray will be equal distance away from previous ray on the camera plane
+        # Of course in 2D rendering camera plane is acutally a line
+        # Also FOV has to be < pi (and not <= pi) for it to work properly
 
         self.rayangle_offsets = []
 
-        camera_plane_start = -CameraPlane.len / 2
-        camera_plane_step = CameraPlane.len / rays_amount
+        camera_plane_start = -CameraPlane.half_len
+        camera_plane_step = CameraPlane.half_len * 2 / rays_amount
 
-        self.dist = (CameraPlane.len / 2) / tan(fov / 2)
+        self.dist = CameraPlane.half_len / tan(fov / 2)
         for i in range(rays_amount):
             camera_plane_pos = camera_plane_start + i * camera_plane_step
 
@@ -554,102 +549,77 @@ class CameraPlane:
 
 
 class Drawable:
-    def adjust_image_height(self):
-        # Depending on self.height, (it being the unoptimized image drawing height) this system will crop out
-        # as many pixel rows from top and bottom from the unscaled image as possible,
-        # while ensuring that the player will not notice a difference, when the image is drawn later
-        #
-        # It will then also adjust drawing height accordingly
-        #
-        # Cropping is done before scaling to ensure that the program is not going to be scaling images to enormous sizes
+    def get_cropping_height(self):
+        if self.height > D_H:
+            # Based on image height, get cropping_height
+            # Adjust height if cropping_height < TEXTURE_SIZE
 
-        percentage = D_H / self.height  # Percentage of image that's going to be seen
-        perfect_size = TEXTURE_SIZE * percentage  # What would be the perfect cropping size
-
-        # However actual cropping size needs to be the closest even* number rounding up perfect_size
-        # For example 10.23 will be turned to 12 and 11.78 will also be turned to 12
-        # *number needs to be even bc you can't crop at halfpixel
-        cropping_size = ceil(perfect_size / 2) * 2
-
-        # Cropping the image smaller - width stays the same
-        rect = pygame.Rect((0, (TEXTURE_SIZE - cropping_size) / 2), (self.image.get_width(), cropping_size))
-        self.image = self.image.subsurface(rect)
-
-        # Adjusting image height accordingly
-        multiplier = cropping_size / perfect_size
-        self.height = int(D_H * multiplier)
+            # Calculate how much of height is needed
+            # Calculate the ideal cropping height
+            # Calculate the actual cropping height which will be the closest even number rounding up perfect_height
+            amount_of_height_needed = D_H / self.height
+            perfect_height = TEXTURE_SIZE * amount_of_height_needed
+            self.cropping_height = ceil(perfect_height / 2) * 2
+            if self.cropping_height < TEXTURE_SIZE:
+                self.height = int(self.cropping_height / perfect_height * D_H)
+        else:
+            self.cropping_height = TEXTURE_SIZE
+        self.cropping_y = (TEXTURE_SIZE - self.cropping_height) / 2
 
 
 class WallColumn(Drawable):
-    def __init__(self, texture, texture_column, perp_dist, display_x):
-        self.perp_dist = perp_dist  # Needs saving to sort by it later
-        self.image = texture.subsurface(texture_column, 0, 1, TEXTURE_SIZE)
-
+    def __init__(self, texture, column, perp_dist, display_x):
+        self.perp_dist = perp_dist
         self.height = int(Drawable.constant / self.perp_dist)
-        if self.height > D_H:
-            self.adjust_image_height()
-
+        self.get_cropping_height()
+        self.image = \
+            texture.subsurface((column, self.cropping_y, 1, self.cropping_height))
         self.display_x = display_x
-        self.display_y = (D_H - self.height) / 2
-        self.image = pygame.transform.scale(self.image, (WallColumn.width, self.height))
+        self.display_y = int((D_H - self.height) / 2)
 
     def draw(self):
-        DISPLAY.blit(self.image, (self.display_x, self.display_y))
+        DISPLAY.blit(pygame.transform.scale(self.image, (WallColumn.width, self.height)),
+                     (self.display_x, self.display_y))
 
 
 class Sprite(Drawable):
-    animation_ticks = 5  # Sprite animation frames delay
-
     def draw(self):
-        # Optimized sprite drawing function made for Enemies and Objects
-
-        if self.perp_dist > 0:
-            column_width = self.width / TEXTURE_SIZE
-            column_left_side = self.display_x
-            column_right_side = self.display_x + column_width
-
-            for column in range(TEXTURE_SIZE):
-                column_left_side += column_width
-                column_right_side += column_width
-
-                if column_left_side < D_W and column_right_side > 0:  # If row on screen
+        self.height = self.width = int(Drawable.constant / self.perp_dist)
+        self.get_cropping_height()
+        self.display_y = int((D_H - self.height) / 2)
+        #try:
+        #    DISPLAY.blit(pygame.transform.scale(self.image, (self.width, self.height)), (int(self.display_pos - self.width / 2), self.display_y))
+        #except pygame.error:
+        #    pass
+        x_start = int(self.display_pos - self.width / 2)
+        x_start -= x_start % WallColumn.width
+        for c, draw_x in enumerate(range(x_start, x_start + self.width, WallColumn.width)):
+            if draw_x < D_W and draw_x >= 0:
+                if self.perp_dist < WALLS[int(draw_x / WallColumn.width)].perp_dist:
+                    column = int(c * WallColumn.width / self.width * TEXTURE_SIZE)
+                    rect = (column, self.cropping_y, 1, self.cropping_height)
                     try:
-                        # Getting sprite column out of image
-                        sprite_column = self.image.subsurface(column, 0, 1, self.image.get_height())
-                        # Scaling that column
-                        sprite_column = pygame.transform.scale(sprite_column, (ceil(column_width), self.height))
-                        # Blitting that column
-                        DISPLAY.blit(sprite_column, (column_left_side, self.display_y))
-
-                    except pygame.error:  # If size too big (happens rarely and only if player too close to sprite)
-                        break  # End drawing sprite
-
-    def calc_display_xy(self, angle_from_player, y_multiplier=1.0):
-        # In order to calculate sprite's correct display x/y position, we need to calculate it's camera plane position
-        camera_plane_pos = CAMERA_PLANE.len / 2 + tan(angle_from_player - PLAYER.viewangle) * CAMERA_PLANE.dist
-
-        self.display_x = D_W * camera_plane_pos - self.width / 2
-        self.display_y = (D_H - self.height * y_multiplier) / 2
+                        DISPLAY.blit(pygame.transform.scale(self.image.subsurface(rect),
+                                                            (WallColumn.width, self.height)), (draw_x, self.display_y))
+                    except pygame.error:
+                        print(self.width, self.height)
 
 
 class Object(Sprite):
-    def __init__(self, map_pos, tilevalue):
-        self.x = map_pos[0] + 0.5
-        self.y = map_pos[1] + 0.5
+    def __init__(self, map_x, map_y, tilevalue):
+        self.x = map_x + 0.5
+        self.y = map_y + 0.5
 
         delta_x = self.x - PLAYER.x
         delta_y = self.y - PLAYER.y
         self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
-
         if self.perp_dist > 0:
+            self.display_pos = \
+                (CAMERA_PLANE.half_len + tan(atan2(delta_y, delta_x) - PLAYER.viewangle) * CAMERA_PLANE.dist) * D_W
             self.image = TILE_VALUES_INFO[tilevalue].texture
-
-            self.height = self.width = int(Drawable.constant / self.perp_dist)
-            if self.height > D_H:
-                self.adjust_image_height()
-
-            angle_from_player = atan2(delta_y, delta_x)
-            self.calc_display_xy(angle_from_player)
+            self.needs_to_be_drawn = True
+        else:
+            self.needs_to_be_drawn = False
 
     def __eq__(self, other):
         return (self.x, self.y) == (other.x, other.y)
@@ -657,7 +627,7 @@ class Object(Sprite):
 
 class Enemy(Sprite):
     type = 'Normal'
-    max_draw_dist = 15  # Enemies farther than 15 units won't be drawn in the frame
+    animation_ticks = 5  # Enemy animation frames delay
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = pos
@@ -686,6 +656,9 @@ class Enemy(Sprite):
         self.patience = ENEMY_INFO[self.sheet].patience
         self.pain_chance = ENEMY_INFO[self.sheet].pain_chance
         self.shot_columns = ENEMY_INFO[self.sheet].shot_columns
+        self.running_rows = ENEMY_INFO[self.sheet].running_rows
+        self.shooting_row = ENEMY_INFO[self.sheet].shooting_row
+        self.hit_row = ENEMY_INFO[self.sheet].hit_row
 
         # Timed events tick variables (frames passed since some action)
         self.anim_ticks = 0
@@ -723,29 +696,28 @@ class Enemy(Sprite):
                 self.home_room.append(room_point)
 
     def get_row_and_column(self, moved):
-        angle = fixed_angle(-self.angle_from_player + self.angle) + pi
-        self.column = round(angle / (pi / 4))
+        angle = fixed_angle(self.angle - self.angle_from_player)
+        self.column = round(angle / (pi / 4)) + 4
         if self.column == 8:
             self.column = 0
 
         if moved:
-            running_rows = (1, 2, 3, 4)
-            if self.row not in running_rows:
+            if self.row not in self.running_rows:
                 self.row = 1
 
             # Cycle through running animations
             self.anim_ticks += 1
-            if self.anim_ticks == Sprite.animation_ticks:
+            if self.anim_ticks == Enemy.animation_ticks:
                 self.anim_ticks = 0
                 self.row += 1
-                if self.row not in running_rows:
+                if self.row not in self.running_rows:
                     self.row = 1
         else:
             self.row = 0
             self.anim_ticks = 0
 
     def can_step(self, step_x, step_y):
-        if (int(PLAYER.x), int(PLAYER.y)) == (step_x, step_y) and self.shooting_range > 1:
+        if (int(PLAYER.x), int(PLAYER.y)) == (step_x, step_y) and self.shooting_range > 1:  # If dog and close
             return False
 
         for e in ENEMIES:
@@ -760,15 +732,18 @@ class Enemy(Sprite):
                     return e
         return None
 
+    def get_sides(self):
+        angle = fixed_angle(self.angle_from_player + pi / 2)
+        x = cos(angle) / 2
+        y = sin(angle) / 2
+        return (self.x - x, self.y - y), (self.x + x, self.y + y)  # Left side, right side
+
     def ready_to_shoot(self):
         return self.dist_squared < self.shooting_range**2 and can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
 
-    def stop_animation(self):
-        self.status = 'default'
-        self.anim_ticks = 0
-
     def start_shooting(self):
         self.status = 'shooting'
+        self.row = self.shooting_row
         self.column = 0
         self.anim_ticks = 0
 
@@ -795,13 +770,13 @@ class Enemy(Sprite):
             self.chasing = False
             self.status = 'dead'
             self.anim_ticks = 0
-            self.row = 5
+            self.row = self.hit_row
             self.column = 0
             self.play_sound(self.sounds.death)
         elif pain:
             self.status = 'hit'
             self.anim_ticks = 0
-            self.row = 5
+            self.row = self.hit_row
             self.column = 7
 
     def strafe(self):
@@ -852,26 +827,27 @@ class Enemy(Sprite):
         self.delta_y = self.y - PLAYER.y
         self.angle_from_player = atan2(self.delta_y, self.delta_x)
         self.dist_squared = self.delta_x**2 + self.delta_y**2
+        self.sides = self.get_sides()
 
         if self.status == 'dead':
             if self.column < 4:
                 self.anim_ticks += 1
-                if self.anim_ticks == Sprite.animation_ticks:
+                if self.anim_ticks == Enemy.animation_ticks:
                     self.anim_ticks = 0
                     self.column += 1
 
         elif self.status == 'hit':
             saw_player = True
             self.anim_ticks += 1
-            if self.anim_ticks == Sprite.animation_ticks - 2:
-                self.stop_animation()
+            if self.anim_ticks == Enemy.animation_ticks - 2:
+                self.anim_ticks = 0
+                self.status = 'default'
 
         elif self.status == 'shooting':
             saw_player = True
-            self.row = 6
 
             self.anim_ticks += 1
-            if self.anim_ticks == Sprite.animation_ticks:
+            if self.anim_ticks == Enemy.animation_ticks:
                 self.anim_ticks = 0
 
                 self.column += 1
@@ -881,27 +857,20 @@ class Enemy(Sprite):
                         self.shoot()
 
                 elif self.column == 6:
-                    self.column = 5
-
                     if (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
                         self.column = 0  # Continues shooting
                     elif random.randint(0, 1) == 0 and self.ready_to_shoot():
                         self.column = 0  # Continues shooting
                     else:
-                        self.stop_animation()
+                        self.column -= 1
+                        self.status = 'default'
 
         else:
-            angle = fixed_angle(self.angle_from_player + pi / 2)
-            dir_x = cos(angle) / 4
-            dir_y = sin(angle) / 4
-            enemy_left_side = (self.x - dir_x, self.y - dir_y)
-            enemy_right_side = (self.x + dir_x, self.y + dir_y)
-            if can_see((PLAYER.x, PLAYER.y), enemy_left_side) or can_see((PLAYER.x, PLAYER.y), enemy_right_side):
+            if can_see((PLAYER.x, PLAYER.y), self.sides[0]) or can_see((PLAYER.x, PLAYER.y), self.sides[1]):
                 saw_player = True
                 if not self.chasing:
                     self.chasing = True
-                    if self.sounds.appearance:
-                        self.play_sound(self.sounds.appearance)
+                    self.play_sound(self.sounds.appearance)
                 self.target_tile = (int(PLAYER.x), int(PLAYER.y))
             elif self.last_saw_ticks < self.memory:
                 self.chasing = True
@@ -920,8 +889,7 @@ class Enemy(Sprite):
                         if random.randint(0, 1) == 0:
                             self.target_tile = random.choice(self.home_room)
                         else:
-                            self.angle = atan2(-self.delta_y, -self.delta_x)
-                            moved = True
+                            self.angle = fixed_angle(self.angle_from_player + pi)
                     else:
                         self.target_tile = self.home
                 elif self.chasing and self.ready_to_shoot():
@@ -930,7 +898,6 @@ class Enemy(Sprite):
                 if not self.path:
                     self.path = pathfinding.pathfind((self.x, self.y), self.target_tile)
                 if self.path:
-                    moved = True
                     step_x, step_y = self.path[0]
                     if not self.can_step(step_x, step_y):
                         if self.chasing and random.randint(0, 1) == 0 and self.ready_to_shoot():
@@ -938,6 +905,7 @@ class Enemy(Sprite):
                         else:
                             self.strafe()
                     else:
+                        moved = True
                         step_x += 0.5
                         step_y += 0.5
                         self.angle = atan2(step_y - self.y, step_x - self.x)
@@ -952,7 +920,7 @@ class Enemy(Sprite):
                             if self.chasing and self.ready_to_shoot():
                                 self.start_shooting()
                             elif not self.path:
-                                self.angle = atan2(-self.delta_y, -self.delta_x)
+                                self.angle = fixed_angle(self.angle_from_player + pi)
             if not self.status == 'shooting':
                 self.get_row_and_column(moved)
 
@@ -973,23 +941,20 @@ class Enemy(Sprite):
 
     def update_for_drawing(self):
         self.needs_to_be_drawn = False
-        if squared_dist((self.x, self.y), (PLAYER.x, PLAYER.y)) < self.max_draw_dist**2:
-            self.needs_to_be_drawn = True
-            self.perp_dist = self.delta_x * PLAYER.dir_x + self.delta_y * PLAYER.dir_y
-            if self.perp_dist > 0:
+        self.perp_dist = self.delta_x * PLAYER.dir_x + self.delta_y * PLAYER.dir_y
+        if self.perp_dist > 0:
+            if can_see((PLAYER.x, PLAYER.y), (self.x, self.y), PLAYER.viewangle, FOV) or \
+                    can_see((PLAYER.x, PLAYER.y), self.sides[0], PLAYER.viewangle, FOV) or \
+                    can_see((PLAYER.x, PLAYER.y), self.sides[1], PLAYER.viewangle, FOV):
+                self.display_pos = \
+                    (CAMERA_PLANE.half_len + tan(self.angle_from_player - PLAYER.viewangle) * CAMERA_PLANE.dist) * D_W
                 self.image = self.sheet.subsurface(self.column * TEXTURE_SIZE, self.row * TEXTURE_SIZE,
                                                    TEXTURE_SIZE, TEXTURE_SIZE)
-
-                self.height = self.width = int(Drawable.constant / self.perp_dist)
-                if self.height > D_H:
-                    self.adjust_image_height()
-
-                self.calc_display_xy(self.angle_from_player)
+                self.needs_to_be_drawn = True
 
 
 class Boss(Enemy):
     type = 'Boss'
-    pain_chance = 0.00
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = self.home = pos
@@ -1006,32 +971,17 @@ class Boss(Enemy):
         # Take attributes from ENEMY_INFO based on spritesheet
         self.channel = pygame.mixer.Channel(ENEMY_INFO[self.sheet].id)
         self.sounds = ENEMY_INFO[self.sheet].sounds
-        self.max_hp = self.hp = ENEMY_INFO[spritesheet].hp
-        self.speed = ENEMY_INFO[spritesheet].speed
-        self.accuracy = ENEMY_INFO[spritesheet].accuracy
+        self.max_hp = self.hp = ENEMY_INFO[self.sheet].hp
+        self.speed = ENEMY_INFO[self.sheet].speed
+        self.shooting_range = ENEMY_INFO[self.sheet].shooting_range
+        self.accuracy = ENEMY_INFO[self.sheet].accuracy
         self.damage_multiplier = ENEMY_INFO[self.sheet].damage_multiplier
-        self.shot_columns = ENEMY_INFO[spritesheet].shot_columns
+        self.pain_chance = ENEMY_INFO[self.sheet].pain_chance
+        self.shot_columns = ENEMY_INFO[self.sheet].shot_columns
+        self.shooting_row = ENEMY_INFO[self.sheet].shooting_row
+        self.hit_row = ENEMY_INFO[self.sheet].hit_row
 
         self.anim_ticks = 0
-
-    def stop_animation(self):
-        self.status = 'default'
-        self.anim_ticks = 0
-        self.row = 0
-        self.column = 0
-
-    def can_step(self, step_x, step_y):
-        if (int(PLAYER.x), int(PLAYER.y)) == (step_x, step_y):
-            return False
-
-        for e in ENEMIES:
-            if not self == e and not e.status == 'dead':
-                if (int(e.x), int(e.y)) == (step_x, step_y):
-                    return False
-        return True
-
-    def ready_to_shoot(self):
-        return can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
 
     def hurt(self, damage, pain):
         self.hp -= damage
@@ -1040,10 +990,10 @@ class Boss(Enemy):
             self.chasing = False
             self.status = 'dead'
             self.anim_ticks = 0
-            self.row = 2
+            self.row = self.hit_row
             self.column = 0
             PLAYER.has_key = True
-            MESSAGES.append(Message('Picked up a key'))
+            MESSAGES.append(Message('Defeated Boss + Picked up a key'))
             self.play_sound(self.sounds.death)
 
     def update(self):
@@ -1057,28 +1007,27 @@ class Boss(Enemy):
         if self.status == 'dead':
             if self.column < 7:
                 self.anim_ticks += 1
-                if self.anim_ticks == Sprite.animation_ticks:
+                if self.anim_ticks == Enemy.animation_ticks:
                     self.anim_ticks = 0
                     self.column += 1
 
         elif self.status == 'shooting':
-            self.row = 1
-
             self.anim_ticks += 1
-            if self.anim_ticks == Sprite.animation_ticks:
+            if self.anim_ticks == Enemy.animation_ticks:
                 self.anim_ticks = 0
                 self.column += 1
                 if self.column in self.shot_columns:
-                    if self.channel.get_sound() != self.sounds.appearance:
-                        self.play_sound(self.sounds.attack)
+                    self.play_sound(self.sounds.attack)
                     if self.ready_to_shoot():
                         self.shoot()
 
                 elif self.column == 8:
-                    self.column = 7
-                    self.stop_animation()
+                    self.status = 'default'
+                    self.anim_ticks = 0
+                    self.row = 0
+                    self.column = 0
 
-        elif self.status == 'default':
+        elif self.status == 'default':  # OPTIMIZE
             if not self.channel.get_busy():
                 self.play_sound(self.sounds.step)
             if not self.path:
@@ -1108,7 +1057,7 @@ class Boss(Enemy):
                         self.start_shooting()
 
             self.anim_ticks += 1
-            if self.anim_ticks == Sprite.animation_ticks:
+            if self.anim_ticks == Enemy.animation_ticks:
                 self.anim_ticks = 0
                 self.column += 1
                 if self.column == 4:
@@ -1376,7 +1325,7 @@ def fixed_angle(angle):
     return angle
 
 
-def can_see(from_, to, viewangle=0.0, fov=0.0):
+def can_see(from_, to, viewangle=None, fov=None):
     # Universal function for checking if it's possible to see one point from another in tilemap
     # Returns True if end point visible, False if not visible
 
@@ -1384,8 +1333,11 @@ def can_see(from_, to, viewangle=0.0, fov=0.0):
     end_x, end_y = to
     angle_to_end = atan2(end_y - start_y, end_x - start_x)
 
-    if viewangle and fov:  # If viewangle and fov given
-        if abs(angle_to_end - viewangle) > fov / 2:  # If end position outside viewangle
+    if viewangle is not None and fov is not None:  # If viewangle and fov given
+        angle = abs(viewangle - angle_to_end)
+        if angle > pi:
+            angle = 2 * pi - angle
+        if angle > fov / 2:  # If end position outside viewangle
             return False
 
     # Check if there is something between end and start point
@@ -1402,15 +1354,12 @@ def dynamic_colour(current, maximum):
         ratio = 1 - ratio
         g = 255
         r = int(ratio * 2 * 255)
-    b = 0
-    return r, g, b
+    return r, g, 0
 
 
 def send_rays():
     global WALLS
     WALLS = []
-    global OBJECTS
-    OBJECTS = []
     for c, rayangle_offset in enumerate(CAMERA_PLANE.rayangle_offsets):
         # Get values from raycast()
         collision_x, collision_y, texture, column =\
@@ -1440,7 +1389,7 @@ def raycast(start_pos, rayangle, extra_values=False):
                     if (int(obj.x), int(obj.y)) == (map_x, map_y):
                         break
                 else:
-                    OBJECTS.append(Object((map_x, map_y), tile_value))
+                    OBJECTS.append(Object(map_x, map_y, tile_value))
 
         elif tile_type == 'Door':
             for d in DOORS:
@@ -1632,15 +1581,16 @@ def update_gameobjects():
     for m in MESSAGES:
         m.update()
     WEAPON_MODEL.update()
-    handle_objects_under_player()
 
 
 def handle_objects_under_player():
     # Checking if player is standing on an object bc raycast() will miss objects player is standing on
     # Also picks up objects if they can be picked up
+    global OBJECTS
+    OBJECTS = []
     tile_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
     if tile_value < 0:
-        OBJECTS.append(Object((int(PLAYER.x), int(PLAYER.y)), tile_value))
+        OBJECTS.append(Object(int(PLAYER.x), int(PLAYER.y), tile_value))
         if TILE_VALUES_INFO[tile_value].desc == 'Dynamic':
             colour = None
             type = 0  # 0 = item, 1 = weapon
@@ -1699,9 +1649,9 @@ def handle_objects_under_player():
                     WEAPON_PICKUP_SOUND.play()
 
 
-def draw_frame():
+def draw_background():
     if LEVEL.skytexture:
-        # x_offset is a value ranging from 0 to 1
+        # x_offset ranges from 0 to 1
         x_offset = (PLAYER.viewangle + pi) / (2 * pi)
         x = x_offset * LEVEL.skytexture.get_width()
 
@@ -1719,12 +1669,22 @@ def draw_frame():
         pygame.draw.rect(DISPLAY, LEVEL.ceiling_colour, ((0, 0), (D_W, H_H)))  # Ceiling
     pygame.draw.rect(DISPLAY, LEVEL.floor_colour, ((0, H_H), (D_W, H_H)))  # Floor
 
-    # Sorting objects by perp_dist so those further away are drawn first
-    to_draw = WALLS + OBJECTS
-    for e in ENEMIES:
-        if e.needs_to_be_drawn:
-            to_draw.append(e)
+
+def draw_frame():
+    draw_background()
+    # Draw walls
+    for w in WALLS:
+        w.draw()
+
+    # Get a list of objects that need to be drawn
+    to_draw = []
+    for sprite in ENEMIES + OBJECTS:
+        if sprite.needs_to_be_drawn:
+            to_draw.append(sprite)
+    # Sort objects by perp_dist so things further away are drawn first
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
+
+    # Draw all objects in order
     for obj in to_draw:
         obj.draw()
 
@@ -1757,11 +1717,12 @@ def game_loop():
     while not QUIT:
         events()
         if not PAUSED:
+            TIME += 1
             PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
             PLAYER.handle_movement()
             update_gameobjects()
-            TIME += 1
 
+        handle_objects_under_player()
         send_rays()
         draw_frame()
         HUD.draw()
@@ -1794,7 +1755,7 @@ if __name__ == '__main__':
 
     # Make class constants
     Drawable.constant = 0.65 * D_H
-    WallColumn.width = int(D_W / RAYS_AMOUNT)
+    WallColumn.width = int(D_W / DRAW_RESOLUTION)
 
     # Pygame stuff
     pygame.mixer.pre_init(11025, -16, 1, 256)
@@ -1806,7 +1767,7 @@ if __name__ == '__main__':
     pygame.event.set_grab(True)
     pygame.event.set_allowed([KEYDOWN, MOUSEBUTTONDOWN])
 
-    CAMERA_PLANE = CameraPlane(RAYS_AMOUNT, FOV)
+    CAMERA_PLANE = CameraPlane(DRAW_RESOLUTION, FOV)
     GAME_FONT = pygame.font.Font('../font/LCD_Solid.ttf', 32)
     HUD = Hud()
 
@@ -1827,5 +1788,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(8)
+    LEVEL.start(2)
     pygame.quit()

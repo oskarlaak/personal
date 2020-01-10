@@ -23,10 +23,13 @@ def get_enemy_info():
             self.shooting_range = shooting_range  # Max shooting range
             self.accuracy = accuracy  # 0 will never hit, 1 is normal, can go higher
             self.damage_multiplier = damage_multiplier
-            self.memory = memory  # Time in ticks enemy knows player's pos after player has disappeared from enemy's POV
+            self.memory = memory  # Time in ticks enemy knows player's pos after player has disappeared
             self.patience = patience  # Max time in ticks enemy will remain without action
-            self.pain_chance = pain_chance  # From 0 tro 1, how likely player will be shown hurt when shot
+            self.pain_chance = pain_chance  # From 0 to 1, determines how likely enemy will be shown hurt when shot
             self.shot_columns = shot_columns
+            self.running_rows = (1, 2, 3, 4)
+            self.shooting_row = 6
+            self.hit_row = 5
 
     class Boss:
         type = 'Boss'
@@ -36,9 +39,13 @@ def get_enemy_info():
             self.sounds = sounds
             self.hp = hp
             self.speed = speed
+            self.shooting_range = 32
             self.accuracy = accuracy
             self.damage_multiplier = damage_multiplier
+            self.pain_chance = 0
             self.shot_columns = shot_columns
+            self.shooting_row = 1
+            self.hit_row = 2
 
     try:
         # Bosses
@@ -97,7 +104,7 @@ def get_enemy_info():
             dog:     Enemy(3, EnemySounds(dog_attack, dog_attack, dog_death),
                             5, 0.10, 4, 1, 9.99, 1.40, 100,   0, 0.00, [3]),
             officer: Enemy(4, EnemySounds(halt_1, pistol, death_3),
-                           40, 0.08, 2, 6, 1.10, 0.90, 500,  90, 0.85, [2, 4]),
+                           40, 0.08, 2, 6, 1.10, 0.90, 500,  90, 0.75, [2, 4]),
             ss:      Enemy(5, EnemySounds(halt_2, heavy_machine_gun, death_4),
                            50, 0.06, 3, 7, 1.05, 1.00, 500, 180, 0.50, [3, 4, 5]),
             mutant:  Enemy(6, EnemySounds(None, pistol, death_2),
