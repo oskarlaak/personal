@@ -5,9 +5,6 @@ import math
 
 
 def get():
-    def scale(image, times):
-        return pygame.transform.scale(image, (image.get_width() * times, image.get_height() * times))
-
     class WeaponSounds:
         def __init__(self, fire, idle=None):
             self.fire = fire
@@ -20,7 +17,7 @@ def get():
             self.name = name
             self.sounds = sounds
             self.animation_frames = int(weapon_sheet.get_width() / Weapon.cell_size) - 1
-            self.weapon_sheet = scale(weapon_sheet, 3)
+            self.weapon_sheet = weapon_sheet
             self.shot_column = shot_column
             self.fire_delay = fire_delay  # Has to match with number of animation frames
             self.damage = damage
@@ -33,7 +30,6 @@ def get():
         def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay, damage, pain_chance, automatic, range):
             super().__init__(name, sounds, weapon_sheet, shot_column, fire_delay, damage, pain_chance, automatic)
             self.range = range
-
 
     class HitscanWeapon(Weapon):
         type = 'Hitscan'
