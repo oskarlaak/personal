@@ -13,39 +13,54 @@ def get_enemy_info():
     class Enemy:
         type = 'Normal'
 
-        def __init__(self, id, sounds, hp, speed, wandering_radius, shooting_range, accuracy,
-                     damage_multiplier, memory, patience, pain_chance, shot_columns):
+        def __init__(self, id, sounds, hp, speed, wandering_radius, shooting_range, damage_multiplier, accuracy,
+                     pain_chance, patience, death_frames, shooting_frames, shot_columns):
             self.id = id
             self.sounds = sounds
             self.hp = hp
             self.speed = speed
             self.wandering_radius = wandering_radius
             self.shooting_range = shooting_range  # Max shooting range
-            self.accuracy = accuracy  # 0 will never hit, 1 is normal, can go higher
+
             self.damage_multiplier = damage_multiplier
-            self.memory = memory  # Time in ticks enemy knows player's pos after player has disappeared
-            self.patience = patience  # Max time in ticks enemy will remain without action
+            self.accuracy = accuracy  # 0 will never hit, 1 is normal, can go higher
             self.pain_chance = pain_chance  # From 0 to 1, determines how likely enemy will be shown hurt when shot
-            self.shot_columns = shot_columns
+
+            self.patience = patience  # Max time in ticks enemy will remain without action
+
             self.running_rows = (1, 2, 3, 4)
-            self.shooting_row = 6
+
+            self.death_frames = death_frames
             self.hit_row = 5
+
+            self.shooting_frames = shooting_frames
+            self.shot_columns = shot_columns
+            self.shooting_row = 6
 
     class Boss:
         type = 'Boss'
 
-        def __init__(self, id, sounds, hp, speed, accuracy, damage_multiplier, shot_columns):
+        def __init__(self, name, id, sounds, hp, speed, damage_multiplier, accuracy, running_frames,
+                     death_frames, shooting_frames, shot_columns):
+            self.name = name
             self.id = id
             self.sounds = sounds
             self.hp = hp
             self.speed = speed
             self.shooting_range = 32
-            self.accuracy = accuracy
+
             self.damage_multiplier = damage_multiplier
+            self.accuracy = accuracy
             self.pain_chance = 0
+
+            self.running_frames = running_frames
+
+            self.death_frames = death_frames
+            self.hit_row = 2
+
+            self.shooting_frames = shooting_frames
             self.shot_columns = shot_columns
             self.shooting_row = 1
-            self.hit_row = 2
 
     try:
         # Bosses
@@ -93,21 +108,21 @@ def get_enemy_info():
 
     else:
         enemy_info = {
-            ottogiftmacher: Boss(7, EnemySounds(halten_sie, heavy_pistol, scheisse_koph, boss_step),
-                                  666, 0.10, 5.00, 3.00, [4]),
-            hansgrosse:     Boss(7, EnemySounds(guten_tag, chaingun, death_1, boss_step),
-                                  777, 0.10, 1.00, 1.20, [2, 3, 4, 5, 6, 7]),
-            hitler:         Boss(7, EnemySounds(scheisse, chaingun, death_5, boss_step),
-                                 1000, 0.07, 1.00, 1.50, [3, 4, 5, 6, 7]),
+            ottogiftmacher: Boss('Otto Giftmacher', 7, EnemySounds(halten_sie, heavy_pistol, scheisse_koph, boss_step),
+                                  666, 0.10, 3.00, 5.00, 4, 4, 8, [4]),
+            hansgrosse:     Boss('Hans Grosse', 7, EnemySounds(guten_tag, chaingun, death_1, boss_step),
+                                  777, 0.10, 1.20, 1.00, 4, 4, 8, [2, 3, 4, 5, 6, 7]),
+            hitler:         Boss('Hitler', 7, EnemySounds(scheisse, chaingun, death_5, boss_step),
+                                 1000, 0.07, 1.50, 1.00, 4, 8, 8, [3, 4, 5, 6, 7]),
             guard:   Enemy(2, EnemySounds(achtung, pistol, death_2),
-                           20, 0.07, 2, 4, 1.00, 1.00, 300,  60, 1.00, [4]),
+                           20, 0.07, 2,   5, 1.00, 1.00, 1.00,  60, 5, 6, [4]),
             dog:     Enemy(3, EnemySounds(dog_attack, dog_attack, dog_death),
-                            5, 0.10, 4, 1, 9.99, 1.40, 100,   0, 0.00, [3]),
+                            5, 0.10, 4, 1.2, 1.40, 9.99, 0.00,   0, 5, 6, [3]),
             officer: Enemy(4, EnemySounds(halt_1, pistol, death_3),
-                           40, 0.08, 2, 6, 1.10, 0.90, 500,  90, 0.75, [2, 4]),
+                           40, 0.08, 2,   8, 0.90, 1.10, 0.75,  90, 5, 6, [2, 4]),
             ss:      Enemy(5, EnemySounds(halt_2, heavy_machine_gun, death_4),
-                           50, 0.06, 3, 7, 1.05, 1.00, 500, 180, 0.50, [3, 4, 5]),
+                           50, 0.06, 3,   8, 1.00, 1.05, 0.50, 180, 5, 6, [3, 4, 5]),
             mutant:  Enemy(6, EnemySounds(None, pistol, death_2),
-                           30, 0.07, 5, 5, 1.00, 0.60, 400, 180, 0.75, [1, 3])
+                           30, 0.07, 5,   6, 0.60, 1.00, 0.75,  60, 5, 6, [1, 3])
         }
         return enemy_info

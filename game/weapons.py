@@ -13,7 +13,7 @@ def get():
     class Weapon:
         cell_size = 192
 
-        def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay, damage, pain_chance, automatic):
+        def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic):
             self.name = name
             self.sounds = sounds
             self.animation_frames = int(weapon_sheet.get_width() / Weapon.cell_size) - 1
@@ -21,21 +21,20 @@ def get():
             self.shot_column = shot_column
             self.fire_delay = fire_delay  # Has to match with number of animation frames
             self.damage = damage
-            self.pain_chance = pain_chance
             self.automatic = automatic
 
     class Melee(Weapon):
         type = 'Melee'
 
-        def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay, damage, pain_chance, automatic, range):
-            super().__init__(name, sounds, weapon_sheet, shot_column, fire_delay, damage, pain_chance, automatic)
+        def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic, range):
+            super().__init__(name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic)
             self.range = range
 
     class HitscanWeapon(Weapon):
         type = 'Hitscan'
 
-        def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay, damage, pain_chance, automatic, spread):
-            super().__init__(name, sounds, weapon_sheet, shot_column, fire_delay, damage, pain_chance, automatic)
+        def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic, spread):
+            super().__init__(name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic)
             camera_plane_dist = 0.5 / math.tan(FOV / 2)
             self.max_x_spread = int(math.tan(spread) * camera_plane_dist * D_W)
 
@@ -43,8 +42,8 @@ def get():
         type = 'Shotgun'
 
         def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay,
-                     damage, pain_chance, automatic, spread, shot_bullets):
-            super().__init__(name, sounds, weapon_sheet, shot_column, fire_delay, damage, pain_chance, automatic)
+                     damage, automatic, spread, shot_bullets):
+            super().__init__(name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic)
             camera_plane_dist = 0.5 / math.tan(FOV / 2)
             self.max_x_spread = int(math.tan(spread) * camera_plane_dist * D_W)
             self.shot_bullets = shot_bullets
@@ -71,14 +70,14 @@ def get():
     else:
         weapons = [None,  # Makes it so first weapon is index 1 instead of 0
         HitscanWeapon('Pistol', WeaponSounds(pistol_sound), pistol,
-                      1,  9, 14, 0.75, False, 0.00),
+                      1,  9, 14, False, 0.00),
               Shotgun('Shotgun', WeaponSounds(shotgun_sound), shotgun,
-                      1, 28, 10, 0.15, False, 0.18,  7),
+                      1, 28, 10, False, 0.18,  7),
         HitscanWeapon('Chaingun', WeaponSounds(chaingun_sound), chaingun,
-                      1,  4, 14, 0.25,  True, 0.12),
+                      1,  4, 14,  True, 0.12),
               Shotgun('Super Shotgun', WeaponSounds(supershotgun_sound), supershotgun,
-                      1, 50, 10, 0.20, False, 0.25, 14),
+                      1, 50, 10, False, 0.25, 14),
                 Melee('Chainsaw', WeaponSounds(chainsaw_sound, chainsaw_idle), chainsaw,
-                      1,  4, 40, 1.00,  True, 1.25)
+                      1,  4, 40,  True, 1.25)
         ]
         return weapons
