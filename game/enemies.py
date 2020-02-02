@@ -13,9 +13,9 @@ def get_enemy_info():
     class Enemy:
         type = 'Normal'
 
-        def __init__(self, id, sounds, hp, speed, wandering_radius, shooting_range, damage_multiplier, accuracy,
+        def __init__(self, channel_id, sounds, hp, speed, wandering_radius, shooting_range, damage_multiplier, accuracy,
                      pain_chance, patience, death_frames, shooting_frames, shot_columns):
-            self.id = id
+            self.channel_id = channel_id
             self.sounds = sounds
             self.hp = hp
             self.speed = speed
@@ -40,10 +40,10 @@ def get_enemy_info():
     class Boss:
         type = 'Boss'
 
-        def __init__(self, name, id, sounds, hp, speed, damage_multiplier, accuracy, running_frames,
+        def __init__(self, name, channel_id, sounds, hp, speed, damage_multiplier, accuracy, running_frames,
                      death_frames, shooting_frames, shot_columns):
             self.name = name
-            self.id = id
+            self.channel_id = channel_id
             self.sounds = sounds
             self.hp = hp
             self.speed = speed
@@ -117,7 +117,7 @@ def get_enemy_info():
             guard:   Enemy(2, EnemySounds(achtung, pistol, death_2),
                            20, 0.07, 2,   5, 1.00, 1.00, 1.00,  60, 5, 6, [4]),
             dog:     Enemy(3, EnemySounds(dog_attack, dog_attack, dog_death),
-                            5, 0.10, 4, 1.2, 1.40, 9.99, 0.00,   0, 5, 6, [3]),
+                            5, 0.10, 4, 1.2, 0.50, 5.00, 0.00,   0, 5, 6, [1, 2, 3, 4, 5]),
             officer: Enemy(4, EnemySounds(halt_1, pistol, death_3),
                            40, 0.08, 2,   8, 0.90, 1.10, 0.75,  90, 5, 6, [2, 4]),
             ss:      Enemy(5, EnemySounds(halt_2, heavy_machine_gun, death_4),

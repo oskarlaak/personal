@@ -33,7 +33,6 @@ def get_tile_values_info(texture_size, enemy_info):
         bloodycave = pygame.image.load('../textures/walls/bloodycave.png').convert()
         bluebrick = pygame.image.load('../textures/walls/bluebrick.png').convert()
         bluecellar = pygame.image.load('../textures/walls/bluecellar.png').convert()
-        browncobblestone = pygame.image.load('../textures/walls/browncobblestone.png').convert()
         brownstone = pygame.image.load('../textures/walls/brownstone.png').convert()
         cobblestone = pygame.image.load('../textures/walls/cobblestone.png').convert()
         elevator = pygame.image.load('../textures/walls/elevator.png').convert()
@@ -42,6 +41,7 @@ def get_tile_values_info(texture_size, enemy_info):
         redbrick = pygame.image.load('../textures/walls/redbrick.png').convert()
         stone = pygame.image.load('../textures/walls/stone.png').convert()
         wood = pygame.image.load('../textures/walls/wood.png').convert()
+        secret = pygame.image.load('../textures/walls/secret.png').convert()
         end_trigger = pygame.image.load('../textures/walls/endtrigger.png').convert()
 
         # Door textures
@@ -92,7 +92,6 @@ def get_tile_values_info(texture_size, enemy_info):
         assign_texture_sheet(texture_size * 2, texture_size, 1, bloodycave, 'Wall', 'Bloody Cave')
         assign_texture_sheet(texture_size * 2, texture_size, 1, bluebrick, 'Wall', 'Blue Brick')
         assign_texture_sheet(texture_size * 2, texture_size, 1, bluecellar, 'Wall', 'Blue Cellar')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, browncobblestone, 'Wall', 'Brown Cobblestone')
         assign_texture_sheet(texture_size * 2, texture_size, 1, brownstone, 'Wall', 'Brown Stone')
         assign_texture_sheet(texture_size * 2, texture_size, 1, cobblestone, 'Wall', 'Cobblestone')
         assign_texture_sheet(texture_size * 2, texture_size, 1, elevator, 'Wall', 'Elevator')
@@ -101,6 +100,7 @@ def get_tile_values_info(texture_size, enemy_info):
         assign_texture_sheet(texture_size * 2, texture_size, 1, redbrick, 'Wall', 'Red Brick')
         assign_texture_sheet(texture_size * 2, texture_size, 1, stone, 'Wall', 'Stone')
         assign_texture_sheet(texture_size * 2, texture_size, 1, wood, 'Wall', 'Wood')
+        assign_texture_sheet(texture_size * 2, texture_size, 1, secret, 'Wall', 'Secret')
 
         # Both end trigger texture variants
         assign_texture_sheet(texture_size * 2, texture_size, 1, end_trigger, 'Wall', 'End-trigger')

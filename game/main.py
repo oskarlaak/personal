@@ -1,11 +1,10 @@
 # TO DO:
 # Create levels
 # Level number hud
-# Add weapon speed penalties - maybe dualwielding pistols
 # Move leveleditor textures to texture folder
 # Remake objects drawing
-# Revisit player movement handling
-# Maybe add global values to colours most commonly used
+# Add ammo system - players drop different amount of ammo
+# Add directional sound
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -15,6 +14,7 @@
 # Killing a boss gives player a key to which he can use to open locked doors
 # There is no support for multiple bosses in one level
 # Games default font size is 32, but it also support sizes 16 and 64
+# Push walls and doors need to be placed in between wall for them to display and work properly
 
 # Sound Channels:
 # 0 = door and pickup sounds
@@ -32,7 +32,7 @@ class Player:
         self.weapon_nr = 1
         self.saved_weapon_loadout = [1]
 
-    def setup(self, pos, angle):
+    def setup(self, pos, angle):  # Called every time level (re)starts
         self.x = pos[0]
         self.y = pos[1]
         self.viewangle = angle
@@ -70,32 +70,28 @@ class Player:
         self.dir_y = sin(self.viewangle)
         old_pos = (self.x, self.y)
 
-        # Vector based movement, bc otherwise player could move faster diagonally
-        if keys_pressed[K_w] or keys_pressed[K_a] or keys_pressed[K_s] or keys_pressed[K_d]:
-            movement_x = 0
-            movement_y = 0
+        if keys_pressed:
+            x_move = 0
+            y_move = 0
             if keys_pressed[K_w]:
-                movement_x += self.dir_x
-                movement_y += self.dir_y
-
+                x_move += self.dir_x
+                y_move += self.dir_y
             if keys_pressed[K_a]:
-                movement_x += self.dir_y
-                movement_y += -self.dir_x
-
+                x_move += self.dir_y
+                y_move += -self.dir_x
             if keys_pressed[K_s]:
-                movement_x += -self.dir_x
-                movement_y += -self.dir_y
-
+                x_move += -self.dir_x
+                y_move += -self.dir_y
             if keys_pressed[K_d]:
-                movement_x += -self.dir_y
-                movement_y += self.dir_x
+                x_move += -self.dir_y
+                y_move += self.dir_x
 
-            movement_vector = numpy.asarray([[movement_x, movement_y]])  # Needed for normalize() function
-            if abs(movement_vector[0][0]) + abs(movement_vector[0][1]) > 0.1:
-                normalized_vector = normalize(movement_vector)[0]  # [0] because vector is inside of list
+            if abs(x_move) > 0.000001 or abs(y_move) > 0.000001:  # 0.000001 avoids calculation errors
+                moving_angle = atan2(y_move, x_move)
+                x_move = cos(moving_angle)
+                y_move = sin(moving_angle)
+                PLAYER.move(x_move * Player.speed, y_move * Player.speed)
 
-                PLAYER.move(normalized_vector[0] * Player.speed,
-                            normalized_vector[1] * Player.speed)
         self.total_movement = sqrt(squared_dist(old_pos, (self.x, self.y)))
 
     def move(self, x_move, y_move):
@@ -187,7 +183,6 @@ class Player:
 
 class Door:
     type = 'Normal'
-    locked = False  # Only needed to avoid AttributeError
     speed = 0.065
     open_ticks = 90
 
@@ -199,20 +194,29 @@ class Door:
         self.closed_state = 1  # 1 is fully closed, 0 is fully opened
         self.state = 0
 
-    def __eq__(self, other):
-        return (self.x, self.y) == (other.x, other.y)
+    #def __eq__(self, other):
+    #    return (self.x, self.y) == (other.x, other.y)
 
-    def play_sound(self, sound):
-        volume = (1 - sqrt(squared_dist((PLAYER.x, PLAYER.y), (self.x + 0.5, self.y + 0.5))) / 32) ** 2
-        if volume > 0:
-            sound.set_volume(volume)
-            sound.play()
+    def start_opening(self):
+        self.state = 1
+
+    def room_to_close(self):
+        # Checking if player is not in door's way
+        safe_dist = 0.5 + Player.half_hitbox
+        return abs(self.x + 0.5 - PLAYER.x) > safe_dist or abs(self.y + 0.5 - PLAYER.y) > safe_dist
+
+    def start_closing_if_needed(self):
+        self.ticks += 1
+        if self.ticks >= Door.open_ticks and self.room_to_close():
+            TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
+            self.ticks = 0
+            self.state += 1
 
     def move(self):
         if self.state > 0:
             if self.state == 1:  # Opening
                 if self.closed_state == 1:
-                    self.play_sound(self.open_sound)
+                    play_sound(self.open_sound, 0, squared_dist((PLAYER.x, PLAYER.y), (self.x + 0.5, self.y + 0.5)))
                 self.closed_state -= Door.speed
                 if self.closed_state <= 0:
                     TILEMAP[self.y][self.x] = 0  # Make tile walkable
@@ -220,18 +224,11 @@ class Door:
                     self.state += 1
 
             elif self.state == 2:  # Staying open
-                self.ticks += 1
-                if self.ticks >= Door.open_ticks:  # If time for door to close
-                    # Checking if player is not in door's way
-                    safe_dist = 0.5 + Player.half_hitbox
-                    if abs(self.x + 0.5 - PLAYER.x) > safe_dist or abs(self.y + 0.5 - PLAYER.y) > safe_dist:
-                        TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
-                        self.ticks = 0
-                        self.state += 1
+                self.start_closing_if_needed()
 
             elif self.state == 3:  # Closing
                 if self.closed_state == 0:
-                    self.play_sound(self.close_sound)
+                    play_sound(self.close_sound, 0, squared_dist((PLAYER.x, PLAYER.y), (self.x + 0.5, self.y + 0.5)))
                 self.closed_state += Door.speed
                 if self.closed_state >= 1:
                     self.closed_state = 1
@@ -246,68 +243,86 @@ class BossDoor(Door):
 
     def __init__(self, map_pos, tile_value):
         super().__init__(map_pos, tile_value)
-
         self.locked = False
-        if TILEMAP[self.y][self.x + 1] <= 0:
-            self.door_fronts = [(self.x + 1.5, self.y + 0.5), (self.x - 0.5, self.y + 0.5)]
+
+    def start_opening(self):
+        self.state = 1
+        if TILEMAP[self.y + 1][self.x] > 0:
+            if PLAYER.x < self.x:  # Door's center x is actually 0.5 off but it doesn't matter here
+                self.trigger_tile = (self.x + 1, self.y)
+            else:
+                self.trigger_tile = (self.x - 1, self.y)
         else:
-            self.door_fronts = [(self.x + 0.5, self.y + 1.5), (self.x + 0.5, self.y - 0.5)]
+            if PLAYER.y < self.y:  # Door's center y is actually 0.5 off but it doesn't matter here
+                self.trigger_tile = (self.x, self.y + 1)
+            else:
+                self.trigger_tile = (self.x, self.y - 1)
+
+    def start_closing_if_needed(self):
+        self.ticks += 1
+        if self.room_to_close():
+            if (int(PLAYER.x), int(PLAYER.y)) == self.trigger_tile:
+                # "Spawn boss"
+                TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
+                self.locked = True
+                self.state += 1
+                for e in ENEMIES:
+                    if e.type == 'Boss':
+                        BOSSHEALTHBAR.start_showing(e)
+                        e.chasing = True
+                        break
+
+            elif self.ticks >= Door.open_ticks:
+                TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
+                self.ticks = 0
+                self.state += 1
+
+
+class PushWall:
+    speed = 0.015
+
+    def __init__(self, map_pos, tile_value):
+        self.x, self.y = map_pos
+        self.value = tile_value
+        self.tile_offset = 0
+        self.activated = False
+
+    def start_moving(self):
+        self.activated = True
+        # Calculate the direction the push wall needs to move when activated
+        if TILEMAP[self.y + 1][self.x] > 0:
+            self.move_dir_y = 0
+            if PLAYER.x < self.x:  # Push wall's center x is actually 0.5 off but it doesn't matter here
+                self.move_dir_x = 1
+            else:
+                self.move_dir_x = -1
+        else:
+            self.move_dir_x = 0
+            if PLAYER.y < self.y:  # Push wall's center y is actually 0.5 off but it doesn't matter here
+                self.move_dir_y = 1
+            else:
+                self.move_dir_y = -1
 
     def move(self):
-        if self.state > 0:
-            if self.state == 1 and not self.locked:  # Opening
-                if self.closed_state == 1:
-                    self.play_sound(self.open_sound)
-                    if len(self.door_fronts) == 2:
-                        player_pos = (PLAYER.x, PLAYER.y)
-                        if squared_dist(player_pos, self.door_fronts[0]) < squared_dist(player_pos, self.door_fronts[1]):
-                            del self.door_fronts[0]
-                        else:
-                            del self.door_fronts[1]
-                self.closed_state -= Door.speed
-                if self.closed_state <= 0:
-                    TILEMAP[self.y][self.x] = 0  # Make tile walkable
-                    self.closed_state = 0
-                    self.state += 1
-
-            elif self.state == 2:  # Staying open
-                self.ticks += 1
-                safe_dist = 0.5 + Player.half_hitbox
-                if abs(self.x + 0.5 - PLAYER.x) > safe_dist or abs(self.y + 0.5 - PLAYER.y) > safe_dist:
-                    player_pos = (PLAYER.x, PLAYER.y)
-                    if squared_dist(player_pos, self.door_fronts[0]) < 1:
-                        # "Spawn boss"
-                        TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
-                        self.locked = True
-                        self.state += 1
-                        for e in ENEMIES:
-                            if e.type == 'Boss':
-                                BOSSHEALTHBAR.start_showing(e)
-                                e.chasing = True
-                                break
-
-                    elif self.ticks >= Door.open_ticks:
-                        TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
-                        self.ticks = 0
-                        self.state += 1
-
-            elif self.state == 3:  # Closing
-                if self.closed_state == 0:
-                    self.play_sound(self.close_sound)
-                self.closed_state += Door.speed
-                if self.closed_state >= 1:
-                    self.closed_state = 1
-                    self.state = 0
+        if self.activated and TILEMAP[self.y + self.move_dir_y][self.x + self.move_dir_x] <= 0:
+            self.tile_offset += self.speed
+            if self.tile_offset >= 1:
+                self.tile_offset = 0
+                TILEMAP[self.y][self.x] = 0  # Make tile walkable
+                self.x += self.move_dir_x
+                self.y += self.move_dir_y
+                TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
 
 
 class WeaponModel:
+    channel_id = 1
+    switch_ticks = 6  # Needs to be even number
+
     def __init__(self):
-        self.sound_channel = pygame.mixer.Channel(1)
         self.shooting = False
         self.switching = False
 
         self.size = int(D_W * 0.75)
-        self.switch_ticks = 6  # Needs to be even number
         self.ticks = 0
         self.column = 0
         self.display_y = 0
@@ -327,7 +342,7 @@ class WeaponModel:
             bullet_x_pos = H_W + x_spread
             damage_multiplier = 1
             for e in shootable_enemies:
-                if bullet_x_pos > e.start_x and bullet_x_pos < e.end_x:
+                if e.start_x < bullet_x_pos < e.end_x:
                     if not max_range or e.dist_squared < max_range ** 2:
                         if not e.status == 'dead':
                             pain = e.pain_chance > random.random()
@@ -367,18 +382,18 @@ class WeaponModel:
                     for i in range(weapon.shot_bullets):
                         bullet_hitscan(shootable_enemies, -weapon.max_x_spread + round(i * x_spread_difference))
 
-                self.sound_channel.play(self.weapon.sounds.fire)
+                play_sound(self.weapon.sounds.fire, WeaponModel.channel_id)
 
     def switch_weapons(self):
         self.ticks += 1
-        if self.ticks == self.switch_ticks / 2:
+        if self.ticks == WeaponModel.switch_ticks / 2:
             PLAYER.weapon_nr = self.switching  # Switches weapon model when halfway through
-            self.sound_channel.stop()
+            #self.sound_channel.stop()
 
-        if self.ticks <= self.switch_ticks / 2:
-            self.display_y += int(self.size / self.switch_ticks)
-        elif self.ticks <= self.switch_ticks:
-            self.display_y -= int(self.size / self.switch_ticks)
+        if self.ticks <= WeaponModel.switch_ticks / 2:
+            self.display_y += int(self.size / WeaponModel.switch_ticks)
+        elif self.ticks <= WeaponModel.switch_ticks:
+            self.display_y -= int(self.size / WeaponModel.switch_ticks)
         else:
             self.ticks = 0
             self.switching = False
@@ -386,12 +401,12 @@ class WeaponModel:
     def update(self):
         self.weapon = WEAPONS[PLAYER.weapon_nr]
 
-        if self.weapon.sounds.idle:
-           if not self.shooting:
-                if self.sound_channel.get_sound() == self.weapon.sounds.idle:
-                    self.sound_channel.queue(self.weapon.sounds.idle)
-                else:
-                    self.sound_channel.play(self.weapon.sounds.idle)
+        #if self.weapon.sounds.idle:
+        #   if not self.shooting:
+        #        if self.sound_channel.get_sound() == self.weapon.sounds.idle:
+        #            self.sound_channel.queue(self.weapon.sounds.idle)
+        #        else:
+        #            self.sound_channel.play(self.weapon.sounds.idle)
 
         if self.shooting:
             self.shoot(self.weapon)
@@ -412,7 +427,6 @@ class WeaponModel:
 
 class Effects:
     def __init__(self):
-        self.colour = None
         self.alpha = 0
 
     def update(self, colour):
@@ -426,58 +440,6 @@ class Effects:
             effect.fill(self.colour)
             DISPLAY.blit(effect, (0, 0))
             self.alpha -= 16
-
-
-class Hud:
-    def draw(self):
-        # Even though HUD uses the default font size of 32, the actual line height of the text is about 28 pixels
-        line_h = 28
-        safezone_w = 5
-        safezone_h = 5
-
-        # Messages
-        y = Message.start_y
-        for m in reversed(MESSAGES):
-            message = render_text(m.text, m.colour, m.alpha, Message.font_size)
-            DISPLAY.blit(message, (safezone_w, y))
-            y += Message.font_size / 32 * line_h
-
-        # FPS counter
-        if SHOW_FPS:
-            fps_counter = render_text(str(ceil(CLOCK.get_fps())), (0, 255, 0))
-            DISPLAY.blit(fps_counter, (D_W - safezone_w - fps_counter.get_width(), safezone_h))
-
-        # Weapon HUD
-        WEAPON_MODEL.draw()
-        current_weapon = WEAPON_MODEL.weapon
-
-        weapon_name = render_text(str(current_weapon.name), (0, 0, 0))
-        DISPLAY.blit(weapon_name, (D_W - weapon_name.get_width() - safezone_w, D_H - line_h * 2 - safezone_h))
-
-        # Player hp HUD
-        hp_text = render_text('HP:', (0, 0, 0))
-        hp_amount = render_text(str(PLAYER.hp), dynamic_colour(PLAYER.hp, Player.max_hp))
-        DISPLAY.blit(hp_text, (safezone_w, D_H - line_h * 2 - safezone_h))
-        DISPLAY.blit(hp_amount, (safezone_w, D_H - line_h - safezone_h))
-
-        # Loadout HUD
-        x = D_W - safezone_w
-        for w in reversed(WEAPONS):
-            if w:
-                weapon_nr = WEAPONS.index(w)
-                if w == WEAPON_MODEL.weapon:  # If equipped
-                    colour = (0, 255, 0)
-                elif weapon_nr in PLAYER.weapon_loadout:  # If picked up
-                    colour = (0, 128, 0)
-                else:  # If not picked up
-                    colour = (0, 32, 0)
-                number = render_text(str(weapon_nr), colour)
-                x -= number.get_width()
-                DISPLAY.blit(number, (x, D_H - line_h - safezone_h))
-                x -= 10
-
-        BOSSHEALTHBAR.draw()
-        EFFECTS.draw()
 
 
 class Message:
@@ -505,21 +467,21 @@ class Message:
 
 
 class CameraPlane:
-    half_len = 0.5
-
     def __init__(self, fov):
         # Creates a list of rayangle offsets which will be added to player's viewangle when sending rays every frame
         # Bc these offsets do not change during the game, they are calculated before the game starts
         # Offsets are calculated so that each ray will be equal distance away from previous ray on the camera plane
-        # Of course in 2D rendering camera plane is acutally a line
-        # Also FOV has to be < pi (and not <= pi) for it to work properly
+        # Of course in 2D rendering camera plane is actually a line
+        # FOV has to be < pi (and not <= pi) for it to work properly
+        # Also calculates camera plane's distance to later calculate sprite's display_pos
 
         self.rayangle_offsets = []
 
-        camera_plane_start = -CameraPlane.half_len
-        camera_plane_step = CameraPlane.half_len * 2 / D_W
+        camera_plane_len = 1
+        camera_plane_start = -camera_plane_len / 2
+        camera_plane_step = camera_plane_len / D_W
 
-        self.dist = CameraPlane.half_len / tan(fov / 2)
+        self.dist = camera_plane_len / 2 / tan(fov / 2)
         for i in range(D_W):
             camera_plane_pos = camera_plane_start + i * camera_plane_step
 
@@ -591,7 +553,7 @@ class Enemy(Drawable):
         self.chasing = False
 
         # Take attributes from ENEMY_INFO based on spritesheet
-        self.channel = pygame.mixer.Channel(ENEMY_INFO[self.sheet].id)
+        self.channel_id = ENEMY_INFO[self.sheet].channel_id
         self.sounds = ENEMY_INFO[self.sheet].sounds
         self.hp = ENEMY_INFO[self.sheet].hp
         self.speed = ENEMY_INFO[self.sheet].speed
@@ -729,7 +691,7 @@ class Enemy(Drawable):
 
             self.hp = 0
             self.chasing = False
-            self.play_sound(self.sounds.death)
+            play_sound(self.sounds.death, self.channel_id, self.dist_squared)
         elif pain:
             self.status = 'hit'
             self.row = self.hit_row
@@ -796,17 +758,7 @@ class Enemy(Drawable):
             else:
                 door = Door((int(self.x), int(self.y)), tile_value)
                 DOORS.append(door)
-            door.state = 1
-
-    def play_sound(self, sound, adjust_volume=True):
-        # Plays a required sound
-        # If enemy is far from enemy sound will be quieter
-        volume = 1
-        if adjust_volume:
-            volume -= sqrt(self.dist_squared) / 24
-        if volume > 0:
-            sound.set_volume(volume)
-            self.channel.play(sound)
+            door.start_opening()
 
     def update(self):
         moved = False
@@ -837,7 +789,7 @@ class Enemy(Drawable):
 
                 self.column += 1
                 if self.column in self.shot_columns:
-                    self.play_sound(self.sounds.attack)
+                    play_sound(self.sounds.attack, self.channel_id, self.dist_squared)
                     if self.ready_to_shoot():
                         self.shoot()
 
@@ -853,7 +805,7 @@ class Enemy(Drawable):
                 if not self.chasing:
                     self.chasing = True
                     if self.sounds.appearance:
-                        self.play_sound(self.sounds.appearance)
+                        play_sound(self.sounds.appearance, self.channel_id, self.dist_squared)
                 self.target_tile = (int(PLAYER.x), int(PLAYER.y))
 
             if self.at(self.target_tile):
@@ -908,8 +860,7 @@ class Enemy(Drawable):
         self.visible_to_player = False
         self.perp_dist = self.delta_x * PLAYER.dir_x + self.delta_y * PLAYER.dir_y
         if self.perp_dist > 0:
-            self.display_pos = \
-                int((CAMERA_PLANE.half_len + tan(self.angle_from_player - PLAYER.viewangle) * CAMERA_PLANE.dist) * D_W)
+            self.display_pos = H_W + int(tan(self.angle_from_player - PLAYER.viewangle) * CAMERA_PLANE.dist * D_W)
 
             self.height = int(Drawable.constant / self.perp_dist)
             self.width = round(self.height / 2) * 2  # Needs to be even number
@@ -973,7 +924,8 @@ class Boss(Enemy):
 
         # Take attributes from ENEMY_INFO based on spritesheet
         self.name = ENEMY_INFO[self.sheet].name
-        self.channel = pygame.mixer.Channel(ENEMY_INFO[self.sheet].id)
+        self.channel_id = ENEMY_INFO[self.sheet].channel_id
+        self.channel = pygame.mixer.Channel(self.channel_id)
         self.sounds = ENEMY_INFO[self.sheet].sounds
         self.max_hp = self.hp = ENEMY_INFO[self.sheet].hp
         self.speed = ENEMY_INFO[self.sheet].speed
@@ -1007,7 +959,7 @@ class Boss(Enemy):
             self.column = 0
             PLAYER.has_key = True
             MESSAGES.append(Message('Defeated Boss + Picked up a key'))
-            self.play_sound(self.sounds.death)
+            play_sound(self.sounds.death, self.channel_id, self.dist_squared)
 
     def update(self):
         self.handle_doors_underneath()
@@ -1030,7 +982,7 @@ class Boss(Enemy):
                 self.anim_ticks = 0
                 self.column += 1
                 if self.column in self.shot_columns:
-                    self.play_sound(self.sounds.attack)
+                    play_sound(self.sounds.attack, self.channel_id, self.dist_squared)
                     if self.ready_to_shoot():
                         self.shoot()
 
@@ -1048,7 +1000,7 @@ class Boss(Enemy):
                         self.find_next_step_x_y()
                     if not self.seen_player and can_see((self.x, self.y), (PLAYER.x, PLAYER.y)):
                         self.seen_player = True
-                        self.play_sound(self.sounds.appearance, False)
+                        play_sound(self.sounds.appearance, self.channel_id)
 
                 elif not self.can_step(self.step_x, self.step_y):
                     if random.randint(0, 1) and not self.appearance_ticks and self.ready_to_shoot():
@@ -1067,7 +1019,7 @@ class Boss(Enemy):
                 if self.appearance_ticks and self.seen_player:
                     self.appearance_ticks -= 1
                 elif not self.channel.get_busy():
-                    self.play_sound(self.sounds.step)
+                    play_sound(self.sounds.step, self.channel_id, self.dist_squared)
 
                 if not self.status == 'shooting':
                     self.row = 0
@@ -1198,6 +1150,8 @@ class Level:
         TIME = 0
         global DOORS
         DOORS = []
+        global PUSH_WALLS
+        PUSH_WALLS = []
         global MESSAGES
         MESSAGES = []
         global EFFECTS
@@ -1218,7 +1172,7 @@ class Level:
             if difference > 0:
                 return turn_speed
             else:
-                return  -turn_speed
+                return -turn_speed
 
         global QUIT
         text_alpha = 0
@@ -1322,7 +1276,7 @@ class Level:
 
             level_finished = render_text('LEVEL FINISHED', (255, 255, 255))
             time_spent = render_text('TIME: {}m {}s'.format(minutes, seconds), (255, 255, 255))
-            kills = render_text('KILLS: {}/{}'.format(len(ENEMIES), dead), (255, 255, 255))
+            kills = render_text('KILLS: {}/{}'.format(dead, len(ENEMIES)), (255, 255, 255))
             press_space_to_continue = render_text('Press SPACE to continue', (255, 255, 255), abs(text_alpha))
             DISPLAY.blit(level_finished, ((D_W - level_finished.get_width()) / 2, 256))
             DISPLAY.blit(time_spent, ((D_W - time_spent.get_width()) / 2, 320))
@@ -1399,7 +1353,7 @@ def send_rays():
 def raycast(start_pos, rayangle, extra_values=False):
     def check_collision(collision_x, collision_y, x_step, y_step):
         # x_step is the distance needed to move in x to get to the next similar type interception
-        # y_step is the distance needed to move in y to get to the next similat type interception
+        # y_step is the distance needed to move in y to get to the next similar type interception
 
         tile_value = TILEMAP[map_y][map_x]
         tile_type = TILE_VALUES_INFO[tile_value].type
@@ -1414,9 +1368,8 @@ def raycast(start_pos, rayangle, extra_values=False):
                     OBJECTS.append(Object(map_x, map_y, tile_value))
 
         elif tile_type == 'Door':
-            for d in DOORS:
-                if (d.x, d.y) == (map_x, map_y):
-                    door = d
+            for door in DOORS:
+                if (door.x, door.y) == (map_x, map_y):
                     break
             else:
                 if tile_desc == 'Boss':
@@ -1441,6 +1394,32 @@ def raycast(start_pos, rayangle, extra_values=False):
                         return collision_x, collision_y
 
         else:  # elif tile_type == 'Wall':
+            if tile_desc == 'Secret':
+                for push_wall in PUSH_WALLS:
+                    if (push_wall.x, push_wall.y) == (map_x, map_y):
+                        if push_wall.tile_offset > 0:
+                            collision_x += x_step * push_wall.tile_offset
+                            collision_y += y_step * push_wall.tile_offset
+                            if (int(collision_x), int(collision_y)) == (push_wall.x, push_wall.y):
+                                if extra_values:
+                                    texture = TILE_VALUES_INFO[tile_value].texture
+                                    if x_step == 1 or x_step == -1:
+                                        surface_offset = collision_y - int(collision_y)
+                                        column = int(TEXTURE_SIZE * abs(a - surface_offset))
+                                        column += TEXTURE_SIZE
+                                    else:
+                                        surface_offset = collision_x - int(collision_x)
+                                        column = int(TEXTURE_SIZE * abs(b - surface_offset))
+                                    return collision_x, collision_y, texture, column
+                                else:
+                                    return collision_x, collision_y
+                            else:
+                                return
+                        break
+                else:
+                    push_wall = PushWall((map_x, map_y), tile_value)
+                    PUSH_WALLS.append(push_wall)
+
             if extra_values:
                 for d in DOORS:
                     if (d.x, d.y) == (x - a, y - b):
@@ -1566,8 +1545,8 @@ def events():
                                 for d in DOORS:
                                     # If found the right door and it's not in motion already
                                     if action_x == d.x and action_y == d.y:
-                                        if not d.locked:
-                                            d.state = 1
+                                        if d.type == 'Normal' or not d.locked:
+                                            d.start_opening()
                                         else:
                                             MESSAGES.append(Message('This door is now locked'))
                                         break
@@ -1575,17 +1554,23 @@ def events():
                                 MESSAGES.append(Message('Opening this door requires a key'))
                         else:
                             MESSAGES.append(Message('Cannot open this door'))
-                    elif tile_type == 'Wall' and tile_desc == 'End-trigger':
+                    elif tile_desc == 'Secret':
+                        for p in PUSH_WALLS:
+                            if action_x == p.x and action_y == p.y:
+                                if not p.activated:
+                                    p.start_moving()
+                                break
+                    elif tile_desc == 'End-trigger':
                         TILEMAP[action_y][action_x] += 1  # Change trigger block texture
                         LEVEL.finish()
 
-                elif not WEAPON_MODEL.shooting:
+                else:
                     key = pygame.key.name(event.key)
                     numbers = (str(x) for x in range(1, 10))
                     if key in numbers:
-                        key = int(key)
-                        if key in PLAYER.weapon_loadout and key != PLAYER.weapon_nr:
-                            WEAPON_MODEL.switching = key
+                        number = int(key)
+                        if number in PLAYER.weapon_loadout and number != PLAYER.weapon_nr:
+                            WEAPON_MODEL.switching = number
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
@@ -1596,6 +1581,8 @@ def events():
 def update_gameobjects():
     for d in DOORS:
         d.move()
+    for p in PUSH_WALLS:
+        p.move()
     for e in ENEMIES:
         e.update()
     for m in MESSAGES:
@@ -1612,12 +1599,13 @@ def handle_objects_under_player():
         OBJECTS.append(Object(int(PLAYER.x), int(PLAYER.y), tile_value))
         if TILE_VALUES_INFO[tile_value].desc == 'Dynamic':
             colour = None
-            type = 0  # 0 = item, 1 = weapon
+
             # First handle all now-weapon pickups
             if tile_value == -5:
                 PLAYER.has_key = True
                 MESSAGES.append(Message('Picked up a key'))
                 colour = (255, 255, 0)
+                pickup_type = 0
             elif tile_value == -6:
                 if PLAYER.hp < PLAYER.max_hp:
                     PLAYER.hp += 10
@@ -1625,6 +1613,7 @@ def handle_objects_under_player():
                         PLAYER.hp = PLAYER.max_hp
                     MESSAGES.append(Message('Health +10'))
                     colour = (0, 255, 0)
+                    pickup_type = 0
             elif tile_value == -7:
                 if PLAYER.hp < PLAYER.max_hp:
                     PLAYER.hp += 25
@@ -1632,40 +1621,94 @@ def handle_objects_under_player():
                         PLAYER.hp = PLAYER.max_hp
                     MESSAGES.append(Message('Health +25'))
                     colour = (0, 255, 0)
+                    pickup_type = 0
+
             # Then handle weapon pickups
             if not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
                 if tile_value == -1:
-                    if not 5 in PLAYER.weapon_loadout:
+                    if 5 not in PLAYER.weapon_loadout:
                         PLAYER.weapon_loadout.append(5)
                         WEAPON_MODEL.switching = 5
                     colour = (0, 0, 255)
-                    type = 1
+                    pickup_type = 1
                 elif tile_value == -2:
-                    if not 4 in PLAYER.weapon_loadout:
+                    if 4 not in PLAYER.weapon_loadout:
                         PLAYER.weapon_loadout.append(4)
                         WEAPON_MODEL.switching = 4
                     colour = (0, 0, 255)
-                    type = 1
+                    pickup_type = 1
                 elif tile_value == -3:
-                    if not 3 in PLAYER.weapon_loadout:
+                    if 3 not in PLAYER.weapon_loadout:
                         PLAYER.weapon_loadout.append(3)
                         WEAPON_MODEL.switching = 3
                     colour = (0, 0, 255)
-                    type = 1
+                    pickup_type = 1
                 elif tile_value == -4:
-                    if not 2 in PLAYER.weapon_loadout:
+                    if 2 not in PLAYER.weapon_loadout:
                         PLAYER.weapon_loadout.append(2)
                         WEAPON_MODEL.switching = 2
                     colour = (0, 0, 255)
-                    type = 1
+                    pickup_type = 1
+
             if colour:
                 EFFECTS.update(colour)
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
-                if type == 0:
-                    ITEM_PICKUP_SOUND.play()
+                if pickup_type == 0:  # 0 = item, 1 = weapon
+                    play_sound(ITEM_PICKUP_SOUND, 0)
                 else:
                     MESSAGES.append(Message('Picked up {}'.format(WEAPONS[tile_value + len(WEAPONS)].name)))
-                    WEAPON_PICKUP_SOUND.play()
+                    play_sound(WEAPON_PICKUP_SOUND, 0)
+
+
+def draw_hud():
+    # Even though HUD uses the default font size of 32, the actual line height of the text is about 28 pixels
+    line_h = 28
+    safezone_w = 5
+    safezone_h = 5
+
+    # Messages
+    y = Message.start_y
+    for m in reversed(MESSAGES):
+        message = render_text(m.text, m.colour, m.alpha, Message.font_size)
+        DISPLAY.blit(message, (safezone_w, y))
+        y += Message.font_size / 32 * line_h
+
+    # FPS counter
+    if SHOW_FPS:
+        fps_counter = render_text(str(ceil(CLOCK.get_fps())), (0, 255, 0))
+        DISPLAY.blit(fps_counter, (D_W - safezone_w - fps_counter.get_width(), safezone_h))
+
+    # Weapon HUD
+    WEAPON_MODEL.draw()
+    current_weapon = WEAPON_MODEL.weapon
+
+    weapon_name = render_text(str(current_weapon.name), (0, 0, 0))
+    DISPLAY.blit(weapon_name, (D_W - weapon_name.get_width() - safezone_w, D_H - line_h * 2 - safezone_h))
+
+    # Player hp HUD
+    hp_text = render_text('HP:', (0, 0, 0))
+    hp_amount = render_text(str(PLAYER.hp), dynamic_colour(PLAYER.hp, Player.max_hp))
+    DISPLAY.blit(hp_text, (safezone_w, D_H - line_h * 2 - safezone_h))
+    DISPLAY.blit(hp_amount, (safezone_w, D_H - line_h - safezone_h))
+
+    # Loadout HUD
+    x = D_W - safezone_w
+    for w in reversed(WEAPONS):
+        if w:
+            weapon_nr = WEAPONS.index(w)
+            if w == WEAPON_MODEL.weapon:  # If equipped
+                colour = (0, 255, 0)
+            elif weapon_nr in PLAYER.weapon_loadout:  # If picked up
+                colour = (0, 128, 0)
+            else:  # If not picked up
+                colour = (0, 32, 0)
+            number = render_text(str(weapon_nr), colour)
+            x -= number.get_width()
+            DISPLAY.blit(number, (x, D_H - line_h - safezone_h))
+            x -= 10
+
+    BOSSHEALTHBAR.draw()
+    EFFECTS.draw()
 
 
 def draw_background():
@@ -1689,7 +1732,7 @@ def draw_background():
     pygame.draw.rect(DISPLAY, LEVEL.floor_colour, ((0, H_H), (D_W, H_H)))  # Floor
 
 
-def draw_frame(draw_hud=True):
+def draw_frame(hud=True):
     # Draw background
     draw_background()
 
@@ -1710,8 +1753,8 @@ def draw_frame(draw_hud=True):
     for thing in to_draw:
         thing.draw()
 
-    if draw_hud:
-        HUD.draw()
+    if hud:
+        draw_hud()
 
 
 def update_sound_channels():
@@ -1720,6 +1763,19 @@ def update_sound_channels():
             pygame.mixer.Channel(channel_id).pause()
         else:
             pygame.mixer.Channel(channel_id).unpause()
+
+
+def play_sound(sound, channel_id, source_dist_squared=0):
+    volume = 1
+    if source_dist_squared:
+        max_dist = 20  # Max distance sound can be heard from
+        volume -= source_dist_squared / (max_dist**2)
+        if volume > 0:
+            sound.set_volume(volume)
+        else:
+            volume = 0
+    if volume:
+        pygame.mixer.Channel(channel_id).play(sound)
 
 
 def draw_pause_overlay():
@@ -1746,19 +1802,20 @@ def render_text(text, colour, alpha=255, size=32):
         image.set_alpha(alpha)
     return image
 
+
 def game_loop():
     global TIME
     while not QUIT:
-        events()
-        send_rays()
-        handle_objects_under_player()
-
         if not PAUSED:
             TIME += 1
             PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
             PLAYER.handle_movement()
-            update_gameobjects()
 
+        events()
+        send_rays()
+        handle_objects_under_player()
+        if not PAUSED:
+            update_gameobjects()
         draw_frame()
         if PAUSED:
             draw_pause_overlay()
@@ -1769,12 +1826,8 @@ def game_loop():
 
 if __name__ == '__main__':
     import os
-
-    from math import *
     import random
-
-    import numpy
-    from sklearn.preprocessing import normalize
+    from math import sin, cos, tan, atan2, sqrt, pi, ceil
 
     import pygame
     from pygame.locals import *
@@ -1805,7 +1858,6 @@ if __name__ == '__main__':
     GAME_FONT_16 = pygame.font.Font('../font/LCD_Solid.ttf', 16)
     GAME_FONT_32 = pygame.font.Font('../font/LCD_Solid.ttf', 32)
     GAME_FONT_64 = pygame.font.Font('../font/LCD_Solid.ttf', 64)
-    HUD = Hud()
 
     Door.side_texture = graphics.get_door_side_texture()
     ENEMY_INFO = enemies.get_enemy_info()
@@ -1824,5 +1876,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(3)
+    LEVEL.start(1)
     pygame.quit()

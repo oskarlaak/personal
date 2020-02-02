@@ -1,5 +1,3 @@
-# Wolfenstein/Doom hybrid raycasting project
+# Wolfenstein/Doom style raycasting project
 Packages required:
-numpy
-sklearn
 pygame

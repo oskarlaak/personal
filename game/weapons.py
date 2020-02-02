@@ -6,9 +6,8 @@ import math
 
 def get():
     class WeaponSounds:
-        def __init__(self, fire, idle=None):
+        def __init__(self, fire):
             self.fire = fire
-            self.idle = idle
 
     class Weapon:
         cell_size = 192
@@ -62,7 +61,7 @@ def get():
         chaingun_sound = pygame.mixer.Sound('../sounds/weapons/chaingun.wav')
         supershotgun_sound = pygame.mixer.Sound('../sounds/weapons/supershotgun.wav')
         chainsaw_sound = pygame.mixer.Sound('../sounds/weapons/chainsaw.wav')
-        chainsaw_idle = pygame.mixer.Sound('../sounds/weapons/chainsawidle.wav')
+        #chainsaw_idle = pygame.mixer.Sound('../sounds/weapons/chainsawidle.wav')
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -70,14 +69,14 @@ def get():
     else:
         weapons = [None,  # Makes it so first weapon is index 1 instead of 0
         HitscanWeapon('Pistol', WeaponSounds(pistol_sound), pistol,
-                      1,  9, 14, False, 0.00),
+                      1,  8, 14, False, 0.00),
               Shotgun('Shotgun', WeaponSounds(shotgun_sound), shotgun,
-                      1, 28, 10, False, 0.18,  7),
+                      1, 21, 10, False, 0.18,  5),
         HitscanWeapon('Chaingun', WeaponSounds(chaingun_sound), chaingun,
                       1,  4, 14,  True, 0.12),
               Shotgun('Super Shotgun', WeaponSounds(supershotgun_sound), supershotgun,
-                      1, 50, 10, False, 0.25, 14),
-                Melee('Chainsaw', WeaponSounds(chainsaw_sound, chainsaw_idle), chainsaw,
+                      1, 40, 10, False, 0.25, 10),
+                Melee('Chainsaw', WeaponSounds(chainsaw_sound), chainsaw,
                       1,  4, 40,  True, 1.25)
         ]
         return weapons

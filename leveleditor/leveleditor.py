@@ -265,6 +265,9 @@ def draw_tilemap():
                 texture = TILE_VALUES_INFO[tile_value].texture  # Get the texture
                 texture = pygame.transform.scale(texture, (TILEMAP.tile_size, TILEMAP.tile_size))  # Scale to tile size
                 DISPLAY.blit(texture, (x * TILEMAP.tile_size, y * TILEMAP.tile_size))
+                if TILE_VALUES_INFO[tile_value].desc == 'Secret':
+                    pygame.draw.rect(DISPLAY, (255, 0, 0), (x * TILEMAP.tile_size, y * TILEMAP.tile_size,
+                                                            TILEMAP.tile_size, TILEMAP.tile_size), 2)
 
 
 def apply_texture():
