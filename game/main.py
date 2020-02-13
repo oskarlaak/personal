@@ -1,10 +1,12 @@
 # TO DO:
-# Create levels
-# Level number hud
-# Move leveleditor textures to texture folder
 # Remake objects drawing
 # Add ammo system - players drop different amount of ammo
-# Add directional sound
+# Boss projectiles
+
+# Extras:
+# Particles - blood, bullets etc
+# Level number hud
+# Create levels
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -13,11 +15,11 @@
 # Normal enemies can only travel through Dynamic doors, bosses can travel through all types of doors
 # Killing a boss gives player a key to which he can use to open locked doors
 # There is no support for multiple bosses in one level
-# Games default font size is 32, but it also support sizes 16 and 64
+# Game's default font size is 32, but it can also display sizes 16 and 64
 # Push walls and doors need to be placed in between wall for them to display and work properly
 
 # Sound Channels:
-# 0 = door and pickup sounds
+# 0 = pickup, environment sounds (doors, pushwalls, end switches)
 # 1 = player's weapon sounds
 # 2 - 6 = normal enemy sounds
 # 7 = boss sounds
@@ -194,10 +196,8 @@ class Door:
         self.closed_state = 1  # 1 is fully closed, 0 is fully opened
         self.state = 0
 
-    #def __eq__(self, other):
-    #    return (self.x, self.y) == (other.x, other.y)
-
     def start_opening(self):
+        play_sound(self.open_sound, 0, (self.x + 0.5, self.y + 0.5))
         self.state = 1
 
     def room_to_close(self):
@@ -215,8 +215,6 @@ class Door:
     def move(self):
         if self.state > 0:
             if self.state == 1:  # Opening
-                if self.closed_state == 1:
-                    play_sound(self.open_sound, 0, squared_dist((PLAYER.x, PLAYER.y), (self.x + 0.5, self.y + 0.5)))
                 self.closed_state -= Door.speed
                 if self.closed_state <= 0:
                     TILEMAP[self.y][self.x] = 0  # Make tile walkable
@@ -228,7 +226,7 @@ class Door:
 
             elif self.state == 3:  # Closing
                 if self.closed_state == 0:
-                    play_sound(self.close_sound, 0, squared_dist((PLAYER.x, PLAYER.y), (self.x + 0.5, self.y + 0.5)))
+                    play_sound(self.close_sound, 0, (self.x + 0.5, self.y + 0.5))
                 self.closed_state += Door.speed
                 if self.closed_state >= 1:
                     self.closed_state = 1
@@ -246,6 +244,7 @@ class BossDoor(Door):
         self.locked = False
 
     def start_opening(self):
+        play_sound(self.open_sound, 0, (self.x + 0.5, self.y + 0.5))
         self.state = 1
         if TILEMAP[self.y + 1][self.x] > 0:
             if PLAYER.x < self.x:  # Door's center x is actually 0.5 off but it doesn't matter here
@@ -288,6 +287,7 @@ class PushWall:
         self.activated = False
 
     def start_moving(self):
+        play_sound(self.sound, 0, (self.x + 0.5, self.y + 0.5))
         self.activated = True
         # Calculate the direction the push wall needs to move when activated
         if TILEMAP[self.y + 1][self.x] > 0:
@@ -691,7 +691,7 @@ class Enemy(Drawable):
 
             self.hp = 0
             self.chasing = False
-            play_sound(self.sounds.death, self.channel_id, self.dist_squared)
+            play_sound(self.sounds.death, self.channel_id, (self.x, self.y), self.dist_squared)
         elif pain:
             self.status = 'hit'
             self.row = self.hit_row
@@ -789,7 +789,7 @@ class Enemy(Drawable):
 
                 self.column += 1
                 if self.column in self.shot_columns:
-                    play_sound(self.sounds.attack, self.channel_id, self.dist_squared)
+                    play_sound(self.sounds.attack, self.channel_id, (self.x, self.y), self.dist_squared)
                     if self.ready_to_shoot():
                         self.shoot()
 
@@ -805,7 +805,7 @@ class Enemy(Drawable):
                 if not self.chasing:
                     self.chasing = True
                     if self.sounds.appearance:
-                        play_sound(self.sounds.appearance, self.channel_id, self.dist_squared)
+                        play_sound(self.sounds.appearance, self.channel_id, (self.x, self.y), self.dist_squared)
                 self.target_tile = (int(PLAYER.x), int(PLAYER.y))
 
             if self.at(self.target_tile):
@@ -959,7 +959,7 @@ class Boss(Enemy):
             self.column = 0
             PLAYER.has_key = True
             MESSAGES.append(Message('Defeated Boss + Picked up a key'))
-            play_sound(self.sounds.death, self.channel_id, self.dist_squared)
+            play_sound(self.sounds.death, self.channel_id, (self.x, self.y), self.dist_squared)
 
     def update(self):
         self.handle_doors_underneath()
@@ -982,7 +982,7 @@ class Boss(Enemy):
                 self.anim_ticks = 0
                 self.column += 1
                 if self.column in self.shot_columns:
-                    play_sound(self.sounds.attack, self.channel_id, self.dist_squared)
+                    play_sound(self.sounds.attack, self.channel_id, (self.x, self.y), self.dist_squared)
                     if self.ready_to_shoot():
                         self.shoot()
 
@@ -1019,7 +1019,7 @@ class Boss(Enemy):
                 if self.appearance_ticks and self.seen_player:
                     self.appearance_ticks -= 1
                 elif not self.channel.get_busy():
-                    play_sound(self.sounds.step, self.channel_id, self.dist_squared)
+                    play_sound(self.sounds.step, self.channel_id, (self.x, self.y), self.dist_squared)
 
                 if not self.status == 'shooting':
                     self.row = 0
@@ -1561,6 +1561,7 @@ def events():
                                     p.start_moving()
                                 break
                     elif tile_desc == 'End-trigger':
+                        play_sound(SWITCH_SOUND, 0, (action_x + 0.5, action_y + 0.5))
                         TILEMAP[action_y][action_x] += 1  # Change trigger block texture
                         LEVEL.finish()
 
@@ -1765,17 +1766,36 @@ def update_sound_channels():
             pygame.mixer.Channel(channel_id).unpause()
 
 
-def play_sound(sound, channel_id, source_dist_squared=0):
-    volume = 1
-    if source_dist_squared:
-        max_dist = 20  # Max distance sound can be heard from
-        volume -= source_dist_squared / (max_dist**2)
-        if volume > 0:
-            sound.set_volume(volume)
+def play_sound(sound, channel_id, source_pos=(0, 0), source_dist_squared=0):
+    def set_channel_stereo_volume(angle):
+        if abs(angle) < pi / 2:
+            volume = 1 - abs(angle) / (pi / 2)
         else:
-            volume = 0
-    if volume:
-        pygame.mixer.Channel(channel_id).play(sound)
+            volume = 1 - (pi - abs(angle)) / (pi / 2)
+
+        if angle < 0:  # Sound comes from right
+            channel.set_volume(volume, 1)
+        else:  # Sound comes from left
+            channel.set_volume(1, volume)
+
+    channel = pygame.mixer.Channel(channel_id)
+
+    if source_pos[0] and source_pos[1]:
+        if not source_dist_squared:
+            source_dist_squared = squared_dist((PLAYER.x, PLAYER.y), source_pos)
+
+        max_hearing_dist = 20
+        sound_volume = 1 - source_dist_squared / (max_hearing_dist**2)
+        if sound_volume > 0:
+            sound.set_volume(sound_volume)
+
+            angle_to_source = atan2(source_pos[1] - PLAYER.y, source_pos[0] - PLAYER.x)
+            source_angle = fixed_angle(PLAYER.viewangle - angle_to_source)
+            set_channel_stereo_volume(source_angle)
+
+            channel.play(sound)
+    else:
+        channel.play(sound)
 
 
 def draw_pause_overlay():
@@ -1845,7 +1865,7 @@ if __name__ == '__main__':
     Drawable.constant = int(0.65 * D_H)
 
     # Pygame stuff
-    pygame.mixer.pre_init(11025, -16, 1, 256)
+    pygame.mixer.init(11025, -16, 2, 256)
     pygame.init()
     pygame.display.set_caption('Raycaster')
     DISPLAY = pygame.display.set_mode((D_W, D_H))
@@ -1867,8 +1887,10 @@ if __name__ == '__main__':
     # Sounds
     Door.open_sound,\
     Door.close_sound,\
+    PushWall.sound,\
     ITEM_PICKUP_SOUND,\
-    WEAPON_PICKUP_SOUND = sounds.get()
+    WEAPON_PICKUP_SOUND,\
+    SWITCH_SOUND = sounds.get()
 
     QUIT = False
     PAUSED = False
@@ -1876,5 +1898,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(1)
+    LEVEL.start(8)
     pygame.quit()

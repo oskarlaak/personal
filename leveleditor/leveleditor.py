@@ -483,7 +483,7 @@ def create_sidebar_objects():
         return texturegroups
 
     def create_skytexturebox():
-        skytextures = [pygame.image.load('defaultskytexture.png').convert()]
+        skytextures = [pygame.image.load('textures/defaultskytexture.png').convert()]
         for skytexture_name in os.listdir('../textures/skies'):
             skytextures.append(pygame.image.load('../textures/skies/{}'.format(skytexture_name)).convert())
         skytexture = SkyTexture((1024 + 8, 1024 - 96), skytextures)
@@ -516,8 +516,8 @@ def create_sidebar_objects():
 
 def get_arrow_images():
     try:
-        return pygame.image.load('redarrow.png').convert_alpha(),\
-               pygame.image.load('arrow.png').convert()
+        return pygame.image.load('textures/redarrow.png').convert_alpha(),\
+               pygame.image.load('textures/arrow.png').convert()
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -525,9 +525,9 @@ def get_arrow_images():
 
 def get_tilevaluesinfo():
     try:
-        eraser_texture = pygame.transform.scale(pygame.image.load('eraser.png').convert(), (64, 64))
-        start_texture = pygame.transform.scale(pygame.image.load('start.png').convert(), (64, 64))
-        end_texture = pygame.transform.scale(pygame.image.load('end.png').convert(), (64, 64))
+        eraser_texture = pygame.transform.scale(pygame.image.load('textures/eraser.png').convert(), (64, 64))
+        start_texture = pygame.transform.scale(pygame.image.load('textures/start.png').convert(), (64, 64))
+        end_texture = pygame.transform.scale(pygame.image.load('textures/end.png').convert(), (64, 64))
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -577,7 +577,7 @@ GREEN = (0, 255, 0)
 InputBox.text_color = BLACK
 
 pygame.init()
-pygame.display.set_caption('Raycaster level editor')
+pygame.display.set_caption('Raycaster Level Editor')
 DISPLAY = pygame.display.set_mode((1024 + 528, 1024))  # 528 is the sidebar width
 CLOCK = pygame.time.Clock()
 
