@@ -13,14 +13,15 @@ def get_enemy_info():
     class Enemy:
         type = 'Normal'
 
-        def __init__(self, channel_id, sounds, hp, speed, wandering_radius, shooting_range, damage_multiplier, accuracy,
-                     pain_chance, patience, death_frames, shooting_frames, shot_columns):
+        def __init__(self, channel_id, sounds, hp, speed, wandering_radius, shooting_range, looting_ammo,
+                     damage_multiplier, accuracy, pain_chance, patience, death_frames, shooting_frames, shot_columns):
             self.channel_id = channel_id
             self.sounds = sounds
             self.hp = hp
             self.speed = speed
             self.wandering_radius = wandering_radius
             self.shooting_range = shooting_range  # Max shooting range
+            self.looting_ammo = looting_ammo  # Amount of ammo dropped when killed
 
             self.damage_multiplier = damage_multiplier
             self.accuracy = accuracy  # 0 will never hit, 1 is normal, can go higher
@@ -93,6 +94,7 @@ def get_enemy_info():
         pistol = pygame.mixer.Sound('../sounds/enemies/pistol.wav')
         death_2 = pygame.mixer.Sound('../sounds/enemies/death2.wav')
 
+        dog_appearance = pygame.mixer.Sound('../sounds/enemies/dogappearance.wav')
         dog_attack = pygame.mixer.Sound('../sounds/enemies/dogattack.wav')
         dog_death = pygame.mixer.Sound('../sounds/enemies/dogdeath.wav')
 
@@ -115,14 +117,14 @@ def get_enemy_info():
             hitler:         Boss('Hitler', 7, EnemySounds(scheisse, chaingun, death_5, boss_step),
                                  1000, 0.07, 1.50, 1.00, 4, 8, 8, [3, 4, 5, 6, 7]),
             guard:   Enemy(2, EnemySounds(achtung, pistol, death_2),
-                           20, 0.07, 2,   5, 1.00, 1.00, 1.00,  60, 5, 6, [4]),
-            dog:     Enemy(3, EnemySounds(dog_attack, dog_attack, dog_death),
-                            5, 0.10, 4, 1.2, 0.50, 5.00, 0.00,   0, 5, 6, [1, 2, 3, 4, 5]),
+                           20, 0.07, 2,   5, 2, 1.00, 1.00, 1.00,  60, 5, 6, [4]),
+            dog:     Enemy(3, EnemySounds(dog_appearance, dog_attack, dog_death),
+                            5, 0.10, 4, 1.2, 0, 0.50, 5.00, 0.00,   0, 5, 6, [1, 2, 3, 4, 5]),
             officer: Enemy(4, EnemySounds(halt_1, pistol, death_3),
-                           40, 0.08, 2,   8, 0.90, 1.10, 0.75,  90, 5, 6, [2, 4]),
+                           40, 0.08, 2,   8, 3, 0.90, 1.10, 0.75,  90, 5, 6, [2, 4]),
             ss:      Enemy(5, EnemySounds(halt_2, heavy_machine_gun, death_4),
-                           50, 0.06, 3,   8, 1.00, 1.05, 0.50, 180, 5, 6, [3, 4, 5]),
+                           50, 0.06, 3,   8, 4, 1.00, 1.05, 0.50, 180, 5, 6, [3, 4, 5]),
             mutant:  Enemy(6, EnemySounds(None, pistol, death_2),
-                           30, 0.07, 5,   6, 0.60, 1.00, 0.75,  60, 5, 6, [1, 3])
+                           30, 0.07, 5,   6, 2, 0.60, 1.00, 0.75,  60, 5, 6, [1, 3])
         }
         return enemy_info

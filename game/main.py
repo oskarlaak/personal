@@ -1,7 +1,7 @@
 # TO DO:
-# Remake objects drawing
-# Add ammo system - players drop different amount of ammo
+# Add back objects
 # Boss projectiles
+# Has key HUD
 
 # Extras:
 # Particles - blood, bullets etc
@@ -27,12 +27,13 @@
 
 class Player:
     max_hp = 100
+    max_ammo = 100
     speed = 0.15  # Must be < half_hitbox, otherwise player can clip through walls
     half_hitbox = 0.2
 
     def __init__(self):
-        self.weapon_nr = 1
-        self.saved_weapon_loadout = [1]
+        self.weapon_nr = len(WEAPONS) - 1
+        self.saved_weapon_loadout = [self.weapon_nr]
 
     def setup(self, pos, angle):  # Called every time level (re)starts
         self.x = pos[0]
@@ -41,11 +42,12 @@ class Player:
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
         self.hp = Player.max_hp
+        self.ammo = 10
         self.has_key = False
 
         self.weapon_loadout = self.saved_weapon_loadout[:]
         if self.weapon_nr not in self.weapon_loadout:
-            self.weapon_nr = 1
+            self.weapon_nr = len(WEAPONS) - 1
 
     def save_weapon_loadout(self):
         self.saved_weapon_loadout = self.weapon_loadout
@@ -197,7 +199,6 @@ class Door:
         self.state = 0
 
     def start_opening(self):
-        play_sound(self.open_sound, 0, (self.x + 0.5, self.y + 0.5))
         self.state = 1
 
     def room_to_close(self):
@@ -215,6 +216,8 @@ class Door:
     def move(self):
         if self.state > 0:
             if self.state == 1:  # Opening
+                if self.closed_state == 1:
+                    play_sound(self.open_sound, 0, (self.x + 0.5, self.y + 0.5))
                 self.closed_state -= Door.speed
                 if self.closed_state <= 0:
                     TILEMAP[self.y][self.x] = 0  # Make tile walkable
@@ -244,7 +247,6 @@ class BossDoor(Door):
         self.locked = False
 
     def start_opening(self):
-        play_sound(self.open_sound, 0, (self.x + 0.5, self.y + 0.5))
         self.state = 1
         if TILEMAP[self.y + 1][self.x] > 0:
             if PLAYER.x < self.x:  # Door's center x is actually 0.5 off but it doesn't matter here
@@ -332,27 +334,30 @@ class WeaponModel:
         def get_shootable_enemies():
             shootable_enemies = []
             for e in ENEMIES:
-                if e.visible_to_player and not e.status == 'dead':
+                if e.visible_to_player and e.hp:
                     shootable_enemies.append(e)
             shootable_enemies.sort(key=lambda x: x.dist_squared)  # Sort for closest dist first
             return shootable_enemies
 
         def bullet_hitscan(shootable_enemies, x_spread, max_range=False):
             # Each bullet can hit maximum 3 enemies
+            hit = False
             bullet_x_pos = H_W + x_spread
             damage_multiplier = 1
             for e in shootable_enemies:
                 if e.start_x < bullet_x_pos < e.end_x:
                     if not max_range or e.dist_squared < max_range ** 2:
-                        if not e.status == 'dead':
+                        if e.hp:
                             pain = e.pain_chance > random.random()
                             e.hurt(weapon.damage * damage_multiplier, pain)
+                            hit = True
                         if damage_multiplier == 0.25:
                             break
                         else:
                             damage_multiplier /= 2
                     else:
                         break
+            return hit
 
         # Shooting animation system
         self.ticks += 1
@@ -362,17 +367,20 @@ class WeaponModel:
 
             if self.column > weapon.animation_frames:  # If finished shot animation
                 # If weapon automatic and mouse down
-                if weapon.automatic and pygame.mouse.get_pressed()[0]:
+                if weapon.automatic and pygame.mouse.get_pressed()[0] and PLAYER.ammo >= self.weapon.ammo_consumption:
                     self.column = 1  # Keep going
                 else:
                     self.column = 0  # Ends animation
                     self.shooting = False
 
             if self.column == weapon.shot_column:
+                weapon_sound = self.weapon.sounds.fire
+                PLAYER.ammo -= self.weapon.ammo_consumption
                 shootable_enemies = get_shootable_enemies()
 
                 if weapon.type == 'Melee':
-                    bullet_hitscan(shootable_enemies, 0, weapon.range)
+                    if bullet_hitscan(shootable_enemies, 0, weapon.range):
+                        weapon_sound = self.weapon.sounds.hit
 
                 elif weapon.type == 'Hitscan':
                     bullet_hitscan(shootable_enemies, random.randint(-weapon.max_x_spread, weapon.max_x_spread))
@@ -382,7 +390,7 @@ class WeaponModel:
                     for i in range(weapon.shot_bullets):
                         bullet_hitscan(shootable_enemies, -weapon.max_x_spread + round(i * x_spread_difference))
 
-                play_sound(self.weapon.sounds.fire, WeaponModel.channel_id)
+                play_sound(weapon_sound, WeaponModel.channel_id)
 
     def switch_weapons(self):
         self.ticks += 1
@@ -536,6 +544,8 @@ class Object(Drawable):
 class Enemy(Drawable):
     type = 'Normal'
     animation_ticks = 5  # Enemy animation frames delay
+    looting_pulse_speed = 20
+    looting_colour = (255, 255, 0)
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = pos
@@ -551,14 +561,17 @@ class Enemy(Drawable):
         self.target_tile = self.home
         self.status = 'default'  # (default, shooting, hit, dead)
         self.chasing = False
+        self.appeared = False
 
         # Take attributes from ENEMY_INFO based on spritesheet
         self.channel_id = ENEMY_INFO[self.sheet].channel_id
+        self.channel = pygame.mixer.Channel(self.channel_id)
         self.sounds = ENEMY_INFO[self.sheet].sounds
         self.hp = ENEMY_INFO[self.sheet].hp
         self.speed = ENEMY_INFO[self.sheet].speed
         self.wandering_radius = ENEMY_INFO[self.sheet].wandering_radius
         self.shooting_range = ENEMY_INFO[self.sheet].shooting_range
+        self.looting_ammo = ENEMY_INFO[self.sheet].looting_ammo
         self.damage_multiplier = ENEMY_INFO[self.sheet].damage_multiplier
         self.accuracy = ENEMY_INFO[self.sheet].accuracy
         self.pain_chance = ENEMY_INFO[self.sheet].pain_chance
@@ -573,6 +586,19 @@ class Enemy(Drawable):
         # Timed events tick variables (frames passed since some action)
         self.stationary_ticks = 0
         self.anim_ticks = 0
+
+        self.dead_image = self.sheet.subsurface(
+            ((self.death_frames - 1) * TEXTURE_SIZE, self.hit_row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
+        )
+        if self.looting_ammo:
+            self.looted = False
+            self.outline_alpha = 0
+            self.outline_image = pygame.Surface((TEXTURE_SIZE, TEXTURE_SIZE))
+            self.outline_image.set_colorkey((0, 0, 0))
+            for point in pygame.mask.from_surface(self.dead_image).outline():
+                self.outline_image.set_at(point, Enemy.looting_colour)
+        else:
+            self.looted = True
 
     def __eq__(self, other):
         return self.home == other.home
@@ -626,11 +652,12 @@ class Enemy(Drawable):
             self.anim_ticks = 0
 
     def can_step(self, step_x, step_y):
-        if (int(PLAYER.x), int(PLAYER.y)) == (int(step_x), int(step_y)):  # If normal enemy super close
+        # If enemy with decent shooting_range really close to player - don't step
+        if self.shooting_range > 1.5 and (int(PLAYER.x), int(PLAYER.y)) == (int(step_x), int(step_y)):
             return False
 
         for e in ENEMIES:
-            if not self == e and not e.status == 'dead':  # Ignore self and dead enemies
+            if not self == e and e.hp:  # Ignore self and dead enemies
                 if (int(e.x), int(e.y)) == (int(step_x), int(step_y)):  # If enemy in way
                     return False
         return True
@@ -698,6 +725,15 @@ class Enemy(Drawable):
             self.column = 7
             self.anim_ticks = 0
 
+    def loot(self):
+        if PLAYER.ammo < Player.max_ammo:
+            play_sound(ITEM_PICKUP_SOUND, 0)
+            MESSAGES.append(Message('Ammo +{}'.format(self.looting_ammo)))
+            self.looted = True
+            PLAYER.ammo += self.looting_ammo
+            if PLAYER.ammo > Player.max_ammo:
+                PLAYER.ammo = Player.max_ammo
+
     def strafe(self):
         # Sets step_(x/y) to a random new empty neighbour tile (if there is one)
         available_steps = []
@@ -760,6 +796,20 @@ class Enemy(Drawable):
                 DOORS.append(door)
             door.start_opening()
 
+    def handle_dead(self):
+        if not self.looted:
+            if (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
+                self.loot()
+            self.outline_alpha += Enemy.looting_pulse_speed
+            if self.outline_alpha >= 255:
+                self.outline_alpha = -255
+        if self.column != self.death_frames - 1:
+            self.outline_alpha = 0
+            self.anim_ticks += 1
+            if self.anim_ticks == Enemy.animation_ticks:
+                self.anim_ticks = 0
+                self.column += 1
+
     def update(self):
         moved = False
         self.handle_doors_underneath()
@@ -770,11 +820,7 @@ class Enemy(Drawable):
         self.dist_squared = self.delta_x**2 + self.delta_y**2
 
         if self.status == 'dead':
-            if self.column != self.death_frames - 1:
-                self.anim_ticks += 1
-                if self.anim_ticks == Enemy.animation_ticks:
-                    self.anim_ticks = 0
-                    self.column += 1
+            self.handle_dead()
 
         elif self.status == 'hit':
             self.anim_ticks += 1
@@ -789,7 +835,8 @@ class Enemy(Drawable):
 
                 self.column += 1
                 if self.column in self.shot_columns:
-                    play_sound(self.sounds.attack, self.channel_id, (self.x, self.y), self.dist_squared)
+                    if self.column == self.shot_columns[0] or not self.channel.get_busy():
+                        play_sound(self.sounds.attack, self.channel_id, (self.x, self.y), self.dist_squared)
                     if self.ready_to_shoot():
                         self.shoot()
 
@@ -802,8 +849,9 @@ class Enemy(Drawable):
 
         else:
             if self.can_see_player_sides():
-                if not self.chasing:
-                    self.chasing = True
+                self.chasing = True
+                if not self.appeared:
+                    self.appeared = True
                     if self.sounds.appearance:
                         play_sound(self.sounds.appearance, self.channel_id, (self.x, self.y), self.dist_squared)
                 self.target_tile = (int(PLAYER.x), int(PLAYER.y))
@@ -811,16 +859,19 @@ class Enemy(Drawable):
             if self.at(self.target_tile):
                 self.chasing = False
                 self.viewangle = fixed_angle(self.angle_from_player + pi)
-
-                alerted_enemy = self.get_nearby_alerted_enemy()
-                if alerted_enemy:
-                    self.chasing = True
-                    self.target_tile = (int(alerted_enemy.x), int(alerted_enemy.y))
-                elif self.stationary_ticks >= self.patience:
-                    if self.at(self.home):
-                        self.target_tile = random.choice(self.home_room)
-                    else:
-                        self.target_tile = self.home
+                if self.target_tile == (int(PLAYER.x), int(PLAYER.y)):
+                    self.start_shooting()
+                else:
+                    alerted_enemy = self.get_nearby_alerted_enemy()
+                    if alerted_enemy:
+                        self.chasing = True
+                        self.target_tile = (int(alerted_enemy.x), int(alerted_enemy.y))
+                    elif self.stationary_ticks >= self.patience:
+                        self.appeared = False
+                        if self.at(self.home):
+                            self.target_tile = random.choice(self.home_room)
+                        else:
+                            self.target_tile = self.home
 
             else:
                 moved = True  # Technically doesn't mean that enemy moved in all cases but it gets the job done
@@ -893,14 +944,32 @@ class Enemy(Drawable):
                     break
 
     def draw(self):
-        cropping_rect = (
-            ((self.start_x - self.display_pos) / self.width + self.column + 0.5) * TEXTURE_SIZE,
-            (TEXTURE_SIZE - self.cropping_height) / 2 + self.row * TEXTURE_SIZE,
-            (self.end_x - self.start_x) / self.width * TEXTURE_SIZE,
-            self.cropping_height
-        )
+        if not self.hp and self.column == self.death_frames - 1:
+            cropping_rect = (
+                ((self.start_x - self.display_pos) / self.width + 0.5) * TEXTURE_SIZE,
+                (TEXTURE_SIZE - self.cropping_height) / 2,
+                (self.end_x - self.start_x) / self.width * TEXTURE_SIZE,
+                self.cropping_height
+            )
+            if not self.looted:
+                self.outline_image.set_alpha(abs(self.outline_alpha))
+                image = self.dead_image.copy()
+                image.blit(self.outline_image, (0, 0))
+            else:
+                image = self.dead_image
+            cropped_image = image.subsurface(cropping_rect)
+
+        else:
+            cropping_rect = (
+                ((self.start_x - self.display_pos) / self.width + self.column + 0.5) * TEXTURE_SIZE,
+                (TEXTURE_SIZE - self.cropping_height) / 2 + self.row * TEXTURE_SIZE,
+                (self.end_x - self.start_x) / self.width * TEXTURE_SIZE,
+                self.cropping_height
+            )
+            cropped_image = self.sheet.subsurface(cropping_rect)
+
         DISPLAY.blit(
-            pygame.transform.scale(self.sheet.subsurface(cropping_rect), (self.end_x - self.start_x, self.height)),
+            pygame.transform.scale(cropped_image, (self.end_x - self.start_x, self.height)),
             (self.start_x, (D_H - self.height) / 2)
         )
 
@@ -943,6 +1012,16 @@ class Boss(Enemy):
         self.appearance_ticks = 30  # Time duration in ticks that boss will not shoot when appearing
         self.anim_ticks = 0
 
+        self.dead_image = self.sheet.subsurface(
+            ((self.death_frames - 1) * TEXTURE_SIZE, self.hit_row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
+        )
+        self.looted = False
+        self.outline_alpha = 0
+        self.outline_image = pygame.Surface((TEXTURE_SIZE, TEXTURE_SIZE))
+        self.outline_image.set_colorkey((0, 0, 0))
+        for point in pygame.mask.from_surface(self.dead_image).outline():
+            self.outline_image.set_at(point, Enemy.looting_colour)
+
     def map_empty(self, x, y):
         if TILEMAP[int(y)][int(x)] <= 0 or TILE_VALUES_INFO[TILEMAP[int(y)][int(x)]].type == 'Door':
             return True
@@ -957,9 +1036,16 @@ class Boss(Enemy):
             self.anim_ticks = 0
             self.row = self.hit_row
             self.column = 0
-            PLAYER.has_key = True
-            MESSAGES.append(Message('Defeated Boss + Picked up a key'))
+
+            MESSAGES.append(Message('{} defeated'.format(self.name)))
             play_sound(self.sounds.death, self.channel_id, (self.x, self.y), self.dist_squared)
+
+    def loot(self):
+        self.looted = True
+        PLAYER.has_key = True
+
+        MESSAGES.append(Message('Picked up a key'))
+        play_sound(ITEM_PICKUP_SOUND, 0)
 
     def update(self):
         self.handle_doors_underneath()
@@ -970,11 +1056,7 @@ class Boss(Enemy):
         self.dist_squared = self.delta_x**2 + self.delta_y**2
 
         if self.status == 'dead':
-            if self.column != self.death_frames - 1:
-                self.anim_ticks += 1
-                if self.anim_ticks == Enemy.animation_ticks:
-                    self.anim_ticks = 0
-                    self.column += 1
+            self.handle_dead()
 
         elif self.status == 'shooting':
             self.anim_ticks += 1
@@ -1246,7 +1328,7 @@ class Level:
             seconds -= 60
         dead = 0
         for e in ENEMIES:
-            if e.status == 'dead':
+            if not e.hp:
                 dead += 1
 
         global QUIT
@@ -1576,7 +1658,10 @@ def events():
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     if not WEAPON_MODEL.switching:
-                        WEAPON_MODEL.shooting = True
+                        if PLAYER.ammo >= WEAPON_MODEL.weapon.ammo_consumption:
+                            WEAPON_MODEL.shooting = True
+                        elif not pygame.mixer.Channel(WeaponModel.channel_id).get_busy():
+                            play_sound(WEAPON_MODEL.weapon.sounds.no_ammo, WeaponModel.channel_id)
 
 
 def update_gameobjects():
@@ -1599,66 +1684,51 @@ def handle_objects_under_player():
     if tile_value < 0:
         OBJECTS.append(Object(int(PLAYER.x), int(PLAYER.y), tile_value))
         if TILE_VALUES_INFO[tile_value].desc == 'Dynamic':
-            colour = None
+            pickup_type = 0
 
             # First handle all now-weapon pickups
-            if tile_value == -5:
+            if tile_value == -len(WEAPONS) + 1:
                 PLAYER.has_key = True
                 MESSAGES.append(Message('Picked up a key'))
-                colour = (255, 255, 0)
-                pickup_type = 0
-            elif tile_value == -6:
+                pickup_type = 1
+            elif tile_value == -len(WEAPONS):
                 if PLAYER.hp < PLAYER.max_hp:
                     PLAYER.hp += 10
                     if PLAYER.hp > PLAYER.max_hp:
                         PLAYER.hp = PLAYER.max_hp
                     MESSAGES.append(Message('Health +10'))
-                    colour = (0, 255, 0)
-                    pickup_type = 0
-            elif tile_value == -7:
+                    pickup_type = 2
+            elif tile_value == -len(WEAPONS) - 1:
                 if PLAYER.hp < PLAYER.max_hp:
                     PLAYER.hp += 25
                     if PLAYER.hp > PLAYER.max_hp:
                         PLAYER.hp = PLAYER.max_hp
                     MESSAGES.append(Message('Health +25'))
-                    colour = (0, 255, 0)
-                    pickup_type = 0
+                    pickup_type = 2
 
             # Then handle weapon pickups
-            if not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
-                if tile_value == -1:
-                    if 5 not in PLAYER.weapon_loadout:
-                        PLAYER.weapon_loadout.append(5)
-                        WEAPON_MODEL.switching = 5
-                    colour = (0, 0, 255)
-                    pickup_type = 1
-                elif tile_value == -2:
-                    if 4 not in PLAYER.weapon_loadout:
-                        PLAYER.weapon_loadout.append(4)
-                        WEAPON_MODEL.switching = 4
-                    colour = (0, 0, 255)
-                    pickup_type = 1
-                elif tile_value == -3:
-                    if 3 not in PLAYER.weapon_loadout:
-                        PLAYER.weapon_loadout.append(3)
-                        WEAPON_MODEL.switching = 3
-                    colour = (0, 0, 255)
-                    pickup_type = 1
-                elif tile_value == -4:
-                    if 2 not in PLAYER.weapon_loadout:
-                        PLAYER.weapon_loadout.append(2)
-                        WEAPON_MODEL.switching = 2
-                    colour = (0, 0, 255)
-                    pickup_type = 1
+            elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
+                if abs(tile_value) < len(WEAPONS) - 1:
+                    pickup_type = 3
 
-            if colour:
+            if pickup_type:
+                if pickup_type == 1:  # Key
+                    colour = (255, 255, 0)
+                    play_sound(ITEM_PICKUP_SOUND, 0)
+                elif pickup_type == 2:  # Health
+                    colour = (0, 255, 0)
+                    play_sound(ITEM_PICKUP_SOUND, 0)
+                else:  # Weapon
+                    colour = (0, 0, 255)
+                    play_sound(WEAPON_PICKUP_SOUND, 0)
+                    weapon_nr = abs(tile_value)
+                    if weapon_nr not in PLAYER.weapon_loadout:
+                        PLAYER.weapon_loadout.append(weapon_nr)
+                        WEAPON_MODEL.switching = weapon_nr
+                    MESSAGES.append(Message('Picked up {}'.format(WEAPONS[weapon_nr].name)))
+
                 EFFECTS.update(colour)
                 TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
-                if pickup_type == 0:  # 0 = item, 1 = weapon
-                    play_sound(ITEM_PICKUP_SOUND, 0)
-                else:
-                    MESSAGES.append(Message('Picked up {}'.format(WEAPONS[tile_value + len(WEAPONS)].name)))
-                    play_sound(WEAPON_PICKUP_SOUND, 0)
 
 
 def draw_hud():
@@ -1687,10 +1757,16 @@ def draw_hud():
     DISPLAY.blit(weapon_name, (D_W - weapon_name.get_width() - safezone_w, D_H - line_h * 2 - safezone_h))
 
     # Player hp HUD
-    hp_text = render_text('HP:', (0, 0, 0))
+    hp_text = render_text('Hp:', (0, 0, 0))
     hp_amount = render_text(str(PLAYER.hp), dynamic_colour(PLAYER.hp, Player.max_hp))
-    DISPLAY.blit(hp_text, (safezone_w, D_H - line_h * 2 - safezone_h))
-    DISPLAY.blit(hp_amount, (safezone_w, D_H - line_h - safezone_h))
+    DISPLAY.blit(hp_text, (safezone_w, D_H - line_h * 4 - safezone_h))
+    DISPLAY.blit(hp_amount, (safezone_w, D_H - line_h * 3 - safezone_h))
+
+    # Player ammo HUD
+    ammo_text = render_text('Ammo:', (0, 0, 0))
+    ammo_amount = render_text(str(PLAYER.ammo), dynamic_colour(PLAYER.ammo, Player.max_ammo))
+    DISPLAY.blit(ammo_text, (safezone_w, D_H - line_h * 2 - safezone_h))
+    DISPLAY.blit(ammo_amount, (safezone_w, D_H - line_h - safezone_h))
 
     # Loadout HUD
     x = D_W - safezone_w
