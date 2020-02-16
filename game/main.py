@@ -1,5 +1,4 @@
 # TO DO:
-# Add back objects
 # Boss projectiles
 # Has key HUD
 
@@ -13,7 +12,6 @@
 # All timed events are tick based
 # All angles are in radians
 # Normal enemies can only travel through Dynamic doors, bosses can travel through all types of doors
-# Killing a boss gives player a key to which he can use to open locked doors
 # There is no support for multiple bosses in one level
 # Game's default font size is 32, but it can also display sizes 16 and 64
 # Push walls and doors need to be placed in between wall for them to display and work properly
@@ -528,20 +526,78 @@ class WallColumn(Drawable):
         DISPLAY.blit(pygame.transform.scale(self.image, (1, self.height)), (self.display_x, self.display_y))
 
 
-class Object(Drawable):
-    def __init__(self, map_x, map_y, tilevalue):
-        self.x = map_x + 0.5
-        self.y = map_y + 0.5
-        self.tilevalue = tilevalue
+class Sprite(Drawable):
+    def update_for_drawing(self, angle_from_player=False):
+        # Requires delta_(x/y), dist_squared
+        self.visible_to_player = False
+        if self.dist_squared < MAX_DRAW_DIST_SQUARED:
+            self.perp_dist = self.delta_x * PLAYER.dir_x + self.delta_y * PLAYER.dir_y
+            if self.perp_dist > 0:
+                if not angle_from_player:
+                    angle_from_player = atan2(self.delta_y, self.delta_x)
+                self.display_pos = H_W + int(tan(angle_from_player - PLAYER.viewangle) * CAMERA_PLANE.dist * D_W)
+
+                self.height = int(Drawable.constant / self.perp_dist)
+                self.width = round(self.height / 2) * 2  # Needs to be even number
+                self.calc_start_and_end_x()
+                if self.start_x is not None and self.end_x is not None:
+                    self.calc_cropping_height()
+                    self.visible_to_player = True
+
+    def calc_start_and_end_x(self):
+        # Requires display_pos, width and perp_dist
+        self.start_x = None
+        self.end_x = None
+
+        # Find start and end x if they exist
+        left_side = int(self.display_pos - self.width / 2)
+        right_side = left_side + self.width
+        if left_side < D_W and right_side > 0:
+            if left_side < 0:
+                left_side = 0
+            if right_side > D_W:
+                right_side = D_W
+
+            for w in WALLS[left_side:right_side]:  # Go from left to right
+                if self.perp_dist < w.perp_dist:  # If sprite in front of wall
+                    self.start_x = w.display_x
+                    break
+            for w in WALLS[right_side:left_side:-1]:  # Go from right to left
+                if self.perp_dist < w.perp_dist:  # If sprite in front of wall
+                    self.end_x = w.display_x
+                    break
+
+
+class Object(Sprite):
+    def __init__(self, sprite, pos):
+        self.x, self.y = pos
+        self.sprite = sprite
+
+    def update(self):
+        self.delta_x = self.x - PLAYER.x
+        self.delta_y = self.y - PLAYER.y
+        self.dist_squared = self.delta_x ** 2 + self.delta_y ** 2
+        self.update_for_drawing()
 
     def draw(self):
-            pass
+        cropping_rect = (
+            ((self.start_x - self.display_pos) / self.width + 0.5) * TEXTURE_SIZE,
+            (TEXTURE_SIZE - self.cropping_height) / 2,
+            (self.end_x - self.start_x) / self.width * TEXTURE_SIZE,
+            self.cropping_height
+        )
+        try:
+            DISPLAY.blit(
+                pygame.transform.scale(self.sprite.subsurface(cropping_rect), (self.end_x - self.start_x, self.height)),
+                (self.start_x, (D_H - self.height) / 2)
+            )
+        except pygame.error as error:
+            print('Error occurred scaling object: {}'.format(error))
+            print('width: {}'.format(self.end_x - self.start_x))
+            print('height: {}'.format(self.height))
 
-    def __eq__(self, other):
-        return (self.x, self.y) == (other.x, other.y)
 
-
-class Enemy(Drawable):
+class Enemy(Sprite):
     type = 'Normal'
     animation_ticks = 5  # Enemy animation frames delay
     looting_pulse_speed = 20
@@ -905,43 +961,7 @@ class Enemy(Drawable):
             if self.stationary_ticks > self.patience:
                 self.stationary_ticks = self.patience
 
-        self.update_for_drawing()
-
-    def update_for_drawing(self):
-        self.visible_to_player = False
-        self.perp_dist = self.delta_x * PLAYER.dir_x + self.delta_y * PLAYER.dir_y
-        if self.perp_dist > 0:
-            self.display_pos = H_W + int(tan(self.angle_from_player - PLAYER.viewangle) * CAMERA_PLANE.dist * D_W)
-
-            self.height = int(Drawable.constant / self.perp_dist)
-            self.width = round(self.height / 2) * 2  # Needs to be even number
-            self.calc_start_and_end_x()
-            if self.start_x is not None and self.end_x is not None:
-                self.calc_cropping_height()
-                self.visible_to_player = True
-
-    def calc_start_and_end_x(self):
-        # Requires display_pos, width and perp_dist
-        self.start_x = None
-        self.end_x = None
-
-        # Find start and end x if they exist
-        left_side = int(self.display_pos - self.width / 2)
-        right_side = left_side + self.width
-        if left_side < D_W and right_side > 0:
-            if left_side < 0:
-                left_side = 0
-            if right_side > D_W:
-                right_side = D_W
-
-            for w in WALLS[left_side:right_side]:  # Go from left to right
-                if self.perp_dist < w.perp_dist:  # If sprite in front of wall
-                    self.start_x = w.display_x
-                    break
-            for w in WALLS[right_side:left_side:-1]:  # Go from right to left
-                if self.perp_dist < w.perp_dist:  # If sprite in front of wall
-                    self.end_x = w.display_x
-                    break
+        self.update_for_drawing(self.angle_from_player)
 
     def draw(self):
         if not self.hp and self.column == self.death_frames - 1:
@@ -967,11 +987,15 @@ class Enemy(Drawable):
                 self.cropping_height
             )
             cropped_image = self.sheet.subsurface(cropping_rect)
-
-        DISPLAY.blit(
-            pygame.transform.scale(cropped_image, (self.end_x - self.start_x, self.height)),
-            (self.start_x, (D_H - self.height) / 2)
-        )
+        try:
+            DISPLAY.blit(
+                pygame.transform.scale(cropped_image, (self.end_x - self.start_x, self.height)),
+                (self.start_x, (D_H - self.height) / 2)
+            )
+        except pygame.error as error:
+            print('Error occurred scaling enemy: {}'.format(error))
+            print('width: {}'.format(self.end_x - self.start_x))
+            print('height: {}'.format(self.height))
 
 
 class Boss(Enemy):
@@ -1113,7 +1137,7 @@ class Boss(Enemy):
                     if self.column == self.running_frames:
                         self.column = 0
 
-        self.update_for_drawing()
+        self.update_for_drawing(self.angle_from_player)
 
 
 class BossHealthBar:
@@ -1208,6 +1232,18 @@ class Level:
                 else:
                     self.skytexture = pygame.transform.scale(self.skytexture, (D_W * 4, H_H))
 
+        # Objects
+        global OBJECTS
+        OBJECTS = []
+        for row in range(len(TILEMAP)):
+            for column in range(len(TILEMAP[row])):
+                tile = TILE_VALUES_INFO[TILEMAP[row][column]]
+                if tile.type == 'Object':
+                    pos = (column + 0.5, row + 0.5)
+                    OBJECTS.append(Object(tile.texture, pos))
+                    if tile.desc == 'Non-solid':
+                        TILEMAP[row][column] = 0  # Clears tile
+
         # Enemies
         global ENEMIES
         ENEMIES = []
@@ -1215,12 +1251,11 @@ class Level:
             for column in range(len(TILEMAP[row])):
                 tile = TILE_VALUES_INFO[TILEMAP[row][column]]
                 if tile.type == 'Enemy':
-                    spritesheet = TILE_VALUES_INFO[TILEMAP[row][column]].texture
                     pos = (column + 0.5, row + 0.5)
                     if tile.desc == 'Normal':
-                        ENEMIES.append(Enemy(spritesheet, pos))
+                        ENEMIES.append(Enemy(tile.texture, pos))
                     elif tile.desc == 'Boss':
-                        ENEMIES.append(Boss(spritesheet, pos))
+                        ENEMIES.append(Boss(tile.texture, pos))
                     TILEMAP[row][column] = 0  # Clears tile
         # Get enemy home rooms after enemies have been cleared from the tilemap
         for e in ENEMIES:
@@ -1267,8 +1302,8 @@ class Level:
             PLAYER.dir_x = cos(PLAYER.viewangle)
             PLAYER.dir_y = sin(PLAYER.viewangle)
 
-            for e in ENEMIES:
-                e.update_for_drawing()
+            for sprite in ENEMIES + OBJECTS:
+                sprite.update_for_drawing()
 
             if overlay_alpha != 128:
                 overlay_alpha += 8
@@ -1301,8 +1336,8 @@ class Level:
             if text_alpha <= -255:
                 text_alpha = 255
 
-            for e in ENEMIES:
-                e.update_for_drawing()
+            for sprite in ENEMIES + OBJECTS:
+                sprite.update_for_drawing()
             send_rays()
             handle_objects_under_player()
             draw_frame(False)
@@ -1408,11 +1443,13 @@ def dynamic_colour(current, maximum):
 
 
 def send_rays():
-    # Delete walls, objects and unnecessary doors
+    # MAX_DRAW_DIST_SQUARED is used in drawing enemies and objects
+    global MAX_DRAW_DIST_SQUARED
+    MAX_DRAW_DIST_SQUARED = 0
+
+    # Deletes previous walls and unnecessary doors
     global WALLS
     WALLS = []
-    global OBJECTS
-    OBJECTS = []
     for c, d in enumerate(DOORS):
         if d.type == 'Normal' and d.state == 0:  # Only deletes normal doors that are closed
             del DOORS[c]
@@ -1428,6 +1465,10 @@ def send_rays():
         delta_y = collision_y - PLAYER.y
         perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
+        new_dist = delta_x**2 + delta_y**2
+        if new_dist > MAX_DRAW_DIST_SQUARED:
+            MAX_DRAW_DIST_SQUARED = new_dist
+
         # Create Wall object
         WALLS.append(WallColumn(texture, column, perp_dist, c))
 
@@ -1441,15 +1482,7 @@ def raycast(start_pos, rayangle, extra_values=False):
         tile_type = TILE_VALUES_INFO[tile_value].type
         tile_desc = TILE_VALUES_INFO[tile_value].desc
 
-        if tile_type == 'Object':
-            if extra_values:
-                for obj in OBJECTS:
-                    if (int(obj.x), int(obj.y)) == (map_x, map_y):
-                        break
-                else:
-                    OBJECTS.append(Object(map_x, map_y, tile_value))
-
-        elif tile_type == 'Door':
+        if tile_type == 'Door':
             for door in DOORS:
                 if (door.x, door.y) == (map_x, map_y):
                     break
@@ -1475,7 +1508,7 @@ def raycast(start_pos, rayangle, extra_values=False):
                     else:
                         return collision_x, collision_y
 
-        else:  # elif tile_type == 'Wall':
+        elif tile_type == 'Wall':
             if tile_desc == 'Secret':
                 for push_wall in PUSH_WALLS:
                     if (push_wall.x, push_wall.y) == (map_x, map_y):
@@ -1572,7 +1605,7 @@ def raycast(start_pos, rayangle, extra_values=False):
         while interception_horizontal():
             map_x = int(x_intercept)
             map_y = y - (1 - b)
-            if TILEMAP[map_y][map_x]:
+            if TILEMAP[map_y][map_x] > 0:
                 collision = check_collision(x_intercept, y, x_step, tile_step_y)
                 if collision:
                     return collision
@@ -1581,7 +1614,7 @@ def raycast(start_pos, rayangle, extra_values=False):
         while interception_vertical():
             map_x = x - (1 - a)
             map_y = int(y_intercept)
-            if TILEMAP[map_y][map_x]:
+            if TILEMAP[map_y][map_x] > 0:
                 collision = check_collision(x, y_intercept, tile_step_x, y_step)
                 if collision:
                     return collision
@@ -1669,6 +1702,8 @@ def update_gameobjects():
         d.move()
     for p in PUSH_WALLS:
         p.move()
+    for o in OBJECTS:
+        o.update()
     for e in ENEMIES:
         e.update()
     for m in MESSAGES:
@@ -1677,58 +1712,60 @@ def update_gameobjects():
 
 
 def handle_objects_under_player():
-    # Checking if player is standing on an object bc raycast() will miss objects player is standing on
-    # Also picks up objects if they can be picked up
-    global OBJECTS
+    # Checking if player is standing on an object which can be picked up
+
     tile_value = TILEMAP[int(PLAYER.y)][int(PLAYER.x)]
     if tile_value < 0:
-        OBJECTS.append(Object(int(PLAYER.x), int(PLAYER.y), tile_value))
-        if TILE_VALUES_INFO[tile_value].desc == 'Dynamic':
-            pickup_type = 0
+        pickup_type = 0
 
-            # First handle all now-weapon pickups
-            if tile_value == -len(WEAPONS) + 1:
-                PLAYER.has_key = True
-                MESSAGES.append(Message('Picked up a key'))
-                pickup_type = 1
-            elif tile_value == -len(WEAPONS):
-                if PLAYER.hp < PLAYER.max_hp:
-                    PLAYER.hp += 10
-                    if PLAYER.hp > PLAYER.max_hp:
-                        PLAYER.hp = PLAYER.max_hp
-                    MESSAGES.append(Message('Health +10'))
-                    pickup_type = 2
-            elif tile_value == -len(WEAPONS) - 1:
-                if PLAYER.hp < PLAYER.max_hp:
-                    PLAYER.hp += 25
-                    if PLAYER.hp > PLAYER.max_hp:
-                        PLAYER.hp = PLAYER.max_hp
-                    MESSAGES.append(Message('Health +25'))
-                    pickup_type = 2
+        # First handle all now-weapon pickups
+        if tile_value == -len(WEAPONS) + 1:
+            PLAYER.has_key = True
+            MESSAGES.append(Message('Picked up a key'))
+            pickup_type = 1
+        elif tile_value == -len(WEAPONS):
+            if PLAYER.hp < PLAYER.max_hp:
+                PLAYER.hp += 10
+                if PLAYER.hp > PLAYER.max_hp:
+                    PLAYER.hp = PLAYER.max_hp
+                MESSAGES.append(Message('Health +10'))
+                pickup_type = 2
+        elif tile_value == -len(WEAPONS) - 1:
+            if PLAYER.hp < PLAYER.max_hp:
+                PLAYER.hp += 25
+                if PLAYER.hp > PLAYER.max_hp:
+                    PLAYER.hp = PLAYER.max_hp
+                MESSAGES.append(Message('Health +25'))
+                pickup_type = 2
 
-            # Then handle weapon pickups
-            elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
-                if abs(tile_value) < len(WEAPONS) - 1:
-                    pickup_type = 3
+        # Then handle weapon pickups
+        elif not WEAPON_MODEL.shooting and not WEAPON_MODEL.switching:
+            if abs(tile_value) < len(WEAPONS) - 1:
+                pickup_type = 3
 
-            if pickup_type:
-                if pickup_type == 1:  # Key
-                    colour = (255, 255, 0)
-                    play_sound(ITEM_PICKUP_SOUND, 0)
-                elif pickup_type == 2:  # Health
-                    colour = (0, 255, 0)
-                    play_sound(ITEM_PICKUP_SOUND, 0)
-                else:  # Weapon
-                    colour = (0, 0, 255)
-                    play_sound(WEAPON_PICKUP_SOUND, 0)
-                    weapon_nr = abs(tile_value)
-                    if weapon_nr not in PLAYER.weapon_loadout:
-                        PLAYER.weapon_loadout.append(weapon_nr)
-                        WEAPON_MODEL.switching = weapon_nr
-                    MESSAGES.append(Message('Picked up {}'.format(WEAPONS[weapon_nr].name)))
+        if pickup_type:
+            if pickup_type == 1:  # Key
+                colour = (255, 255, 0)
+                play_sound(ITEM_PICKUP_SOUND, 0)
+            elif pickup_type == 2:  # Health
+                colour = (0, 255, 0)
+                play_sound(ITEM_PICKUP_SOUND, 0)
+            else:  # Weapon
+                colour = (0, 0, 255)
+                play_sound(WEAPON_PICKUP_SOUND, 0)
+                weapon_nr = abs(tile_value)
+                if weapon_nr not in PLAYER.weapon_loadout:
+                    PLAYER.weapon_loadout.append(weapon_nr)
+                    WEAPON_MODEL.switching = weapon_nr
+                MESSAGES.append(Message('Picked up {}'.format(WEAPONS[weapon_nr].name)))
 
-                EFFECTS.update(colour)
-                TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
+            EFFECTS.update(colour)
+            # Delete object
+            TILEMAP[int(PLAYER.y)][int(PLAYER.x)] = 0
+            for c, o in enumerate(OBJECTS):
+                if (int(o.x), int(o.y)) == (int(PLAYER.x), int(PLAYER.y)):
+                    del OBJECTS[c]
+                    break
 
 
 def draw_hud():
@@ -1819,16 +1856,16 @@ def draw_frame(hud=True):
 
     # Get things to draw
     to_draw = []
-    for e in ENEMIES:
-        if e.visible_to_player:
-            to_draw.append(e)
+    for sprite in ENEMIES + OBJECTS:
+        if sprite.visible_to_player:
+            to_draw.append(sprite)
 
     # Sort things by perp_dist
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
 
     # Draw things
-    for thing in to_draw:
-        thing.draw()
+    for sprite in to_draw:
+        sprite.draw()
 
     if hud:
         draw_hud()
@@ -1909,9 +1946,9 @@ def game_loop():
 
         events()
         send_rays()
-        handle_objects_under_player()
         if not PAUSED:
             update_gameobjects()
+        handle_objects_under_player()
         draw_frame()
         if PAUSED:
             draw_pause_overlay()
