@@ -1,11 +1,16 @@
 # TO DO:
-# Boss projectiles
-# Has key HUD
+# Exploding barrels
 
 # Extras:
+# Move sounds to different folders
 # Particles - blood, bullets etc
-# Level number hud
+# Boss projectiles
+# Level number HUD
+# Has key HUD
 # Create levels
+
+# Problems:
+# When you instantly pause game crashes
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -13,14 +18,27 @@
 # All angles are in radians
 # Normal enemies can only travel through Dynamic doors, bosses can travel through all types of doors
 # There is no support for multiple bosses in one level
-# Game's default font size is 32, but it can also display sizes 16 and 64
+# Game font's default size is 32, but it can also display sizes 16 and 24
 # Push walls and doors need to be placed in between wall for them to display and work properly
+# Every sky texture will repeat it's texture 4 times around the player
 
 # Sound Channels:
 # 0 = pickup, environment sounds (doors, pushwalls, end switches)
 # 1 = player's weapon sounds
 # 2 - 6 = normal enemy sounds
 # 7 = boss sounds
+
+
+class Colour:
+    black = (0, 0, 0)
+    dark_grey = (32, 32, 32)
+    grey = (128, 128, 128)
+    white = (255, 255, 255)
+    red = (255, 0, 0)
+    green = (0, 255, 0)
+    dark_green = (0, 128, 0)
+    blue = (0, 0, 255)
+    yellow = (255, 255, 0)
 
 
 class Player:
@@ -40,7 +58,7 @@ class Player:
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
         self.hp = Player.max_hp
-        self.ammo = 10
+        self.ammo = 0
         self.has_key = False
 
         self.weapon_loadout = self.saved_weapon_loadout[:]
@@ -50,8 +68,21 @@ class Player:
     def save_weapon_loadout(self):
         self.saved_weapon_loadout = self.weapon_loadout
 
+    def add_ammo(self, amount):
+        self.ammo += amount
+        if self.ammo > Player.max_ammo:
+            self.ammo = PLAYER.max_ammo
+
+    def add_hp(self, amount):
+        self.hp += amount
+        if self.hp > Player.max_hp:
+            self.hp = PLAYER.max_hp
+
+    def rotate(self, radians):
+        self.viewangle = fixed_angle(self.viewangle + radians)
+
     def hurt(self, damage, enemy):
-        EFFECTS.update((255, 0, 0))
+        EFFECTS.update(Colour.red)
         self.hp -= damage
         if self.hp <= 0:
             #last_chance_hp = random.randint(1, 10)
@@ -61,9 +92,6 @@ class Player:
             for channel_id in range(8):
                 pygame.mixer.Channel(channel_id).fadeout(150)
             LEVEL.restart(enemy)
-
-    def rotate(self, radians):
-        self.viewangle = fixed_angle(self.viewangle + radians)
 
     def handle_movement(self):
         # Checks for movement (WASD)
@@ -88,7 +116,7 @@ class Player:
                 x_move += -self.dir_y
                 y_move += self.dir_x
 
-            if abs(x_move) > 0.000001 or abs(y_move) > 0.000001:  # 0.000001 avoids calculation errors
+            if abs(x_move) > 0.0000001 or abs(y_move) > 0.0000001:  # 0.0000001 avoids calculation errors
                 moving_angle = atan2(y_move, x_move)
                 x_move = cos(moving_angle)
                 y_move = sin(moving_angle)
@@ -309,9 +337,13 @@ class PushWall:
             if self.tile_offset >= 1:
                 self.tile_offset = 0
                 TILEMAP[self.y][self.x] = 0  # Make tile walkable
+                EMPTY_TILES.add((self.x, self.y))
+                PUSH_WALL_TILES.remove((self.x, self.y))
                 self.x += self.move_dir_x
                 self.y += self.move_dir_y
                 TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
+                EMPTY_TILES.remove((self.x, self.y))
+                PUSH_WALL_TILES.add((self.x, self.y))
 
 
 class WeaponModel:
@@ -373,7 +405,7 @@ class WeaponModel:
 
             if self.column == weapon.shot_column:
                 weapon_sound = self.weapon.sounds.fire
-                PLAYER.ammo -= self.weapon.ammo_consumption
+                PLAYER.add_ammo(-self.weapon.ammo_consumption)
                 shootable_enemies = get_shootable_enemies()
 
                 if weapon.type == 'Melee':
@@ -406,13 +438,6 @@ class WeaponModel:
 
     def update(self):
         self.weapon = WEAPONS[PLAYER.weapon_nr]
-
-        #if self.weapon.sounds.idle:
-        #   if not self.shooting:
-        #        if self.sound_channel.get_sound() == self.weapon.sounds.idle:
-        #            self.sound_channel.queue(self.weapon.sounds.idle)
-        #        else:
-        #            self.sound_channel.play(self.weapon.sounds.idle)
 
         if self.shooting:
             self.shoot(self.weapon)
@@ -455,7 +480,7 @@ class Message:
     fade_speed = 15  # Rate at which text alpha decreases after display_ticks has gone down to 0
     max_amount = 10  # Max amount of messages that can be on screen
 
-    def __init__(self, text, colour=(255, 255, 255)):
+    def __init__(self, text, colour=Colour.white):
         self.text = text
         self.colour = colour
         self.ticks = 0
@@ -470,6 +495,12 @@ class Message:
                 MESSAGES.remove(self)
         else:
             self.ticks += 1
+
+    def draw(self):
+        index = MESSAGES.index(self)
+        draw_y = Message.start_y + abs(index - len(MESSAGES) + 1) * Message.font_size
+        message = render_text(self.text, self.colour, self.alpha, Message.font_size)
+        DISPLAY.blit(message, (HUD_SAFEZONE, draw_y))
 
 
 class CameraPlane:
@@ -488,11 +519,20 @@ class CameraPlane:
         camera_plane_step = camera_plane_len / D_W
 
         self.dist = camera_plane_len / 2 / tan(fov / 2)
-        for i in range(D_W):
-            camera_plane_pos = camera_plane_start + i * camera_plane_step
+        for x in range(D_W):
+            camera_plane_pos = camera_plane_start + x * camera_plane_step
 
             angle = atan2(camera_plane_pos, self.dist)
             self.rayangle_offsets.append(angle)
+
+        if FLOOR_RES:
+            # Calculates horizontal floorline's edge distance and step distance for every y position below H_H
+            self.floor_lookup_table = []
+            for y in range(H_H + 1, D_H):  # Starts at H_H + 1 bc H_H would be infinitely far away
+                perp_dist = Drawable.constant / ((y - H_H) * 2)
+                dist = perp_dist / cos(FOV / 2)
+                step_dist = perp_dist * tan(FOV / 2) / H_W
+                self.floor_lookup_table.append((y, dist, step_dist * FLOOR_RES))
 
 
 class Drawable:
@@ -523,7 +563,7 @@ class WallColumn(Drawable):
         self.display_y = int((D_H - self.height) / 2)
 
     def draw(self):
-        DISPLAY.blit(pygame.transform.scale(self.image, (1, self.height)), (self.display_x, self.display_y))
+        DISPLAY.blit(pygame.transform.scale(self.image, (WALL_RES, self.height)), (self.display_x, self.display_y))
 
 
 class Sprite(Drawable):
@@ -537,8 +577,7 @@ class Sprite(Drawable):
                     angle_from_player = atan2(self.delta_y, self.delta_x)
                 self.display_pos = H_W + int(tan(angle_from_player - PLAYER.viewangle) * CAMERA_PLANE.dist * D_W)
 
-                self.height = int(Drawable.constant / self.perp_dist)
-                self.width = round(self.height / 2) * 2  # Needs to be even number
+                self.width = self.height = round(Drawable.constant / self.perp_dist / 2) * 2  # Needs to be even number
                 self.calc_start_and_end_x()
                 if self.start_x is not None and self.end_x is not None:
                     self.calc_cropping_height()
@@ -559,11 +598,11 @@ class Sprite(Drawable):
                 right_side = D_W
 
             for w in WALLS[left_side:right_side]:  # Go from left to right
-                if self.perp_dist < w.perp_dist:  # If sprite in front of wall
+                if w and self.perp_dist < w.perp_dist:  # If sprite in front of wall
                     self.start_x = w.display_x
                     break
             for w in WALLS[right_side:left_side:-1]:  # Go from right to left
-                if self.perp_dist < w.perp_dist:  # If sprite in front of wall
+                if w and self.perp_dist < w.perp_dist:  # If sprite in front of wall
                     self.end_x = w.display_x
                     break
 
@@ -601,7 +640,7 @@ class Enemy(Sprite):
     type = 'Normal'
     animation_ticks = 5  # Enemy animation frames delay
     looting_pulse_speed = 20
-    looting_colour = (255, 255, 0)
+    looting_colour = Colour.yellow
 
     def __init__(self, spritesheet, pos):
         self.x, self.y = pos
@@ -650,7 +689,7 @@ class Enemy(Sprite):
             self.looted = False
             self.outline_alpha = 0
             self.outline_image = pygame.Surface((TEXTURE_SIZE, TEXTURE_SIZE))
-            self.outline_image.set_colorkey((0, 0, 0))
+            self.outline_image.set_colorkey(Colour.black)
             for point in pygame.mask.from_surface(self.dead_image).outline():
                 self.outline_image.set_at(point, Enemy.looting_colour)
         else:
@@ -786,9 +825,7 @@ class Enemy(Sprite):
             play_sound(ITEM_PICKUP_SOUND, 0)
             MESSAGES.append(Message('Ammo +{}'.format(self.looting_ammo)))
             self.looted = True
-            PLAYER.ammo += self.looting_ammo
-            if PLAYER.ammo > Player.max_ammo:
-                PLAYER.ammo = Player.max_ammo
+            PLAYER.add_ammo(self.looting_ammo)
 
     def strafe(self):
         # Sets step_(x/y) to a random new empty neighbour tile (if there is one)
@@ -1042,7 +1079,7 @@ class Boss(Enemy):
         self.looted = False
         self.outline_alpha = 0
         self.outline_image = pygame.Surface((TEXTURE_SIZE, TEXTURE_SIZE))
-        self.outline_image.set_colorkey((0, 0, 0))
+        self.outline_image.set_colorkey(Colour.black)
         for point in pygame.mask.from_surface(self.dead_image).outline():
             self.outline_image.set_at(point, Enemy.looting_colour)
 
@@ -1182,7 +1219,7 @@ class BossHealthBar:
             pygame.draw.rect(DISPLAY, colour, (self.center_x - self.half_width, self.current_y - self.half_height,
                                                self.half_width * 2 * health_amount, self.half_height * 2))
             # Boss name
-            boss_name = render_text(str(self.boss.name), (0, 0, 0), 255, 16)
+            boss_name = render_text(str(self.boss.name), (0, 0, 0), size=16)
             DISPLAY.blit(boss_name, (self.center_x - self.half_width + TEXTURE_SIZE / 2,
                                      self.current_y - 8))
             # Boss image
@@ -1193,18 +1230,40 @@ class BossHealthBar:
 class Level:
     def load(self, level_nr):
         self.nr = level_nr
-        # Create tilemap
+
+        # Load level file
         with open('../levels/{}/tilemap.txt'.format(level_nr), 'r') as f:
+            # Tilemap
             global TILEMAP
             TILEMAP = []
-            for line in f:
-                row = line.replace('\n', '')  # Get rid of newline (\n)
-                row = row[1:-1]  # Get rid of '[' and ']'
+            lines = list(f)
+            for line in lines[:-2]:
+                row = line[1:-2]  # Get rid of '[' and ']'
                 row = row.split(',')  # Split line into list
                 row = [int(i) for i in row]  # Turn all number strings to an int
                 TILEMAP.append(row)
+            # Sky texture
+            skytexture_value = int(lines[-2])
+            skytexture_name = os.listdir('../textures/skies')[skytexture_value]
+            try:
+                raw_skytexture = pygame.image.load('../textures/skies/{}'.format(skytexture_name)).convert()
+            except pygame.error as loading_error:
+                sys.exit(loading_error)
+            else:
+                self.skytexture = pygame.Surface((D_W * 2, H_H))
+                self.skytexture.blit(pygame.transform.scale(raw_skytexture, (D_W, H_H)), (0, 0))
+                self.skytexture.blit(pygame.transform.scale(raw_skytexture, (D_W, H_H)), (D_W, 0))
+            # Floor texture
+            floor_texture_value = int(lines[-1])
+            cropping_rect = (0, floor_texture_value * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
+            try:
+                raw_floor_texture = pygame.image.load('../textures/walls/floor.png').convert().subsurface(cropping_rect)
+            except pygame.error as loading_error:
+                sys.exit(loading_error)
+            else:
+                self.floor_texture, self.big_floor_texture = graphics.get_floor_textures(raw_floor_texture)
 
-        # Create player
+        # Load player file
         with open('../levels/{}/player.txt'.format(level_nr), 'r') as f:
             player_pos = f.readline().replace('\n', '').split(',')
             player_pos = [float(i) for i in player_pos]
@@ -1212,27 +1271,7 @@ class Level:
             global PLAYER
             PLAYER.setup(player_pos, player_angle)
 
-        # Background
-        with open('../levels/{}/background.txt'.format(level_nr), 'r') as f:
-            colour = f.readline().replace('\n', '').split(',')
-            colour = [int(i) for i in colour]
-            self.ceiling_colour = tuple(colour)
-            colour = f.readline().replace('\n', '').split(',')
-            colour = [int(i) for i in colour]
-            self.floor_colour = tuple(colour)
-
-            self.skytexture = None
-            value = int(f.readline().replace('\n', ''))
-            if value > 0:
-                skytextures = os.listdir('../textures/skies')
-                try:
-                    self.skytexture = pygame.image.load('../textures/skies/{}'.format(skytextures[value - 1])).convert()
-                except pygame.error or IndexError:
-                    pass
-                else:
-                    self.skytexture = pygame.transform.scale(self.skytexture, (D_W * 4, H_H))
-
-        # Objects
+        # Load objects
         global OBJECTS
         OBJECTS = []
         for row in range(len(TILEMAP)):
@@ -1244,7 +1283,7 @@ class Level:
                     if tile.desc == 'Non-solid':
                         TILEMAP[row][column] = 0  # Clears tile
 
-        # Enemies
+        # Load enemies
         global ENEMIES
         ENEMIES = []
         for row in range(len(TILEMAP)):
@@ -1261,6 +1300,33 @@ class Level:
         for e in ENEMIES:
             if e.type == 'Normal':
                 e.get_home_room()
+
+        # Tile sets
+        global EMPTY_TILES  # Raycasting will ignore all these tiles
+        EMPTY_TILES = set()
+        global DOOR_TILES  # Contains BOSS_DOOR_TILES aswell
+        DOOR_TILES = set()
+        global BOSS_DOOR_TILES
+        BOSS_DOOR_TILES = set()
+        global PUSH_WALL_TILES
+        PUSH_WALL_TILES = set()
+
+        for row in range(len(TILEMAP)):
+            for column in range(len(TILEMAP[row])):
+                tile = TILE_VALUES_INFO[TILEMAP[row][column]]
+
+                if tile.type == 'Wall':
+                    if tile.desc == 'Secret':
+                        PUSH_WALL_TILES.add((column, row))
+                elif tile.type == 'Door':
+                    DOOR_TILES.add((column, row))
+                    if tile.desc == 'Boss':
+                        BOSS_DOOR_TILES.add((column, row))
+                else:
+                    EMPTY_TILES.add((column, row))
+
+        global FLOOR_TILES  # Tiles that need floor rendering, contains everything but normal wall tiles
+        FLOOR_TILES = EMPTY_TILES | DOOR_TILES | PUSH_WALL_TILES
 
     def start(self, level_nr):
         global TIME
@@ -1343,8 +1409,8 @@ class Level:
             draw_frame(False)
             draw_black_overlay(overlay_alpha)
 
-            you_died = render_text('YOU DIED', (255, 255, 255), abs(text_alpha))
-            DISPLAY.blit(you_died, ((D_W - you_died.get_width()) / 2, (D_H - you_died.get_height()) / 2))
+            you_died = render_text('YOU DIED', Colour.white, abs(text_alpha))
+            display_text(1, 1, you_died)
             pygame.display.flip()
             CLOCK.tick(30)
 
@@ -1391,14 +1457,12 @@ class Level:
             draw_frame(False)
             draw_black_overlay(overlay_alpha)
 
-            level_finished = render_text('LEVEL FINISHED', (255, 255, 255))
-            time_spent = render_text('TIME: {}m {}s'.format(minutes, seconds), (255, 255, 255))
-            kills = render_text('KILLS: {}/{}'.format(dead, len(ENEMIES)), (255, 255, 255))
-            press_space_to_continue = render_text('Press SPACE to continue', (255, 255, 255), abs(text_alpha))
-            DISPLAY.blit(level_finished, ((D_W - level_finished.get_width()) / 2, 256))
-            DISPLAY.blit(time_spent, ((D_W - time_spent.get_width()) / 2, 320))
-            DISPLAY.blit(kills, ((D_W - kills.get_width()) / 2, 384))
-            DISPLAY.blit(press_space_to_continue, ((D_W - press_space_to_continue.get_width()) / 2, 448))
+            level_finished = render_text('LEVEL FINISHED', Colour.white)
+            time_spent = render_text('TIME: {}m {}s'.format(minutes, seconds), Colour.white)
+            kills = render_text('KILLS: {}/{}'.format(dead, len(ENEMIES)), Colour.white)
+            press_space_to_continue = render_text('Press SPACE to continue', Colour.white, abs(text_alpha))
+            display_text(1, 1, level_finished, time_spent, kills, press_space_to_continue)
+
             pygame.display.flip()
             CLOCK.tick(30)
 
@@ -1442,6 +1506,65 @@ def dynamic_colour(current, maximum):
     return r, g, 0
 
 
+def render_text(text, colour, alpha=255, size=32):
+    if size == 32:
+        image = GAME_FONT_32.render(text, False, colour)
+    elif size == 24:
+        image = GAME_FONT_24.render(text, False, colour)
+    elif size == 16:
+        image = GAME_FONT_16.render(text, False, colour)
+    else:
+        return
+    if alpha != 255:
+        image.set_alpha(alpha)
+    return image
+
+
+def join_texts(rendered_texts):
+    # Add all given texts into one image
+    # Allows for different colour or alpha valued texts to be drawn together on one line
+    # Estimates that the space key width will be approximately half of text's height
+    text_h = rendered_texts[0].get_height()
+    text_gap_w = int(text_h / 2)
+    total_w = (len(rendered_texts) - 1) * text_gap_w
+    for rendered_text in rendered_texts:
+        total_w += rendered_text.get_width()
+    new_surface = pygame.Surface((total_w, text_h), SRCALPHA)
+    x = 0
+    for rendered_text in rendered_texts:
+        new_surface.blit(rendered_text, (x, 0))
+        x += rendered_text.get_width() + text_gap_w
+    return new_surface
+
+
+def display_text(horizontal_pos, vertical_pos, *rendered_texts):
+    #    horizontal pos
+    #  0--------1--------2
+    # |                   0
+    # |      DISPLAY      | vertical
+    # |         +         1   pos
+    # |                   |
+    # |                   2
+    #  -------------------
+    # If given multiple texts, they will be drawn on top of each other
+    x = horizontal_pos * H_W
+    if x == 0:
+        x += HUD_SAFEZONE
+    elif x == D_W:
+        x -= HUD_SAFEZONE
+    y = vertical_pos * H_H
+    if y == 0:
+        y += HUD_SAFEZONE
+    elif y == D_H:
+        y -= HUD_SAFEZONE
+    text_h = rendered_texts[0].get_height()
+    y -= len(rendered_texts) * int(text_h / 2) * vertical_pos
+    for rendered_text in rendered_texts:
+        text_w = rendered_text.get_width()
+        DISPLAY.blit(rendered_text, (x - int(text_w / 2) * horizontal_pos, y))
+        y += text_h
+
+
 def send_rays():
     # MAX_DRAW_DIST_SQUARED is used in drawing enemies and objects
     global MAX_DRAW_DIST_SQUARED
@@ -1455,39 +1578,40 @@ def send_rays():
             del DOORS[c]
 
     # Send rays
-    for c, rayangle_offset in enumerate(CAMERA_PLANE.rayangle_offsets):
-        # Get values from raycast()
-        collision_x, collision_y, texture, column = \
-            raycast((PLAYER.x, PLAYER.y), PLAYER.viewangle + rayangle_offset, True)
+    for display_x, rayangle_offset in enumerate(CAMERA_PLANE.rayangle_offsets):
+        if not display_x % WALL_RES:
+            # Get values from raycast()
+            collision_x, collision_y, texture, column = \
+                raycast((PLAYER.x, PLAYER.y), PLAYER.viewangle + rayangle_offset, True)
 
-        # Calculate perpendicular distance (needed to avoid fisheye effect)
-        delta_x = collision_x - PLAYER.x
-        delta_y = collision_y - PLAYER.y
-        perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
+            # Calculate perpendicular distance (needed to avoid fisheye effect)
+            delta_x = collision_x - PLAYER.x
+            delta_y = collision_y - PLAYER.y
+            perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
-        new_dist = delta_x**2 + delta_y**2
-        if new_dist > MAX_DRAW_DIST_SQUARED:
-            MAX_DRAW_DIST_SQUARED = new_dist
+            new_dist = delta_x**2 + delta_y**2
+            if new_dist > MAX_DRAW_DIST_SQUARED:
+                MAX_DRAW_DIST_SQUARED = new_dist
 
-        # Create Wall object
-        WALLS.append(WallColumn(texture, column, perp_dist, c))
+            # Create Wall object
+            WALLS.append(WallColumn(texture, column, perp_dist, display_x))
+        else:
+            WALLS.append(None)
 
 
 def raycast(start_pos, rayangle, extra_values=False):
     def check_collision(collision_x, collision_y, x_step, y_step):
         # x_step is the distance needed to move in x to get to the next similar type interception
         # y_step is the distance needed to move in y to get to the next similar type interception
-
         tile_value = TILEMAP[map_y][map_x]
-        tile_type = TILE_VALUES_INFO[tile_value].type
-        tile_desc = TILE_VALUES_INFO[tile_value].desc
 
-        if tile_type == 'Door':
+        if (map_x, map_y) in DOOR_TILES:
+            # Get the door that ray hits
             for door in DOORS:
                 if (door.x, door.y) == (map_x, map_y):
                     break
             else:
-                if tile_desc == 'Boss':
+                if (map_x, map_y) in BOSS_DOOR_TILES:
                     door = BossDoor((map_x, map_y), tile_value)
                 else:
                     door = Door((map_x, map_y), tile_value)
@@ -1508,38 +1632,23 @@ def raycast(start_pos, rayangle, extra_values=False):
                     else:
                         return collision_x, collision_y
 
-        elif tile_type == 'Wall':
-            if tile_desc == 'Secret':
+        else:
+            if (map_x, map_y) in PUSH_WALL_TILES:
                 for push_wall in PUSH_WALLS:
                     if (push_wall.x, push_wall.y) == (map_x, map_y):
                         if push_wall.tile_offset > 0:
                             collision_x += x_step * push_wall.tile_offset
                             collision_y += y_step * push_wall.tile_offset
-                            if (int(collision_x), int(collision_y)) == (push_wall.x, push_wall.y):
-                                if extra_values:
-                                    texture = TILE_VALUES_INFO[tile_value].texture
-                                    if x_step == 1 or x_step == -1:
-                                        surface_offset = collision_y - int(collision_y)
-                                        column = int(TEXTURE_SIZE * abs(a - surface_offset))
-                                        column += TEXTURE_SIZE
-                                    else:
-                                        surface_offset = collision_x - int(collision_x)
-                                        column = int(TEXTURE_SIZE * abs(b - surface_offset))
-                                    return collision_x, collision_y, texture, column
-                                else:
-                                    return collision_x, collision_y
-                            else:
-                                return
+                            if (int(collision_x), int(collision_y)) != (push_wall.x, push_wall.y):
+                                return  # Ray misses the pushwall
                         break
                 else:
                     push_wall = PushWall((map_x, map_y), tile_value)
                     PUSH_WALLS.append(push_wall)
 
             if extra_values:
-                for d in DOORS:
-                    if (d.x, d.y) == (x - a, y - b):
-                        texture = Door.side_texture
-                        break
+                if (x - a, y - b) in DOOR_TILES:
+                    texture = Door.side_texture
                 else:
                     texture = TILE_VALUES_INFO[tile_value].texture
                 if x_step == 1 or x_step == -1:
@@ -1566,18 +1675,18 @@ def raycast(start_pos, rayangle, extra_values=False):
             return y_intercept > y
 
     # https://www.youtube.com/watch?v=eOCQfxRQ2pY
-    #
+
     #      a = 0 | a = 1
     # -pi  b = 0 | b = 0  -
-    #     -------|------- 0 rad
+    #     -------|------- 0 radians
     #  pi  a = 0 | a = 1  +
     #      b = 1 | b = 1
-    rayangle = fixed_angle(rayangle + 0.000001)
+    rayangle = fixed_angle(rayangle + 0.0000001)
     tan_rayangle = tan(rayangle)
     x = int(start_pos[0])
     y = int(start_pos[1])
-    dx = start_pos[0] - x + 0.000001
-    dy = start_pos[1] - y + 0.000001
+    dx = start_pos[0] - x + 0.0000001
+    dy = start_pos[1] - y + 0.0000001
 
     if abs(rayangle) < pi / 2:
         a = 1
@@ -1605,7 +1714,7 @@ def raycast(start_pos, rayangle, extra_values=False):
         while interception_horizontal():
             map_x = int(x_intercept)
             map_y = y - (1 - b)
-            if TILEMAP[map_y][map_x] > 0:
+            if (map_x, map_y) not in EMPTY_TILES:
                 collision = check_collision(x_intercept, y, x_step, tile_step_y)
                 if collision:
                     return collision
@@ -1614,7 +1723,7 @@ def raycast(start_pos, rayangle, extra_values=False):
         while interception_vertical():
             map_x = x - (1 - a)
             map_y = int(y_intercept)
-            if TILEMAP[map_y][map_x] > 0:
+            if (map_x, map_y) not in EMPTY_TILES:
                 collision = check_collision(x, y_intercept, tile_step_x, y_step)
                 if collision:
                     return collision
@@ -1725,16 +1834,12 @@ def handle_objects_under_player():
             pickup_type = 1
         elif tile_value == -len(WEAPONS):
             if PLAYER.hp < PLAYER.max_hp:
-                PLAYER.hp += 10
-                if PLAYER.hp > PLAYER.max_hp:
-                    PLAYER.hp = PLAYER.max_hp
+                PLAYER.add_hp(10)
                 MESSAGES.append(Message('Health +10'))
                 pickup_type = 2
         elif tile_value == -len(WEAPONS) - 1:
             if PLAYER.hp < PLAYER.max_hp:
-                PLAYER.hp += 25
-                if PLAYER.hp > PLAYER.max_hp:
-                    PLAYER.hp = PLAYER.max_hp
+                PLAYER.add_hp(25)
                 MESSAGES.append(Message('Health +25'))
                 pickup_type = 2
 
@@ -1745,18 +1850,20 @@ def handle_objects_under_player():
 
         if pickup_type:
             if pickup_type == 1:  # Key
-                colour = (255, 255, 0)
+                colour = Colour.yellow
                 play_sound(ITEM_PICKUP_SOUND, 0)
             elif pickup_type == 2:  # Health
-                colour = (0, 255, 0)
+                colour = Colour.green
                 play_sound(ITEM_PICKUP_SOUND, 0)
             else:  # Weapon
-                colour = (0, 0, 255)
+                colour = Colour.blue
                 play_sound(WEAPON_PICKUP_SOUND, 0)
                 weapon_nr = abs(tile_value)
                 if weapon_nr not in PLAYER.weapon_loadout:
                     PLAYER.weapon_loadout.append(weapon_nr)
                     WEAPON_MODEL.switching = weapon_nr
+                PLAYER.add_ammo(10)
+                MESSAGES.append(Message('Ammo +10'))
                 MESSAGES.append(Message('Picked up {}'.format(WEAPONS[weapon_nr].name)))
 
             EFFECTS.update(colour)
@@ -1769,81 +1876,91 @@ def handle_objects_under_player():
 
 
 def draw_hud():
-    # Even though HUD uses the default font size of 32, the actual line height of the text is about 28 pixels
-    line_h = 28
-    safezone_w = 5
-    safezone_h = 5
+    font_size = 24
 
     # Messages
-    y = Message.start_y
     for m in reversed(MESSAGES):
-        message = render_text(m.text, m.colour, m.alpha, Message.font_size)
-        DISPLAY.blit(message, (safezone_w, y))
-        y += Message.font_size / 32 * line_h
+        m.draw()
 
     # FPS counter
     if SHOW_FPS:
-        fps_counter = render_text(str(ceil(CLOCK.get_fps())), (0, 255, 0))
-        DISPLAY.blit(fps_counter, (D_W - safezone_w - fps_counter.get_width(), safezone_h))
+        fps_counter = render_text(str(ceil(CLOCK.get_fps())), Colour.green, size=font_size)
+        display_text(2, 0, fps_counter)
 
     # Weapon HUD
     WEAPON_MODEL.draw()
+
+    # Player hp and ammo HUD
+    hp_text = render_text('Hp:', Colour.black, size=font_size)
+    hp_amount = render_text(str(PLAYER.hp), dynamic_colour(PLAYER.hp, Player.max_hp), size=font_size)
+    ammo_text = render_text('Ammo:', Colour.black, size=font_size)
+    ammo_amount = render_text(str(PLAYER.ammo), dynamic_colour(PLAYER.ammo, Player.max_ammo), size=font_size)
+    display_text(0, 2, hp_text, hp_amount, ammo_text, ammo_amount)
+
+    # Weapon name and loadout HUD
     current_weapon = WEAPON_MODEL.weapon
+    weapon_name = render_text(str(current_weapon.name), Colour.black, size=font_size)
 
-    weapon_name = render_text(str(current_weapon.name), (0, 0, 0))
-    DISPLAY.blit(weapon_name, (D_W - weapon_name.get_width() - safezone_w, D_H - line_h * 2 - safezone_h))
+    weapon_nrs = []
+    for weapon_nr, w in enumerate(WEAPONS[1:], 1):
+        if w == WEAPON_MODEL.weapon:  # If equipped
+            colour = Colour.green
+        elif weapon_nr in PLAYER.weapon_loadout:  # If picked up
+            colour = Colour.dark_green
+        else:  # If not picked up
+            colour = Colour.black
+        weapon_nrs.append(render_text(str(weapon_nr), colour, size=font_size))
+    weapon_loadout = join_texts(weapon_nrs)
 
-    # Player hp HUD
-    hp_text = render_text('Hp:', (0, 0, 0))
-    hp_amount = render_text(str(PLAYER.hp), dynamic_colour(PLAYER.hp, Player.max_hp))
-    DISPLAY.blit(hp_text, (safezone_w, D_H - line_h * 4 - safezone_h))
-    DISPLAY.blit(hp_amount, (safezone_w, D_H - line_h * 3 - safezone_h))
-
-    # Player ammo HUD
-    ammo_text = render_text('Ammo:', (0, 0, 0))
-    ammo_amount = render_text(str(PLAYER.ammo), dynamic_colour(PLAYER.ammo, Player.max_ammo))
-    DISPLAY.blit(ammo_text, (safezone_w, D_H - line_h * 2 - safezone_h))
-    DISPLAY.blit(ammo_amount, (safezone_w, D_H - line_h - safezone_h))
-
-    # Loadout HUD
-    x = D_W - safezone_w
-    for w in reversed(WEAPONS):
-        if w:
-            weapon_nr = WEAPONS.index(w)
-            if w == WEAPON_MODEL.weapon:  # If equipped
-                colour = (0, 255, 0)
-            elif weapon_nr in PLAYER.weapon_loadout:  # If picked up
-                colour = (0, 128, 0)
-            else:  # If not picked up
-                colour = (0, 32, 0)
-            number = render_text(str(weapon_nr), colour)
-            x -= number.get_width()
-            DISPLAY.blit(number, (x, D_H - line_h - safezone_h))
-            x -= 10
+    display_text(2, 2, weapon_name, weapon_loadout)
 
     BOSSHEALTHBAR.draw()
     EFFECTS.draw()
 
 
 def draw_background():
-    if LEVEL.skytexture:
-        # x_offset ranges from 0 to 1
-        x_offset = (PLAYER.viewangle + pi) / (2 * pi)
-        x = x_offset * LEVEL.skytexture.get_width()
+    # Sky texture
+    angle = PLAYER.viewangle + pi
+    while angle > pi / 2:
+        angle -= pi / 2
+    texture_offset = angle / (pi / 2)  # ranges from 0 to 1
+    DISPLAY.blit(LEVEL.skytexture, (0, 0), (D_W * texture_offset, 0, D_W, H_H))
 
-        if x_offset <= 0.75:
-            # Sky texture can be drawn as one image
-            sky = LEVEL.skytexture.subsurface(x, 0, D_W, H_H)
-            DISPLAY.blit(sky, (0, 0))
-        else:
-            # Sky texture needs to be drawn as two separate parts
-            sky_left = LEVEL.skytexture.subsurface(x, 0, LEVEL.skytexture.get_width() - x, H_H)
-            sky_right = LEVEL.skytexture.subsurface(0, 0, D_W - sky_left.get_width(), H_H)
-            DISPLAY.blit(sky_left, (0, 0))
-            DISPLAY.blit(sky_right, (sky_left.get_width(), 0))
-    else:
-        pygame.draw.rect(DISPLAY, LEVEL.ceiling_colour, ((0, 0), (D_W, H_H)))  # Ceiling
-    pygame.draw.rect(DISPLAY, LEVEL.floor_colour, ((0, H_H), (D_W, H_H)))  # Floor
+    # Floor - drawn poorly to keep the framerate
+    pygame.draw.rect(DISPLAY, Colour.dark_grey, (0, H_H, D_W, H_H))
+    if FLOOR_RES:
+        start_angle = PLAYER.viewangle - FOV / 2
+        sin_start_angle = sin(start_angle)
+        cos_start_angle = cos(start_angle)
+        step_angle = PLAYER.viewangle + pi / 2
+        sin_step_angle = sin(step_angle)
+        cos_step_angle = cos(step_angle)
+
+        for (y, dist, step_dist) in CAMERA_PLANE.floor_lookup_table[8:40:2]:
+            floor_x = PLAYER.x + dist * cos_start_angle
+            floor_y = PLAYER.y + dist * sin_start_angle
+            step_x = step_dist * cos_step_angle
+            step_y = step_dist * sin_step_angle
+            for x in range(0, D_W, FLOOR_RES):
+                if (int(floor_x), int(floor_y)) in FLOOR_TILES:
+                    texture_x = int((floor_x - int(floor_x)) * TEXTURE_SIZE)
+                    texture_y = int((floor_y - int(floor_y)) * TEXTURE_SIZE)
+                    DISPLAY.blit(LEVEL.floor_texture, (x, y), (texture_x, texture_y, FLOOR_RES, 2))
+                floor_x += step_x
+                floor_y += step_y
+
+        for (y, dist, step_dist) in CAMERA_PLANE.floor_lookup_table[40::2]:
+            floor_x = PLAYER.x + dist * cos_start_angle
+            floor_y = PLAYER.y + dist * sin_start_angle
+            step_x = step_dist * cos_step_angle * 2
+            step_y = step_dist * sin_step_angle * 2
+            for x in range(0, D_W, FLOOR_RES * 2):
+                if (int(floor_x), int(floor_y)) in FLOOR_TILES:
+                    texture_x = int((floor_x - int(floor_x)) * TEXTURE_SIZE * 2)
+                    texture_y = int((floor_y - int(floor_y)) * TEXTURE_SIZE * 2)
+                    DISPLAY.blit(LEVEL.big_floor_texture, (x, y), (texture_x, texture_y, FLOOR_RES * 2, 2))
+                floor_x += step_x
+                floor_y += step_y
 
 
 def draw_frame(hud=True):
@@ -1852,7 +1969,8 @@ def draw_frame(hud=True):
 
     # Draw walls
     for w in WALLS:
-        w.draw()
+        if w:
+            w.draw()
 
     # Get things to draw
     to_draw = []
@@ -1913,27 +2031,15 @@ def play_sound(sound, channel_id, source_pos=(0, 0), source_dist_squared=0):
 
 def draw_pause_overlay():
     draw_black_overlay(128)
-    paused = render_text('PAUSED', (255, 255, 255))
-    DISPLAY.blit(paused, ((D_W - paused.get_width()) / 2, (D_H - paused.get_height()) / 2))
+    paused = render_text('PAUSED', Colour.white)
+    display_text(1, 1, paused)
 
 
 def draw_black_overlay(alpha):
     black_overlay = pygame.Surface((D_W, D_H))
     black_overlay.set_alpha(alpha)
-    black_overlay.fill((0, 0, 0))
+    black_overlay.fill(Colour.black)
     DISPLAY.blit(black_overlay, (0, 0))
-
-
-def render_text(text, colour, alpha=255, size=32):
-    if size == 16:
-        image = GAME_FONT_16.render(text, False, colour)
-    elif size == 32:
-        image = GAME_FONT_32.render(text, False, colour)
-    elif size == 64:
-        image = GAME_FONT_64.render(text, False, colour)
-    if alpha != 255:
-        image.set_alpha(alpha)
-    return image
 
 
 def game_loop():
@@ -1958,6 +2064,7 @@ def game_loop():
 
 
 if __name__ == '__main__':
+    import sys
     import os
     import random
     from math import sin, cos, tan, atan2, sqrt, pi, ceil
@@ -1989,12 +2096,12 @@ if __name__ == '__main__':
 
     CAMERA_PLANE = CameraPlane(FOV)
     GAME_FONT_16 = pygame.font.Font('../font/LCD_Solid.ttf', 16)
+    GAME_FONT_24 = pygame.font.Font('../font/LCD_Solid.ttf', 24)
     GAME_FONT_32 = pygame.font.Font('../font/LCD_Solid.ttf', 32)
-    GAME_FONT_64 = pygame.font.Font('../font/LCD_Solid.ttf', 64)
 
     Door.side_texture = graphics.get_door_side_texture()
     ENEMY_INFO = enemies.get_enemy_info()
-    TILE_VALUES_INFO = graphics.get_tile_values_info(TEXTURE_SIZE, ENEMY_INFO)
+    TILE_VALUES_INFO = graphics.get_tile_values_info(ENEMY_INFO)
     WEAPONS = weapons.get()
 
     # Sounds
@@ -2011,5 +2118,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(8)
+    LEVEL.start(1)
     pygame.quit()

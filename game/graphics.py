@@ -2,32 +2,32 @@ import pygame
 import sys
 
 
+def get_floor_textures(raw_floor_texture):
+    from game.settings import TEXTURE_SIZE, FLOOR_RES
+
+    floor_texture = pygame.Surface((TEXTURE_SIZE + FLOOR_RES, TEXTURE_SIZE))
+    floor_texture.blit(raw_floor_texture, (0, 0))
+    floor_texture.blit(raw_floor_texture.subsurface(0, 0, FLOOR_RES, TEXTURE_SIZE), (TEXTURE_SIZE, 0))
+
+    big_floor_texture = pygame.Surface(((TEXTURE_SIZE + FLOOR_RES) * 2, TEXTURE_SIZE * 2))
+    big_floor_texture.blit(pygame.transform.scale(raw_floor_texture, (TEXTURE_SIZE * 2, TEXTURE_SIZE * 2)), (0, 0))
+    big_floor_texture.blit(pygame.transform.scale(raw_floor_texture.subsurface(0, 0, FLOOR_RES * 2, TEXTURE_SIZE),
+                                                  (FLOOR_RES * 2, TEXTURE_SIZE * 2)), (TEXTURE_SIZE * 2, 0))
+    return floor_texture, big_floor_texture
+
+
 def get_door_side_texture():
     try:
-        door_side_texture = pygame.image.load('../textures/doors/side.png').convert()
+        side_texture = pygame.image.load('../textures/doors/side.png').convert()
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
 
     else:
-        return door_side_texture
+        return side_texture
 
 
-def get_tile_values_info(texture_size, enemy_info):
-    class Tile:
-        def __init__(self, texture, type, description):
-            self.texture = texture
-            self.type = type
-            self.desc = description
-
-    def assign_texture_sheet(cell_w, cell_h, index_step, texture_sheet, type, description):
-        global index  # Sets current index as staring index
-        for row in range(int(texture_sheet.get_height() / cell_h)):
-            for column in range(int(texture_sheet.get_width() / cell_w)):
-                texture = texture_sheet.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
-                tile_values_info[index] = Tile(texture, type, description)  # Update tile_values_info with Tile object
-                index += index_step
-
+def get_tile_values_info(enemy_info):
     try:
         # Wall textures
         bloodycave = pygame.image.load('../textures/walls/bloodycave.png').convert()
@@ -59,6 +59,23 @@ def get_tile_values_info(texture_size, enemy_info):
         sys.exit(loading_error)
 
     else:
+        from game.settings import TEXTURE_SIZE
+
+        class Tile:
+            def __init__(self, texture, type, description):
+                self.texture = texture
+                self.type = type
+                self.desc = description
+
+        def assign_texture_sheet(texture_sheet, type, description, cell_w=TEXTURE_SIZE, cell_h=TEXTURE_SIZE, step=1):
+            global index  # Sets current index as staring index
+            for row in range(int(texture_sheet.get_height() / cell_h)):
+                for column in range(int(texture_sheet.get_width() / cell_w)):
+                    texture = texture_sheet.subsurface(column * cell_w, row * cell_h, cell_w, cell_h)
+                    tile_values_info[index] = Tile(texture, type,
+                                                   description)  # Update tile_values_info with Tile object
+                    index += step
+
         # tile_values_info texture assigning can happen manually and via assign_texture_sheet()
         # Last on is used to assign whole texture sheets (usually same themed textures) at once with same description
         tile_values_info = {}
@@ -72,38 +89,38 @@ def get_tile_values_info(texture_size, enemy_info):
         index -= 1
 
         # Dynamic objects
-        assign_texture_sheet(texture_size, texture_size, -1, dynamics, 'Object', 'Dynamic')
+        assign_texture_sheet(dynamics, 'Object', 'Dynamic', step=-1)
 
         # Other non-solid objects
-        assign_texture_sheet(texture_size, texture_size, -1, nonsolids, 'Object', 'Non-solid')
+        assign_texture_sheet(nonsolids, 'Object', 'Non-solid', step=-1)
 
         # ---Positive values---
         # Solid objects
         index = 1
-        assign_texture_sheet(texture_size, texture_size, 1, solids, 'Object', 'Solid')
+        assign_texture_sheet(solids, 'Object', 'Solid')
 
         # Doors
-        assign_texture_sheet(texture_size * 2, texture_size, 1, dynamic_doors, 'Door', 'Dynamic')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, static_door, 'Door', 'Static')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, locked_door, 'Door', 'Locked')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, boss_door, 'Door', 'Boss')
+        assign_texture_sheet(dynamic_doors, 'Door', 'Dynamic', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(static_door, 'Door', 'Static', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(locked_door, 'Door', 'Locked', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(boss_door, 'Door', 'Boss', cell_w=TEXTURE_SIZE * 2)
 
         # Walls
-        assign_texture_sheet(texture_size * 2, texture_size, 1, bloodycave, 'Wall', 'Bloody Cave')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, bluebrick, 'Wall', 'Blue Brick')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, bluecellar, 'Wall', 'Blue Cellar')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, brownstone, 'Wall', 'Brown Stone')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, cobblestone, 'Wall', 'Cobblestone')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, elevator, 'Wall', 'Elevator')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, metal, 'Wall', 'Metal')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, purplecave, 'Wall', 'Purple Cave')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, redbrick, 'Wall', 'Red Brick')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, stone, 'Wall', 'Stone')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, wood, 'Wall', 'Wood')
-        assign_texture_sheet(texture_size * 2, texture_size, 1, secret, 'Wall', 'Secret')
+        assign_texture_sheet(bloodycave, 'Wall', 'Bloody Cave', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(bluebrick, 'Wall', 'Blue Brick', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(bluecellar, 'Wall', 'Blue Cellar', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(brownstone, 'Wall', 'Brown Stone', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(cobblestone, 'Wall', 'Cobblestone', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(elevator, 'Wall', 'Elevator', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(metal, 'Wall', 'Metal', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(purplecave, 'Wall', 'Purple Cave', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(redbrick, 'Wall', 'Red Brick', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(stone, 'Wall', 'Stone', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(wood, 'Wall', 'Wood', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(secret, 'Wall', 'Secret', cell_w=TEXTURE_SIZE * 2)
 
         # Both end trigger texture variants
-        assign_texture_sheet(texture_size * 2, texture_size, 1, end_trigger, 'Wall', 'End-trigger')
+        assign_texture_sheet(end_trigger, 'Wall', 'End-trigger', cell_w=TEXTURE_SIZE * 2)
 
         # For every enemy type in enemy_info, add value to tile_values_info
         for enemy_sheet in enemy_info:
@@ -118,9 +135,8 @@ if __name__ == '__main__':
     import game.enemies as enemies
     pygame.init()
     pygame.display.set_mode((1, 1))
-    tile_values_info = get_tile_values_info(64, enemies.get_enemy_info())
+    tile_values_info = get_tile_values_info(enemies.get_enemy_info())
 
     for value in sorted(tile_values_info):
-        tile_obj = tile_values_info[value]
-        print('{}: texture: {}, type: {}, description: {}'
-              .format(value, tile_obj.texture, tile_obj.type, tile_obj.desc))
+        tile = tile_values_info[value]
+        print('{}: texture: {}, type: {}, description: {}'.format(value, tile.texture, tile.type, tile.desc))

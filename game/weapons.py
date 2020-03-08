@@ -14,11 +14,11 @@ def get():
     class Weapon:
         cell_size = 192
 
-        def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic):
+        def __init__(self, name, weapon_sheet, sounds, shot_column, fire_delay, damage, automatic):
             self.name = name
-            self.sounds = sounds
-            self.animation_frames = int(weapon_sheet.get_width() / Weapon.cell_size) - 1
             self.weapon_sheet = weapon_sheet
+            self.animation_frames = int(weapon_sheet.get_width() / Weapon.cell_size) - 1
+            self.sounds = sounds
             self.shot_column = shot_column
             self.fire_delay = fire_delay  # Has to match with number of animation frames
             self.damage = damage
@@ -27,16 +27,16 @@ def get():
     class Melee(Weapon):
         type = 'Melee'
 
-        def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic, range):
-            super().__init__(name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic)
+        def __init__(self, name, weapon_sheet, sounds, shot_column, fire_delay, damage, automatic, range):
+            super().__init__(name, weapon_sheet, sounds, shot_column, fire_delay, damage, automatic)
             self.range = range
             self.ammo_consumption = 0
 
     class HitscanWeapon(Weapon):
         type = 'Hitscan'
 
-        def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic, spread):
-            super().__init__(name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic)
+        def __init__(self, name, weapon_sheet, sounds, shot_column, fire_delay, damage, automatic, spread):
+            super().__init__(name, weapon_sheet, sounds, shot_column, fire_delay, damage, automatic)
             camera_plane_dist = 0.5 / math.tan(FOV / 2)
             self.max_x_spread = int(math.tan(spread) * camera_plane_dist * D_W)
             self.ammo_consumption = 1
@@ -44,9 +44,9 @@ def get():
     class Shotgun(Weapon):
         type = 'Shotgun'
 
-        def __init__(self, name, sounds, weapon_sheet, shot_column, fire_delay,
+        def __init__(self, name, weapon_sheet, sounds, shot_column, fire_delay,
                      damage, automatic, spread, shot_bullets):
-            super().__init__(name, sounds, weapon_sheet, shot_column, fire_delay, damage, automatic)
+            super().__init__(name, weapon_sheet, sounds, shot_column, fire_delay, damage, automatic)
             camera_plane_dist = 0.5 / math.tan(FOV / 2)
             self.max_x_spread = int(math.tan(spread) * camera_plane_dist * D_W)
             self.shot_bullets = self.ammo_consumption = shot_bullets
@@ -72,16 +72,60 @@ def get():
         sys.exit(loading_error)
 
     else:
-        weapons = [None,  # Makes it so first weapon is index 1 instead of 0
-        HitscanWeapon('Pistol', WeaponSounds(pistol_sound), pistol,
-                      1,  8, 14, False, 0.00),
-              Shotgun('Shotgun', WeaponSounds(shotgun_sound), shotgun,
-                      1, 21, 10, False, 0.18,  5),
-        HitscanWeapon('Chaingun', WeaponSounds(chaingun_sound), chaingun,
-                      1,  4, 14,  True, 0.12),
-              Shotgun('Super Shotgun', WeaponSounds(supershotgun_sound), supershotgun,
-                      1, 40, 10, False, 0.25, 10),
-                Melee('Fist', WeaponSounds(fist_sound, fist_hit_sound), fist,
-                      2,  6, 40, False, 1.25)
+        weapons = [
+            None,
+            HitscanWeapon(
+                name='Pistol',
+                weapon_sheet=pistol,
+                sounds=WeaponSounds(
+                    fire=pistol_sound),
+                shot_column=1,
+                fire_delay=8,
+                damage=14,
+                automatic=False,
+                spread=0.00),
+            Shotgun(
+                name='Shotgun',
+                weapon_sheet=shotgun,
+                sounds=WeaponSounds(
+                    fire=shotgun_sound),
+                shot_column=1,
+                fire_delay=21,
+                damage=10,
+                automatic=False,
+                spread=0.18,
+                shot_bullets=5),
+            HitscanWeapon(
+                name='Chaingun',
+                weapon_sheet=chaingun,
+                sounds=WeaponSounds(
+                    fire=chaingun_sound),
+                shot_column=1,
+                fire_delay=4,
+                damage=14,
+                automatic=True,
+                spread=0.12),
+            Shotgun(
+                name='Super Shotgun',
+                weapon_sheet=supershotgun,
+                sounds=WeaponSounds(
+                    fire=supershotgun_sound),
+                shot_column=1,
+                fire_delay=40,
+                damage=10,
+                automatic=False,
+                spread=0.25,
+                shot_bullets=10),
+            Melee(
+                name='Fist',
+                weapon_sheet=fist,
+                sounds=WeaponSounds(
+                    fire=fist_sound,
+                    hit=fist_hit_sound),
+                shot_column=2,
+                fire_delay=6,
+                damage=40,
+                automatic=False,
+                range=1.25)
         ]
         return weapons
