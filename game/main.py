@@ -1,5 +1,7 @@
 # TO DO:
-# Exploding barrels
+# Make see-through doors into see-through walls
+# Main menu system
+# Try to remove all shadows from sprites
 
 # Extras:
 # Move sounds to different folders
@@ -23,7 +25,7 @@
 # Every sky texture will repeat it's texture 4 times around the player
 
 # Sound Channels:
-# 0 = pickup, environment sounds (doors, pushwalls, end switches)
+# 0 = pickup, environment sounds (doors, pushwalls, explosive barrels, end switches)
 # 1 = player's weapon sounds
 # 2 - 6 = normal enemy sounds
 # 7 = boss sounds
@@ -85,15 +87,12 @@ class Player:
         EFFECTS.update(Colour.red)
         self.hp -= damage
         if self.hp <= 0:
-            #last_chance_hp = random.randint(1, 10)
-            #if self.hp + damage > last_chance_hp:
-            #    self.hp = last_chance_hp
-            #else:
             for channel_id in range(8):
                 pygame.mixer.Channel(channel_id).fadeout(150)
             LEVEL.restart(enemy)
 
     def handle_movement(self):
+        print(len(self.weapon_loadout))
         # Checks for movement (WASD)
         keys_pressed = pygame.key.get_pressed()
         self.dir_x = cos(self.viewangle)
@@ -361,30 +360,29 @@ class WeaponModel:
         self.update()
 
     def shoot(self, weapon):
-        def get_shootable_enemies():
-            shootable_enemies = []
-            for e in ENEMIES:
-                if e.visible_to_player and e.hp:
-                    shootable_enemies.append(e)
-            shootable_enemies.sort(key=lambda x: x.dist_squared)  # Sort for closest dist first
-            return shootable_enemies
+        def get_shootable_things():
+            shootable_things = []
+            for sprite in ENEMIES + EXPLOSIVES:
+                if sprite.visible_to_player and sprite.hp:
+                    shootable_things.append(sprite)
+            shootable_things.sort(key=lambda x: x.dist_squared)  # Sort for closest dist first
+            return shootable_things
 
-        def bullet_hitscan(shootable_enemies, x_spread, max_range=False):
+        def bullet_hitscan(shootable_things, x_spread=0, max_range_squared=False):
             # Each bullet can hit maximum 3 enemies
             hit = False
             bullet_x_pos = H_W + x_spread
             damage_multiplier = 1
-            for e in shootable_enemies:
-                if e.start_x < bullet_x_pos < e.end_x:
-                    if not max_range or e.dist_squared < max_range ** 2:
-                        if e.hp:
-                            pain = e.pain_chance > random.random()
-                            e.hurt(weapon.damage * damage_multiplier, pain)
+            for sprite in shootable_things:
+                if sprite.start_x < bullet_x_pos < sprite.end_x:
+                    if not max_range_squared or sprite.dist_squared < max_range_squared:
+                        if sprite.hp:
                             hit = True
-                        if damage_multiplier == 0.25:
-                            break
-                        else:
-                            damage_multiplier /= 2
+                            sprite.hurt(weapon.damage * damage_multiplier)
+                            if damage_multiplier == 0.25:
+                                break
+                            else:
+                                damage_multiplier /= 2
                     else:
                         break
             return hit
@@ -406,19 +404,19 @@ class WeaponModel:
             if self.column == weapon.shot_column:
                 weapon_sound = self.weapon.sounds.fire
                 PLAYER.add_ammo(-self.weapon.ammo_consumption)
-                shootable_enemies = get_shootable_enemies()
+                shootable_things = get_shootable_things()
 
                 if weapon.type == 'Melee':
-                    if bullet_hitscan(shootable_enemies, 0, weapon.range):
+                    if bullet_hitscan(shootable_things, max_range_squared=weapon.range_squared):
                         weapon_sound = self.weapon.sounds.hit
 
                 elif weapon.type == 'Hitscan':
-                    bullet_hitscan(shootable_enemies, random.randint(-weapon.max_x_spread, weapon.max_x_spread))
+                    bullet_hitscan(shootable_things, x_spread=random.randint(-weapon.max_x_spread, weapon.max_x_spread))
 
                 elif weapon.type == 'Shotgun':
                     x_spread_difference = (weapon.max_x_spread * 2) / (weapon.shot_bullets - 1)
                     for i in range(weapon.shot_bullets):
-                        bullet_hitscan(shootable_enemies, -weapon.max_x_spread + round(i * x_spread_difference))
+                        bullet_hitscan(shootable_things, x_spread=-weapon.max_x_spread + round(i * x_spread_difference))
 
                 play_sound(weapon_sound, WeaponModel.channel_id)
 
@@ -567,6 +565,8 @@ class WallColumn(Drawable):
 
 
 class Sprite(Drawable):
+    animation_ticks = 5  # Enemy animation frames delay
+
     def update_for_drawing(self, angle_from_player=False):
         # Requires delta_(x/y), dist_squared
         self.visible_to_player = False
@@ -615,7 +615,7 @@ class Object(Sprite):
     def update(self):
         self.delta_x = self.x - PLAYER.x
         self.delta_y = self.y - PLAYER.y
-        self.dist_squared = self.delta_x ** 2 + self.delta_y ** 2
+        self.dist_squared = self.delta_x**2 + self.delta_y**2
         self.update_for_drawing()
 
     def draw(self):
@@ -636,13 +636,64 @@ class Object(Sprite):
             print('height: {}'.format(self.height))
 
 
+class ExplodingBarrel(Object):
+    damage = 100
+    damage_frame = 2
+    squared_range = 3**2
+
+    def __init__(self, sprite, pos):
+        self.x, self.y = pos
+        self.full_sprite = sprite
+        self.explosion_frames = int(sprite.get_width() / TEXTURE_SIZE)
+        self.explosion_frame = 0
+        self.anim_ticks = 0
+        self.hp = 1  # Every shootable thing needs to have hp
+
+    def hurt(self, damage):
+        self.hp -= damage
+        if self.hp <= 0:
+            self.hp = 0
+            self.explosion_frame += 1
+            play_sound(self.sound, 0, (self.x, self.y), self.dist_squared)
+
+    def do_damage(self):
+        if self.dist_squared < ExplodingBarrel.squared_range:
+            damage = int(self.dist_squared / ExplodingBarrel.squared_range * ExplodingBarrel.damage)
+            PLAYER.hurt(damage, self)
+        for hittable_object in ENEMIES + EXPLOSIVES:
+            if hittable_object.hp:
+                object_dist_squared = squared_dist((self.x, self.y), (hittable_object.x, hittable_object.y))
+                if object_dist_squared < ExplodingBarrel.squared_range:
+                    damage = int(object_dist_squared / ExplodingBarrel.squared_range * ExplodingBarrel.damage)
+                    hittable_object.hurt(damage)
+
+    def update(self):
+        if self.explosion_frame:
+            self.anim_ticks += 1
+            if self.anim_ticks == Sprite.animation_ticks:
+                self.anim_ticks = 0
+                self.explosion_frame += 1
+                if self.explosion_frame == ExplodingBarrel.damage_frame:
+                    self.do_damage()
+                if self.explosion_frame == self.explosion_frames:
+                    for c, explosive in enumerate(EXPLOSIVES):
+                        if (self.x, self.y) == (explosive.x, explosive.y):
+                            del EXPLOSIVES[c]
+                            TILEMAP[int(self.y)][int(self.x)] = 0
+                            break
+        super().update()
+
+    def draw(self):
+        self.sprite = self.full_sprite.subsurface((self.explosion_frame * TEXTURE_SIZE, 0, TEXTURE_SIZE, TEXTURE_SIZE))
+        super().draw()
+
+
 class Enemy(Sprite):
-    type = 'Normal'
-    animation_ticks = 5  # Enemy animation frames delay
     looting_pulse_speed = 20
     looting_colour = Colour.yellow
 
     def __init__(self, spritesheet, pos):
+        self.type = 'Normal'
         self.x, self.y = pos
         self.step_x = self.x
         self.step_y = self.y
@@ -665,7 +716,7 @@ class Enemy(Sprite):
         self.hp = ENEMY_INFO[self.sheet].hp
         self.speed = ENEMY_INFO[self.sheet].speed
         self.wandering_radius = ENEMY_INFO[self.sheet].wandering_radius
-        self.shooting_range = ENEMY_INFO[self.sheet].shooting_range
+        self.shooting_range_squared = ENEMY_INFO[self.sheet].shooting_range_squared
         self.looting_ammo = ENEMY_INFO[self.sheet].looting_ammo
         self.damage_multiplier = ENEMY_INFO[self.sheet].damage_multiplier
         self.accuracy = ENEMY_INFO[self.sheet].accuracy
@@ -737,7 +788,7 @@ class Enemy(Sprite):
 
             # Cycle through running animations
             self.anim_ticks += 1
-            if self.anim_ticks == Enemy.animation_ticks:
+            if self.anim_ticks == Sprite.animation_ticks:
                 self.anim_ticks = 0
                 self.row += 1
                 if self.row not in self.running_rows:
@@ -748,7 +799,7 @@ class Enemy(Sprite):
 
     def can_step(self, step_x, step_y):
         # If enemy with decent shooting_range really close to player - don't step
-        if self.shooting_range > 1.5 and (int(PLAYER.x), int(PLAYER.y)) == (int(step_x), int(step_y)):
+        if self.shooting_range_squared > 2 and (int(PLAYER.x), int(PLAYER.y)) == (int(step_x), int(step_y)):
             return False
 
         for e in ENEMIES:
@@ -772,20 +823,32 @@ class Enemy(Sprite):
         return None
 
     def can_see_player_sides(self):
-        angle = fixed_angle(self.angle_from_player + pi / 2)
-        x = cos(angle) / 2
-        y = sin(angle) / 2
-        return can_see((PLAYER.x, PLAYER.y), (self.x - x, self.y - y)) or \
-               can_see((PLAYER.x, PLAYER.y), (self.x + x, self.y + y))
+        if len(PLAYER.weapon_loadout) > 1:
+            angle = fixed_angle(self.angle_from_player + pi / 2)
+            x = cos(angle) / 2
+            y = sin(angle) / 2
+            return can_see((PLAYER.x, PLAYER.y), (self.x - x, self.y - y)) or \
+                   can_see((PLAYER.x, PLAYER.y), (self.x + x, self.y + y))
+        else:
+            return False
 
     def ready_to_shoot(self):
-        return self.dist_squared < self.shooting_range**2 and can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
+        return self.dist_squared < self.shooting_range_squared and can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
 
     def start_shooting(self):
         self.status = 'shooting'
         self.row = self.shooting_row
         self.column = 0
         self.anim_ticks = 0
+
+    def handle_death(self):
+        self.status = 'dead'
+        self.hp = 0
+        self.row = self.hit_row
+        self.column = 0
+        self.anim_ticks = 0
+        self.chasing = False
+        play_sound(self.sounds.death, self.channel_id, (self.x, self.y), self.dist_squared)
 
     def shoot(self):
         # speed_factor ranges between 24 (when player's running) and 32 (when not)
@@ -803,18 +866,11 @@ class Enemy(Sprite):
                 damage = random.randint(11, 20)
             PLAYER.hurt(int(damage * self.damage_multiplier), self)
 
-    def hurt(self, damage, pain):
+    def hurt(self, damage):
         self.hp -= damage
         if self.hp <= 0:
-            self.status = 'dead'
-            self.row = self.hit_row
-            self.column = 0
-            self.anim_ticks = 0
-
-            self.hp = 0
-            self.chasing = False
-            play_sound(self.sounds.death, self.channel_id, (self.x, self.y), self.dist_squared)
-        elif pain:
+            self.handle_death()
+        elif self.pain_chance > random.random():
             self.status = 'hit'
             self.row = self.hit_row
             self.column = 7
@@ -889,7 +945,7 @@ class Enemy(Sprite):
                 DOORS.append(door)
             door.start_opening()
 
-    def handle_dead(self):
+    def handle_dead_status(self):
         if not self.looted:
             if (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
                 self.loot()
@@ -899,7 +955,7 @@ class Enemy(Sprite):
         if self.column != self.death_frames - 1:
             self.outline_alpha = 0
             self.anim_ticks += 1
-            if self.anim_ticks == Enemy.animation_ticks:
+            if self.anim_ticks == Sprite.animation_ticks:
                 self.anim_ticks = 0
                 self.column += 1
 
@@ -913,17 +969,17 @@ class Enemy(Sprite):
         self.dist_squared = self.delta_x**2 + self.delta_y**2
 
         if self.status == 'dead':
-            self.handle_dead()
+            self.handle_dead_status()
 
         elif self.status == 'hit':
             self.anim_ticks += 1
-            if self.anim_ticks == Enemy.animation_ticks - 2:  # -2 plays hit animation a little faster
+            if self.anim_ticks == Sprite.animation_ticks - 2:  # -2 plays hit animation a little faster
                 self.anim_ticks = 0
                 self.status = 'default'
 
         elif self.status == 'shooting':
             self.anim_ticks += 1
-            if self.anim_ticks == Enemy.animation_ticks:
+            if self.anim_ticks == Sprite.animation_ticks:
                 self.anim_ticks = 0
 
                 self.column += 1
@@ -1036,9 +1092,8 @@ class Enemy(Sprite):
 
 
 class Boss(Enemy):
-    type = 'Boss'
-
     def __init__(self, spritesheet, pos):
+        self.type = 'Boss'
         self.x, self.y = pos
         self.step_x = self.x
         self.step_y = self.y
@@ -1059,7 +1114,7 @@ class Boss(Enemy):
         self.sounds = ENEMY_INFO[self.sheet].sounds
         self.max_hp = self.hp = ENEMY_INFO[self.sheet].hp
         self.speed = ENEMY_INFO[self.sheet].speed
-        self.shooting_range = ENEMY_INFO[self.sheet].shooting_range
+        self.shooting_range_squared = ENEMY_INFO[self.sheet].shooting_range_squared
         self.damage_multiplier = ENEMY_INFO[self.sheet].damage_multiplier
         self.accuracy = ENEMY_INFO[self.sheet].accuracy
         self.pain_chance = ENEMY_INFO[self.sheet].pain_chance
@@ -1088,18 +1143,11 @@ class Boss(Enemy):
             return True
         return False
 
-    def hurt(self, damage, pain):
+    def hurt(self, damage):
         self.hp -= damage
         if self.hp <= 0:
-            self.hp = 0
-            self.chasing = False
-            self.status = 'dead'
-            self.anim_ticks = 0
-            self.row = self.hit_row
-            self.column = 0
-
+            self.handle_death()
             MESSAGES.append(Message('{} defeated'.format(self.name)))
-            play_sound(self.sounds.death, self.channel_id, (self.x, self.y), self.dist_squared)
 
     def loot(self):
         self.looted = True
@@ -1117,11 +1165,11 @@ class Boss(Enemy):
         self.dist_squared = self.delta_x**2 + self.delta_y**2
 
         if self.status == 'dead':
-            self.handle_dead()
+            self.handle_dead_status()
 
         elif self.status == 'shooting':
             self.anim_ticks += 1
-            if self.anim_ticks == Enemy.animation_ticks:
+            if self.anim_ticks == Sprite.animation_ticks:
                 self.anim_ticks = 0
                 self.column += 1
                 if self.column in self.shot_columns:
@@ -1168,7 +1216,7 @@ class Boss(Enemy):
                     self.row = 0
 
                 self.anim_ticks += 1
-                if self.anim_ticks == Enemy.animation_ticks:
+                if self.anim_ticks == Sprite.animation_ticks:
                     self.anim_ticks = 0
                     self.column += 1
                     if self.column == self.running_frames:
@@ -1271,31 +1319,31 @@ class Level:
             global PLAYER
             PLAYER.setup(player_pos, player_angle)
 
-        # Load objects
+        # Load objects, enemies
         global OBJECTS
         OBJECTS = []
-        for row in range(len(TILEMAP)):
-            for column in range(len(TILEMAP[row])):
-                tile = TILE_VALUES_INFO[TILEMAP[row][column]]
-                if tile.type == 'Object':
-                    pos = (column + 0.5, row + 0.5)
-                    OBJECTS.append(Object(tile.texture, pos))
-                    if tile.desc == 'Non-solid':
-                        TILEMAP[row][column] = 0  # Clears tile
-
-        # Load enemies
+        global EXPLOSIVES
+        EXPLOSIVES = []
         global ENEMIES
         ENEMIES = []
         for row in range(len(TILEMAP)):
             for column in range(len(TILEMAP[row])):
                 tile = TILE_VALUES_INFO[TILEMAP[row][column]]
-                if tile.type == 'Enemy':
-                    pos = (column + 0.5, row + 0.5)
+                pos = (column + 0.5, row + 0.5)
+                if tile.type == 'Object':
+                    if tile.desc == 'Explosive':
+                        EXPLOSIVES.append(ExplodingBarrel(tile.texture, pos))
+                    else:
+                        OBJECTS.append(Object(tile.texture, pos))
+                        if tile.desc == 'Non-solid':
+                            TILEMAP[row][column] = 0  # Clears tile
+                elif tile.type == 'Enemy':
                     if tile.desc == 'Normal':
                         ENEMIES.append(Enemy(tile.texture, pos))
                     elif tile.desc == 'Boss':
                         ENEMIES.append(Boss(tile.texture, pos))
                     TILEMAP[row][column] = 0  # Clears tile
+
         # Get enemy home rooms after enemies have been cleared from the tilemap
         for e in ENEMIES:
             if e.type == 'Normal':
@@ -1308,6 +1356,8 @@ class Level:
         DOOR_TILES = set()
         global BOSS_DOOR_TILES
         BOSS_DOOR_TILES = set()
+        global SEETHROUGH_DOOR_TILES
+        SEETHROUGH_DOOR_TILES = set()
         global PUSH_WALL_TILES
         PUSH_WALL_TILES = set()
 
@@ -1320,7 +1370,9 @@ class Level:
                         PUSH_WALL_TILES.add((column, row))
                 elif tile.type == 'Door':
                     DOOR_TILES.add((column, row))
-                    if tile.desc == 'Boss':
+                    if tile.desc == 'See-through':
+                        SEETHROUGH_DOOR_TILES.add((column, row))
+                    elif tile.desc == 'Boss':
                         BOSS_DOOR_TILES.add((column, row))
                 else:
                     EMPTY_TILES.add((column, row))
@@ -1363,12 +1415,13 @@ class Level:
 
         # If enemy, turn towards it
         while enemy:
+            enemy.angle_from_player = atan2(enemy.delta_y, enemy.delta_x)
             turn_radians = get_turn_radians()
             PLAYER.rotate(turn_radians)
             PLAYER.dir_x = cos(PLAYER.viewangle)
             PLAYER.dir_y = sin(PLAYER.viewangle)
 
-            for sprite in ENEMIES + OBJECTS:
+            for sprite in ENEMIES + OBJECTS + EXPLOSIVES:
                 sprite.update_for_drawing()
 
             if overlay_alpha != 128:
@@ -1573,28 +1626,38 @@ def send_rays():
     # Deletes previous walls and unnecessary doors
     global WALLS
     WALLS = []
+    global SEETHROUGH_WALLS
+    SEETHROUGH_WALLS = []
     for c, d in enumerate(DOORS):
         if d.type == 'Normal' and d.state == 0:  # Only deletes normal doors that are closed
             del DOORS[c]
 
     # Send rays
     for display_x, rayangle_offset in enumerate(CAMERA_PLANE.rayangle_offsets):
+        ray_start = (PLAYER.x, PLAYER.y)
         if not display_x % WALL_RES:
-            # Get values from raycast()
-            collision_x, collision_y, texture, column = \
-                raycast((PLAYER.x, PLAYER.y), PLAYER.viewangle + rayangle_offset, True)
+            while True:
+                # Get values from raycast()
+                collision_x, collision_y, texture, column, seethrough_wall = \
+                    raycast(ray_start, PLAYER.viewangle + rayangle_offset, True)
 
-            # Calculate perpendicular distance (needed to avoid fisheye effect)
-            delta_x = collision_x - PLAYER.x
-            delta_y = collision_y - PLAYER.y
-            perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
+                # Calculate perpendicular distance (needed to avoid fisheye effect)
+                delta_x = collision_x - PLAYER.x
+                delta_y = collision_y - PLAYER.y
+                perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
-            new_dist = delta_x**2 + delta_y**2
-            if new_dist > MAX_DRAW_DIST_SQUARED:
-                MAX_DRAW_DIST_SQUARED = new_dist
+                if not seethrough_wall:
+                    new_dist = delta_x**2 + delta_y**2
+                    if new_dist > MAX_DRAW_DIST_SQUARED:
+                        MAX_DRAW_DIST_SQUARED = new_dist
 
-            # Create Wall object
-            WALLS.append(WallColumn(texture, column, perp_dist, display_x))
+                    # Create Wall object
+                    WALLS.append(WallColumn(texture, column, perp_dist, display_x))
+                    break
+                else:
+                    SEETHROUGH_WALLS.append(WallColumn(texture, column, perp_dist, display_x))
+                    ray_start = (collision_x, collision_y)
+                    continue
         else:
             WALLS.append(None)
 
@@ -1619,18 +1682,52 @@ def raycast(start_pos, rayangle, extra_values=False):
 
             collision_x += x_step / 2
             collision_y += y_step / 2
-            if (int(collision_x), int(collision_y)) == (door.x, door.y):
+            if (int(collision_x), int(collision_y)) == (map_x, map_y):
                 if x_step == 1 or x_step == -1:
                     surface_offset = collision_y - int(collision_y)
                 else:
                     surface_offset = collision_x - int(collision_x)
-                if surface_offset < door.closed_state:
-                    if extra_values:
-                        texture = TILE_VALUES_INFO[tile_value].texture
-                        column = int(TEXTURE_SIZE * abs(surface_offset - door.closed_state))
-                        return collision_x, collision_y, texture, column
-                    else:
-                        return collision_x, collision_y
+                if (map_x, map_y) not in SEETHROUGH_DOOR_TILES:
+                    if surface_offset < door.closed_state:
+                        if extra_values:
+                            texture = TILE_VALUES_INFO[tile_value].texture
+                            column = int(TEXTURE_SIZE * abs(surface_offset - door.closed_state))
+                            return collision_x, collision_y, texture, column, False
+                        else:
+                            return collision_x, collision_y
+                elif extra_values:
+                    texture = TILE_VALUES_INFO[tile_value].texture
+                    column = int(TEXTURE_SIZE * surface_offset)
+                    return collision_x, collision_y, texture, column, True
+
+            #if int(collision_x) == map_x:
+            #    if y_step > 0:
+            #        y_range = range(map_y + 1, int(collision_y) + 1, 1)
+            #    else:
+            #        y_range = range(map_y - 1, int(collision_y) - 1, -1)
+            #    for test_y in y_range:
+            #        if (map_x, test_y) not in SEETHROUGH_DOOR_TILES:
+            #            break
+            #    else:
+            #        hits_seethrough_door = True
+            #elif int(collision_y) == map_y:
+            #    if x_step > 0:
+            #        x_range = range(map_x + 1, int(collision_x) + 1, 1)
+            #    else:
+            #        x_range = range(map_x - 1, int(collision_x) - 1, -1)
+            #    for test_x in x_range:
+            #        if (test_x, map_y) not in SEETHROUGH_DOOR_TILES:
+            #            break
+            #    else:
+            #        hits_seethrough_door = True
+            #if hits_seethrough_door:
+            #    if x_step == 1 or x_step == -1:
+            #        surface_offset = collision_y - int(collision_y)
+            #    else:
+            #        surface_offset = collision_x - int(collision_x)
+            #    texture = TILE_VALUES_INFO[tile_value].texture
+            #    column = int(TEXTURE_SIZE * surface_offset)
+            #    return collision_x, collision_y, texture, column, True
 
         else:
             if (map_x, map_y) in PUSH_WALL_TILES:
@@ -1647,7 +1744,7 @@ def raycast(start_pos, rayangle, extra_values=False):
                     PUSH_WALLS.append(push_wall)
 
             if extra_values:
-                if (x - a, y - b) in DOOR_TILES:
+                if (x - a, y - b) in DOOR_TILES and (x - a, y - b) not in SEETHROUGH_DOOR_TILES:
                     texture = Door.side_texture
                 else:
                     texture = TILE_VALUES_INFO[tile_value].texture
@@ -1658,7 +1755,7 @@ def raycast(start_pos, rayangle, extra_values=False):
                 else:
                     surface_offset = collision_x - int(collision_x)
                     column = int(TEXTURE_SIZE * abs(b - surface_offset))
-                return collision_x, collision_y, texture, column
+                return collision_x, collision_y, texture, column, False
             else:
                 return collision_x, collision_y
 
@@ -1813,6 +1910,8 @@ def update_gameobjects():
         p.move()
     for o in OBJECTS:
         o.update()
+    for e in EXPLOSIVES:
+        e.update()
     for e in ENEMIES:
         e.update()
     for m in MESSAGES:
@@ -1926,9 +2025,9 @@ def draw_background():
     texture_offset = angle / (pi / 2)  # ranges from 0 to 1
     DISPLAY.blit(LEVEL.skytexture, (0, 0), (D_W * texture_offset, 0, D_W, H_H))
 
-    # Floor - drawn poorly to keep the framerate
-    pygame.draw.rect(DISPLAY, Colour.dark_grey, (0, H_H, D_W, H_H))
     if FLOOR_RES:
+        # Textured floor is drawn poorly to keep the framerate as high as possible (still drops by a lot)
+        pygame.draw.rect(DISPLAY, Colour.dark_grey, (0, H_H, D_W, H_H))
         start_angle = PLAYER.viewangle - FOV / 2
         sin_start_angle = sin(start_angle)
         cos_start_angle = cos(start_angle)
@@ -1961,6 +2060,8 @@ def draw_background():
                     DISPLAY.blit(LEVEL.big_floor_texture, (x, y), (texture_x, texture_y, FLOOR_RES * 2, 2))
                 floor_x += step_x
                 floor_y += step_y
+    else:
+        pygame.draw.rect(DISPLAY, Colour.grey, (0, H_H, D_W, H_H))
 
 
 def draw_frame(hud=True):
@@ -1973,8 +2074,8 @@ def draw_frame(hud=True):
             w.draw()
 
     # Get things to draw
-    to_draw = []
-    for sprite in ENEMIES + OBJECTS:
+    to_draw = SEETHROUGH_WALLS
+    for sprite in ENEMIES + OBJECTS + EXPLOSIVES:
         if sprite.visible_to_player:
             to_draw.append(sprite)
 
@@ -2015,8 +2116,8 @@ def play_sound(sound, channel_id, source_pos=(0, 0), source_dist_squared=0):
         if not source_dist_squared:
             source_dist_squared = squared_dist((PLAYER.x, PLAYER.y), source_pos)
 
-        max_hearing_dist = 20
-        sound_volume = 1 - source_dist_squared / (max_hearing_dist**2)
+        max_hearing_dist_squared = 400
+        sound_volume = 1 - source_dist_squared / max_hearing_dist_squared
         if sound_volume > 0:
             sound.set_volume(sound_volume)
 
@@ -2108,6 +2209,7 @@ if __name__ == '__main__':
     Door.open_sound,\
     Door.close_sound,\
     PushWall.sound,\
+    ExplodingBarrel.sound,\
     ITEM_PICKUP_SOUND,\
     WEAPON_PICKUP_SOUND,\
     SWITCH_SOUND = sounds.get()
@@ -2118,5 +2220,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(1)
+    LEVEL.start(9)
     pygame.quit()

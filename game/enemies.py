@@ -20,7 +20,7 @@ def get_enemy_info():
             self.hp = hp
             self.speed = speed
             self.wandering_radius = wandering_radius
-            self.shooting_range = shooting_range  # Max shooting range
+            self.shooting_range_squared = shooting_range**2  # Max shooting range squared
             self.looting_ammo = looting_ammo  # Amount of ammo dropped when killed
 
             self.damage_multiplier = damage_multiplier
@@ -48,7 +48,7 @@ def get_enemy_info():
             self.sounds = sounds
             self.hp = hp
             self.speed = speed
-            self.shooting_range = 32
+            self.shooting_range_squared = 32**2
 
             self.damage_multiplier = damage_multiplier
             self.accuracy = accuracy
@@ -192,8 +192,8 @@ def get_enemy_info():
                 pain_chance=0.75,
                 patience=90,
                 death_frames=5,
-                shooting_frames=6,
-                shot_columns=[2, 4]),
+                shooting_frames=7,
+                shot_columns=[2, 4, 6]),
             ss: Enemy(
                 channel_id=4,
                 sounds=EnemySounds(
@@ -210,7 +210,7 @@ def get_enemy_info():
                 pain_chance=0.50,
                 patience=180,
                 death_frames=5,
-                shooting_frames=6,
+                shooting_frames=7,
                 shot_columns=[3, 4, 5]),
             mutant: Enemy(
                 channel_id=5,
@@ -227,7 +227,7 @@ def get_enemy_info():
                 pain_chance=0.75,
                 patience=60,
                 death_frames=5,
-                shooting_frames=6,
+                shooting_frames=4,
                 shot_columns=[1, 3]),
             dog: Enemy(
                 channel_id=6,
@@ -244,8 +244,8 @@ def get_enemy_info():
                 accuracy=5.00,
                 pain_chance=0.00,
                 patience=0,
-                death_frames=5,
-                shooting_frames=6,
-                shot_columns=[1, 2, 3, 4, 5])
+                death_frames=4,
+                shooting_frames=4,
+                shot_columns=[0, 1, 2])
         }
         return enemy_info

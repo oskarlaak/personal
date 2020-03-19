@@ -46,14 +46,16 @@ def get_tile_values_info(enemy_info):
 
         # Door textures
         dynamic_doors = pygame.image.load('../textures/doors/dynamic.png').convert()
-        static_door = pygame.image.load('../textures/doors/static.png').convert()
-        locked_door = pygame.image.load('../textures/doors/locked.png').convert()
-        boss_door = pygame.image.load('../textures/doors/boss.png').convert()
+        seethrough_doors = pygame.image.load('../textures/doors/seethrough.png').convert_alpha()
+        locked_doors = pygame.image.load('../textures/doors/locked.png').convert()
+        boss_doors = pygame.image.load('../textures/doors/boss.png').convert()
 
         # Object sprites
-        nonsolids = pygame.image.load('../textures/objects/nonsolids.png').convert_alpha()
-        solids = pygame.image.load('../textures/objects/solids.png').convert_alpha()
         dynamics = pygame.image.load('../textures/objects/dynamics.png').convert_alpha()
+        nonsolids = pygame.image.load('../textures/objects/nonsolids.png').convert_alpha()
+        exploding_barrel = pygame.image.load('../textures/objects/explodingbarrel.png').convert_alpha()
+        solids = pygame.image.load('../textures/objects/solids.png').convert_alpha()
+
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -97,13 +99,15 @@ def get_tile_values_info(enemy_info):
         # ---Positive values---
         # Solid objects
         index = 1
+        tile_values_info[index] = Tile(exploding_barrel, 'Object', 'Explosive')
+        index += 1
         assign_texture_sheet(solids, 'Object', 'Solid')
 
         # Doors
         assign_texture_sheet(dynamic_doors, 'Door', 'Dynamic', cell_w=TEXTURE_SIZE * 2)
-        assign_texture_sheet(static_door, 'Door', 'Static', cell_w=TEXTURE_SIZE * 2)
-        assign_texture_sheet(locked_door, 'Door', 'Locked', cell_w=TEXTURE_SIZE * 2)
-        assign_texture_sheet(boss_door, 'Door', 'Boss', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(seethrough_doors, 'Door', 'See-through', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(locked_doors, 'Door', 'Locked', cell_w=TEXTURE_SIZE * 2)
+        assign_texture_sheet(boss_doors, 'Door', 'Boss', cell_w=TEXTURE_SIZE * 2)
 
         # Walls
         assign_texture_sheet(bloodycave, 'Wall', 'Bloody Cave', cell_w=TEXTURE_SIZE * 2)
