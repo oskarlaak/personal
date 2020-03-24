@@ -454,12 +454,13 @@ def create_sidebar_objects():
     y_gap = 32
 
     # Texturegroup heights
-    tg_heights = {
-        'Enemy':   192 + (TEXTURE_SIZE + y_gap) * 0,
-        'Object':  192 + (TEXTURE_SIZE + y_gap) * 1,
-        'Door':    192 + (TEXTURE_SIZE + y_gap) * 2,
-        'Wall':    192 + (TEXTURE_SIZE + y_gap) * 3,
-        'Special': 192 + (TEXTURE_SIZE + y_gap) * 5
+    tg_starts = {
+        'Enemy':     (Sidebar.x_safezone,                              192 + (TEXTURE_SIZE + y_gap) * 0),
+        'Object':    (Sidebar.x_safezone,                              192 + (TEXTURE_SIZE + y_gap) * 1),
+        'Door':      (Sidebar.x_safezone,                              192 + (TEXTURE_SIZE + y_gap) * 2),
+        'Thin Wall': (Sidebar.x_safezone + 3 * (TEXTURE_SIZE + x_gap), 192 + (TEXTURE_SIZE + y_gap) * 2),
+        'Wall':      (Sidebar.x_safezone,                              192 + (TEXTURE_SIZE + y_gap) * 3),
+        'Special':   (Sidebar.x_safezone,                              192 + (TEXTURE_SIZE + y_gap) * 5)
     }
 
     global TEXTUREGROUPS
@@ -470,8 +471,7 @@ def create_sidebar_objects():
         tile_type = TILE_VALUES_INFO[value].type
         tile_desc = TILE_VALUES_INFO[value].desc
         if (tile_type, tile_desc) not in tile_infos:  # If the need to create a new texturegroup
-            y = tg_heights[tile_type]
-            x = Sidebar.x_safezone
+            x, y = tg_starts[tile_type]
             for type, desc in tile_infos:
                 if tile_type == type:
                     # For every texturegroup with same tpye, move x

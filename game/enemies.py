@@ -75,7 +75,7 @@ def get_enemy_info():
         officer = pygame.image.load('../textures/enemies/officer.png').convert_alpha()
         ss = pygame.image.load('../textures/enemies/ss.png').convert_alpha()
         mutant = pygame.image.load('../textures/enemies/mutant.png').convert_alpha()
-        dog = pygame.image.load('../textures/enemies/guarddog.png').convert_alpha()
+        dog = pygame.image.load('../textures/enemies/dog.png').convert_alpha()
 
         # Sounds
         # Attack
@@ -168,7 +168,7 @@ def get_enemy_info():
                 speed=0.07,
                 wandering_radius=2,
                 shooting_range=5,
-                looting_ammo=3,
+                looting_ammo=4,
                 damage_multiplier=1.00,
                 accuracy=1.00,
                 pain_chance=1.00,
@@ -186,7 +186,7 @@ def get_enemy_info():
                 speed=0.08,
                 wandering_radius=2,
                 shooting_range=8,
-                looting_ammo=5,
+                looting_ammo=6,
                 damage_multiplier=0.90,
                 accuracy=1.10,
                 pain_chance=0.75,
@@ -204,7 +204,7 @@ def get_enemy_info():
                 speed=0.06,
                 wandering_radius=3,
                 shooting_range=8,
-                looting_ammo=7,
+                looting_ammo=8,
                 damage_multiplier=1.00,
                 accuracy=1.05,
                 pain_chance=0.50,
@@ -221,7 +221,7 @@ def get_enemy_info():
                 speed=0.07,
                 wandering_radius=5,
                 shooting_range=6,
-                looting_ammo=3,
+                looting_ammo=4,
                 damage_multiplier=0.60,
                 accuracy=1.00,
                 pain_chance=0.75,
@@ -246,6 +246,6 @@ def get_enemy_info():
                 patience=0,
                 death_frames=4,
                 shooting_frames=4,
-                shot_columns=[0, 1, 2])
+                shot_columns=[1, 2])
         }
         return enemy_info

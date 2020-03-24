@@ -1,7 +1,8 @@
 # TO DO:
-# Make see-through doors into see-through walls
+# Redo the secret wall moving logic
 # Main menu system
 # Try to remove all shadows from sprites
+# Make boss health bar update() func and add it to update_gameobjects()
 
 # Extras:
 # Move sounds to different folders
@@ -50,8 +51,7 @@ class Player:
     half_hitbox = 0.2
 
     def __init__(self):
-        self.weapon_nr = len(WEAPONS) - 1
-        self.saved_weapon_loadout = [self.weapon_nr]
+        self.saved_weapon_loadout = [5]
 
     def setup(self, pos, angle):  # Called every time level (re)starts
         self.x = pos[0]
@@ -60,15 +60,13 @@ class Player:
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
         self.hp = Player.max_hp
-        self.ammo = 0
+        self.ammo = 20
         self.has_key = False
-
+        self.weapon_nr = len(WEAPONS) - 1
         self.weapon_loadout = self.saved_weapon_loadout[:]
-        if self.weapon_nr not in self.weapon_loadout:
-            self.weapon_nr = len(WEAPONS) - 1
 
     def save_weapon_loadout(self):
-        self.saved_weapon_loadout = self.weapon_loadout
+        self.saved_weapon_loadout = self.weapon_loadout[:]
 
     def add_ammo(self, amount):
         self.ammo += amount
@@ -92,7 +90,6 @@ class Player:
             LEVEL.restart(enemy)
 
     def handle_movement(self):
-        print(len(self.weapon_loadout))
         # Checks for movement (WASD)
         keys_pressed = pygame.key.get_pressed()
         self.dir_x = cos(self.viewangle)
@@ -222,6 +219,7 @@ class Door:
         self.ticks = 0
         self.closed_state = 1  # 1 is fully closed, 0 is fully opened
         self.state = 0
+        self.locked = False
 
     def start_opening(self):
         self.state = 1
@@ -267,10 +265,6 @@ class BossDoor(Door):
     # Going through the door also automatically "wakes up" the boss in the level if there is one
     type = 'Boss'
 
-    def __init__(self, map_pos, tile_value):
-        super().__init__(map_pos, tile_value)
-        self.locked = False
-
     def start_opening(self):
         self.state = 1
         if TILEMAP[self.y + 1][self.x] > 0:
@@ -305,7 +299,7 @@ class BossDoor(Door):
 
 
 class PushWall:
-    speed = 0.015
+    speed = 0.025
 
     def __init__(self, map_pos, tile_value):
         self.x, self.y = map_pos
@@ -343,6 +337,27 @@ class PushWall:
                 TILEMAP[self.y][self.x] = self.value  # Make tile non-walkable
                 EMPTY_TILES.remove((self.x, self.y))
                 PUSH_WALL_TILES.add((self.x, self.y))
+
+
+class ThinWall:
+    def __init__(self, map_pos):
+        def wall_or_thin_wall(tile_value):
+            return TILE_VALUES_INFO[tile_value].type == 'Wall' or TILE_VALUES_INFO[tile_value].type == 'Thin Wall'
+
+        self.x, self.y = map_pos
+        left_side_value = TILEMAP[self.y][self.x - 1]
+        right_side_value = TILEMAP[self.y][self.x + 1]
+        top_side_value = TILEMAP[self.y - 1][self.x]
+        bottom_side_value = TILEMAP[self.y + 1][self.x]
+
+        if wall_or_thin_wall(left_side_value) and wall_or_thin_wall(right_side_value):
+            self.vertical = False
+        elif wall_or_thin_wall(top_side_value) and wall_or_thin_wall(bottom_side_value):
+            self.vertical = True
+        elif wall_or_thin_wall(left_side_value) or wall_or_thin_wall(right_side_value):
+            self.vertical = False
+        else:
+            self.vertical = True
 
 
 class WeaponModel:
@@ -658,13 +673,13 @@ class ExplodingBarrel(Object):
 
     def do_damage(self):
         if self.dist_squared < ExplodingBarrel.squared_range:
-            damage = int(self.dist_squared / ExplodingBarrel.squared_range * ExplodingBarrel.damage)
+            damage = int((1 - (self.dist_squared / ExplodingBarrel.squared_range)) * ExplodingBarrel.damage)
             PLAYER.hurt(damage, self)
         for hittable_object in ENEMIES + EXPLOSIVES:
             if hittable_object.hp:
                 object_dist_squared = squared_dist((self.x, self.y), (hittable_object.x, hittable_object.y))
                 if object_dist_squared < ExplodingBarrel.squared_range:
-                    damage = int(object_dist_squared / ExplodingBarrel.squared_range * ExplodingBarrel.damage)
+                    damage = int((1 - (object_dist_squared / ExplodingBarrel.squared_range)) * ExplodingBarrel.damage)
                     hittable_object.hurt(damage)
 
     def update(self):
@@ -811,10 +826,10 @@ class Enemy(Sprite):
     def map_empty(self, x, y):
         if TILEMAP[int(y)][int(x)] <= 0:
             return True
-        elif TILE_VALUES_INFO[TILEMAP[int(y)][int(x)]].type == 'Door' and \
-                TILE_VALUES_INFO[TILEMAP[int(y)][int(x)]].desc == 'Dynamic':
+        elif (int(x), int(x)) in DOOR_TILES and TILE_VALUES_INFO[TILEMAP[int(y)][int(x)]].desc == 'Dynamic':
             return True
-        return False
+        else:
+            return False
 
     def get_nearby_alerted_enemy(self):
         for e in ENEMIES:
@@ -823,7 +838,7 @@ class Enemy(Sprite):
         return None
 
     def can_see_player_sides(self):
-        if len(PLAYER.weapon_loadout) > 1:
+        if PLAYER.ammo or len(PLAYER.weapon_loadout) > 1:
             angle = fixed_angle(self.angle_from_player + pi / 2)
             x = cos(angle) / 2
             y = sin(angle) / 2
@@ -859,11 +874,11 @@ class Enemy(Sprite):
         player_hit = random.randint(0, int(32 / self.accuracy)) < speed_factor - dist_from_player
         if player_hit:
             if dist_from_player < 2:
-                damage = random.randint(21, 30)
+                damage = random.randint(15, 20)
             elif dist_from_player > 4:
-                damage = random.randint(1, 10)
+                damage = random.randint(5, 10)
             else:
-                damage = random.randint(11, 20)
+                damage = random.randint(10, 15)
             PLAYER.hurt(int(damage * self.damage_multiplier), self)
 
     def hurt(self, damage):
@@ -934,16 +949,11 @@ class Enemy(Sprite):
 
     def handle_doors_underneath(self):
         # If door underneath enemy, create a door obj if it isn't there already and start opening it immediately
-        tile_value = TILEMAP[int(self.y)][int(self.x)]
-        if TILE_VALUES_INFO[tile_value].type == 'Door':
+        if (int(self.x), int(self.y)) in DOOR_TILES:
             for d in DOORS:
                 if (d.x, d.y) == (int(self.x), int(self.y)):
-                    door = d
+                    d.start_opening()
                     break
-            else:
-                door = Door((int(self.x), int(self.y)), tile_value)
-                DOORS.append(door)
-            door.start_opening()
 
     def handle_dead_status(self):
         if not self.looted:
@@ -984,7 +994,7 @@ class Enemy(Sprite):
 
                 self.column += 1
                 if self.column in self.shot_columns:
-                    if self.column == self.shot_columns[0] or not self.channel.get_busy():
+                    if self.shooting_range_squared > 2 or self.column == self.shot_columns[0]:
                         play_sound(self.sounds.attack, self.channel_id, (self.x, self.y), self.dist_squared)
                     if self.ready_to_shoot():
                         self.shoot()
@@ -1139,9 +1149,7 @@ class Boss(Enemy):
             self.outline_image.set_at(point, Enemy.looting_colour)
 
     def map_empty(self, x, y):
-        if TILEMAP[int(y)][int(x)] <= 0 or TILE_VALUES_INFO[TILEMAP[int(y)][int(x)]].type == 'Door':
-            return True
-        return False
+        return TILEMAP[int(y)][int(x)] <= 0 or (int(x), int(y)) in DOOR_TILES
 
     def hurt(self, damage):
         self.hp -= damage
@@ -1319,17 +1327,25 @@ class Level:
             global PLAYER
             PLAYER.setup(player_pos, player_angle)
 
-        # Load objects, enemies
+        # Load gameobjects
         global OBJECTS
         OBJECTS = []
         global EXPLOSIVES
         EXPLOSIVES = []
         global ENEMIES
         ENEMIES = []
+        global DOORS
+        DOORS = []
+        global PUSH_WALLS
+        PUSH_WALLS = []
+        global THIN_WALLS
+        THIN_WALLS = []
         for row in range(len(TILEMAP)):
             for column in range(len(TILEMAP[row])):
-                tile = TILE_VALUES_INFO[TILEMAP[row][column]]
+                tile_value = TILEMAP[row][column]
+                tile = TILE_VALUES_INFO[tile_value]
                 pos = (column + 0.5, row + 0.5)
+                map_pos = (column, row)
                 if tile.type == 'Object':
                     if tile.desc == 'Explosive':
                         EXPLOSIVES.append(ExplodingBarrel(tile.texture, pos))
@@ -1344,49 +1360,54 @@ class Level:
                         ENEMIES.append(Boss(tile.texture, pos))
                     TILEMAP[row][column] = 0  # Clears tile
 
-        # Get enemy home rooms after enemies have been cleared from the tilemap
-        for e in ENEMIES:
-            if e.type == 'Normal':
-                e.get_home_room()
+                elif tile.type == 'Door':
+                    if tile.desc == 'Boss':
+                        DOORS.append(BossDoor(map_pos, tile_value))
+                    else:
+                        DOORS.append(Door(map_pos, tile_value))
+                elif tile.type == 'Wall':
+                    if tile.desc == 'Secret':
+                        PUSH_WALLS.append(PushWall(map_pos, tile_value))
+                elif tile.type == 'Thin Wall':
+                    THIN_WALLS.append(ThinWall(map_pos))
 
         # Tile sets
-        global EMPTY_TILES  # Raycasting will ignore all these tiles
+        global EMPTY_TILES  # Contains tiles that raycasting will ignore
         EMPTY_TILES = set()
-        global DOOR_TILES  # Contains BOSS_DOOR_TILES aswell
+        global DOOR_TILES
         DOOR_TILES = set()
-        global BOSS_DOOR_TILES
-        BOSS_DOOR_TILES = set()
-        global SEETHROUGH_DOOR_TILES
-        SEETHROUGH_DOOR_TILES = set()
         global PUSH_WALL_TILES
         PUSH_WALL_TILES = set()
+        global THIN_WALL_TILES
+        THIN_WALL_TILES = set()
 
         for row in range(len(TILEMAP)):
             for column in range(len(TILEMAP[row])):
                 tile = TILE_VALUES_INFO[TILEMAP[row][column]]
 
-                if tile.type == 'Wall':
+                if tile.type == 'Door':
+                    DOOR_TILES.add((column, row))
+                elif tile.type == 'Wall':
                     if tile.desc == 'Secret':
                         PUSH_WALL_TILES.add((column, row))
-                elif tile.type == 'Door':
-                    DOOR_TILES.add((column, row))
-                    if tile.desc == 'See-through':
-                        SEETHROUGH_DOOR_TILES.add((column, row))
-                    elif tile.desc == 'Boss':
-                        BOSS_DOOR_TILES.add((column, row))
+                elif tile.type == 'Thin Wall':
+                    THIN_WALL_TILES.add((column, row))
                 else:
                     EMPTY_TILES.add((column, row))
 
         global FLOOR_TILES  # Tiles that need floor rendering, contains everything but normal wall tiles
-        FLOOR_TILES = EMPTY_TILES | DOOR_TILES | PUSH_WALL_TILES
+        FLOOR_TILES = EMPTY_TILES | DOOR_TILES | PUSH_WALL_TILES | THIN_WALL_TILES
+
+        # Get enemy home rooms after enemies have been cleared from the tilemap
+        for e in ENEMIES:
+            if e.type == 'Normal':
+                e.get_home_room()
 
     def start(self, level_nr):
+        self.load(level_nr)
+
         global TIME
         TIME = 0
-        global DOORS
-        DOORS = []
-        global PUSH_WALLS
-        PUSH_WALLS = []
         global MESSAGES
         MESSAGES = []
         global EFFECTS
@@ -1396,8 +1417,6 @@ class Level:
         global BOSSHEALTHBAR
         BOSSHEALTHBAR = BossHealthBar()
 
-        self.load(level_nr)
-        #update_gameobjects()
         game_loop()
 
     def restart(self, enemy=None):
@@ -1623,14 +1642,11 @@ def send_rays():
     global MAX_DRAW_DIST_SQUARED
     MAX_DRAW_DIST_SQUARED = 0
 
-    # Deletes previous walls and unnecessary doors
+    # Deletes previous walls
     global WALLS
     WALLS = []
     global SEETHROUGH_WALLS
     SEETHROUGH_WALLS = []
-    for c, d in enumerate(DOORS):
-        if d.type == 'Normal' and d.state == 0:  # Only deletes normal doors that are closed
-            del DOORS[c]
 
     # Send rays
     for display_x, rayangle_offset in enumerate(CAMERA_PLANE.rayangle_offsets):
@@ -1666,68 +1682,73 @@ def raycast(start_pos, rayangle, extra_values=False):
     def check_collision(collision_x, collision_y, x_step, y_step):
         # x_step is the distance needed to move in x to get to the next similar type interception
         # y_step is the distance needed to move in y to get to the next similar type interception
-        tile_value = TILEMAP[map_y][map_x]
 
         if (map_x, map_y) in DOOR_TILES:
             # Get the door that ray hits
-            for door in DOORS:
-                if (door.x, door.y) == (map_x, map_y):
+            for d in DOORS:
+                if (d.x, d.y) == (map_x, map_y):
+                    door = d
                     break
-            else:
-                if (map_x, map_y) in BOSS_DOOR_TILES:
-                    door = BossDoor((map_x, map_y), tile_value)
-                else:
-                    door = Door((map_x, map_y), tile_value)
-                DOORS.append(door)
 
             collision_x += x_step / 2
             collision_y += y_step / 2
             if (int(collision_x), int(collision_y)) == (map_x, map_y):
                 if x_step == 1 or x_step == -1:
                     surface_offset = collision_y - int(collision_y)
+                    column = TEXTURE_SIZE
                 else:
                     surface_offset = collision_x - int(collision_x)
-                if (map_x, map_y) not in SEETHROUGH_DOOR_TILES:
-                    if surface_offset < door.closed_state:
-                        if extra_values:
-                            texture = TILE_VALUES_INFO[tile_value].texture
-                            column = int(TEXTURE_SIZE * abs(surface_offset - door.closed_state))
-                            return collision_x, collision_y, texture, column, False
-                        else:
-                            return collision_x, collision_y
-                elif extra_values:
-                    texture = TILE_VALUES_INFO[tile_value].texture
-                    column = int(TEXTURE_SIZE * surface_offset)
-                    return collision_x, collision_y, texture, column, True
+                    column = 0
+                if surface_offset < door.closed_state:
+                    if extra_values:
+                        texture = TILE_VALUES_INFO[TILEMAP[map_y][map_x]].texture
+                        column += int(TEXTURE_SIZE * abs(surface_offset - door.closed_state))
+                        return collision_x, collision_y, texture, column, False
+                    else:
+                        return collision_x, collision_y
 
-            #if int(collision_x) == map_x:
-            #    if y_step > 0:
-            #        y_range = range(map_y + 1, int(collision_y) + 1, 1)
-            #    else:
-            #        y_range = range(map_y - 1, int(collision_y) - 1, -1)
-            #    for test_y in y_range:
-            #        if (map_x, test_y) not in SEETHROUGH_DOOR_TILES:
-            #            break
-            #    else:
-            #        hits_seethrough_door = True
-            #elif int(collision_y) == map_y:
-            #    if x_step > 0:
-            #        x_range = range(map_x + 1, int(collision_x) + 1, 1)
-            #    else:
-            #        x_range = range(map_x - 1, int(collision_x) - 1, -1)
-            #    for test_x in x_range:
-            #        if (test_x, map_y) not in SEETHROUGH_DOOR_TILES:
-            #            break
-            #    else:
-            #        hits_seethrough_door = True
-            #if hits_seethrough_door:
-            #    if x_step == 1 or x_step == -1:
-            #        surface_offset = collision_y - int(collision_y)
-            #    else:
-            #        surface_offset = collision_x - int(collision_x)
-            #    texture = TILE_VALUES_INFO[tile_value].texture
-            #    column = int(TEXTURE_SIZE * surface_offset)
-            #    return collision_x, collision_y, texture, column, True
+        elif (map_x, map_y) in THIN_WALL_TILES:
+            if extra_values:
+                for thin_wall in THIN_WALLS:
+                    if (thin_wall.x, thin_wall.y) == (map_x, map_y):
+
+                        if x_step == 1 or x_step == -1:
+                            if thin_wall.vertical:
+                                collision_x += x_step / 2
+                                collision_y += y_step / 2
+                            else:
+                                y_offset = collision_y - int(collision_y)
+                                y_dist_from_wall = abs(b - y_offset) - 0.5
+                                if y_dist_from_wall > 0:
+                                    step_dist = abs(y_dist_from_wall / y_step)
+                                    collision_x += x_step * step_dist
+                                    collision_y = int(collision_y) + 0.5
+                                else:
+                                    return
+
+                        else:
+                            if thin_wall.vertical:
+                                x_offset = collision_x - int(collision_x)
+                                x_dist_from_wall = abs(a - x_offset) - 0.5
+                                if x_dist_from_wall > 0:
+                                    step_dist = abs(x_dist_from_wall / x_step)
+                                    collision_y += y_step * step_dist
+                                    collision_x = int(collision_x) + 0.5
+                                else:
+                                    return
+                            else:
+                                collision_x += x_step / 2
+                                collision_y += y_step / 2
+
+                        if (int(collision_x), int(collision_y)) == (map_x, map_y):
+                            if thin_wall.vertical:
+                                surface_offset = collision_y - int(collision_y)
+                            else:
+                                surface_offset = collision_x - int(collision_x)
+                            texture = TILE_VALUES_INFO[TILEMAP[map_y][map_x]].texture
+                            column = int(TEXTURE_SIZE * surface_offset)
+                            return collision_x, collision_y, texture, column, True
+                        break
 
         else:
             if (map_x, map_y) in PUSH_WALL_TILES:
@@ -1736,18 +1757,15 @@ def raycast(start_pos, rayangle, extra_values=False):
                         if push_wall.tile_offset > 0:
                             collision_x += x_step * push_wall.tile_offset
                             collision_y += y_step * push_wall.tile_offset
-                            if (int(collision_x), int(collision_y)) != (push_wall.x, push_wall.y):
+                            if (int(collision_x), int(collision_y)) != (map_x, map_y):
                                 return  # Ray misses the pushwall
                         break
-                else:
-                    push_wall = PushWall((map_x, map_y), tile_value)
-                    PUSH_WALLS.append(push_wall)
 
             if extra_values:
-                if (x - a, y - b) in DOOR_TILES and (x - a, y - b) not in SEETHROUGH_DOOR_TILES:
+                if (x - a, y - b) in DOOR_TILES:
                     texture = Door.side_texture
                 else:
-                    texture = TILE_VALUES_INFO[tile_value].texture
+                    texture = TILE_VALUES_INFO[TILEMAP[map_y][map_x]].texture
                 if x_step == 1 or x_step == -1:
                     surface_offset = collision_y - int(collision_y)
                     column = int(TEXTURE_SIZE * abs(a - surface_offset))
@@ -1857,31 +1875,26 @@ def events():
                 if event.key == K_e:
                     action_x = int(PLAYER.x + PLAYER.dir_x)
                     action_y = int(PLAYER.y + PLAYER.dir_y)
-                    tile_value = TILEMAP[action_y][action_x]
-                    tile_type = TILE_VALUES_INFO[tile_value].type
-                    tile_desc = TILE_VALUES_INFO[tile_value].desc
-                    if tile_type == 'Door':
-                        if tile_desc != 'Static':
-                            if PLAYER.has_key or tile_desc == 'Dynamic' or tile_desc == 'Boss':
-                                for d in DOORS:
-                                    # If found the right door and it's not in motion already
-                                    if action_x == d.x and action_y == d.y:
-                                        if d.type == 'Normal' or not d.locked:
-                                            d.start_opening()
-                                        else:
-                                            MESSAGES.append(Message('This door is now locked'))
-                                        break
-                            else:
-                                MESSAGES.append(Message('Opening this door requires a key'))
+                    tile = TILE_VALUES_INFO[TILEMAP[action_y][action_x]]
+                    if (action_x, action_y) in DOOR_TILES:
+                        if tile.type == 'Locked' and not PLAYER.has_key:
+                            MESSAGES.append(Message('Opening this door requires a key'))
                         else:
-                            MESSAGES.append(Message('Cannot open this door'))
-                    elif tile_desc == 'Secret':
-                        for p in PUSH_WALLS:
-                            if action_x == p.x and action_y == p.y:
-                                if not p.activated:
-                                    p.start_moving()
+                            for d in DOORS:
+                                if (d.x, d.y) == (action_x, action_y):
+                                    if not d.locked:
+                                        d.start_opening()
+                                    else:
+                                        MESSAGES.append(Message('This door is locked'))
+                                    break
+                    if (action_x, action_y) in PUSH_WALL_TILES:
+                        for push_wall in PUSH_WALLS:
+                            if (push_wall.x, push_wall.y) == (action_x, action_y):
+                                if not push_wall.activated:
+                                    push_wall.start_moving()
                                 break
-                    elif tile_desc == 'End-trigger':
+
+                    elif tile.desc == 'End-trigger':
                         play_sound(SWITCH_SOUND, 0, (action_x + 0.5, action_y + 0.5))
                         TILEMAP[action_y][action_x] += 1  # Change trigger block texture
                         LEVEL.finish()
@@ -2220,5 +2233,5 @@ if __name__ == '__main__':
 
     PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(9)
+    LEVEL.start(1)
     pygame.quit()

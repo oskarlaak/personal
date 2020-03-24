@@ -44,9 +44,11 @@ def get_tile_values_info(enemy_info):
         secret = pygame.image.load('../textures/walls/secret.png').convert()
         end_trigger = pygame.image.load('../textures/walls/endtrigger.png').convert()
 
+        # Thin wall textures
+        seethrough = pygame.image.load('../textures/walls/seethrough.png').convert_alpha()
+
         # Door textures
         dynamic_doors = pygame.image.load('../textures/doors/dynamic.png').convert()
-        seethrough_doors = pygame.image.load('../textures/doors/seethrough.png').convert_alpha()
         locked_doors = pygame.image.load('../textures/doors/locked.png').convert()
         boss_doors = pygame.image.load('../textures/doors/boss.png').convert()
 
@@ -55,7 +57,6 @@ def get_tile_values_info(enemy_info):
         nonsolids = pygame.image.load('../textures/objects/nonsolids.png').convert_alpha()
         exploding_barrel = pygame.image.load('../textures/objects/explodingbarrel.png').convert_alpha()
         solids = pygame.image.load('../textures/objects/solids.png').convert_alpha()
-
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
@@ -105,9 +106,11 @@ def get_tile_values_info(enemy_info):
 
         # Doors
         assign_texture_sheet(dynamic_doors, 'Door', 'Dynamic', cell_w=TEXTURE_SIZE * 2)
-        assign_texture_sheet(seethrough_doors, 'Door', 'See-through', cell_w=TEXTURE_SIZE * 2)
         assign_texture_sheet(locked_doors, 'Door', 'Locked', cell_w=TEXTURE_SIZE * 2)
         assign_texture_sheet(boss_doors, 'Door', 'Boss', cell_w=TEXTURE_SIZE * 2)
+
+        # Thin walls
+        assign_texture_sheet(seethrough, 'Thin Wall', 'See-through', cell_w=TEXTURE_SIZE * 2)
 
         # Walls
         assign_texture_sheet(bloodycave, 'Wall', 'Bloody Cave', cell_w=TEXTURE_SIZE * 2)
