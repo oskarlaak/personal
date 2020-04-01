@@ -14,6 +14,8 @@
 
 # Problems:
 # When you instantly pause game crashes
+# Shooting is disabled now
+# Portals can't attach to the same block but different sides
 
 # NOTES:
 # Game's tick rate is capped at 30
@@ -54,8 +56,7 @@ class Player:
         self.saved_weapon_loadout = [5]
 
     def setup(self, pos, angle):  # Called every time level (re)starts
-        self.x = pos[0]
-        self.y = pos[1]
+        self.x, self.y = pos
         self.viewangle = angle
         self.dir_x = cos(self.viewangle)
         self.dir_y = sin(self.viewangle)
@@ -360,6 +361,42 @@ class ThinWall:
             self.vertical = True
 
 
+class Portal:
+    def __init__(self, blue):
+        if blue:
+            self.texture = Portal.blue_texture
+        else:
+            self.texture = Portal.red_texture
+        self.created = False
+
+    def create_portal(self):
+        collison_x, collison_y = raycast((PLAYER.x, PLAYER.y), PLAYER.viewangle)
+
+        if collison_x == int(collison_x):
+            vertical = True
+            if (collison_x, int(collison_y)) in EMPTY_TILES:
+                side = 1  # Portal on right side
+            else:
+                side = 0  # Portal on left side
+            map_x = collison_x - side
+            map_y = int(collison_y)
+        else:
+            vertical = False
+            if (int(collison_x), collison_y) in EMPTY_TILES:
+                side = 1  # Portal on bottom side
+            else:
+                side = 0  # Portal on top side
+            map_x = int(collison_x)
+            map_y = collison_y - side
+
+        if (map_x, map_y) not in DOOR_TILES and (map_x, map_y) not in PUSH_WALL_TILES:
+            self.created = True
+            self.map_x = map_x
+            self.map_y = map_y
+            self.vertical = vertical
+            self.side = side
+
+
 class WeaponModel:
     channel_id = 1
     switch_ticks = 6  # Needs to be even number
@@ -582,7 +619,7 @@ class WallColumn(Drawable):
 class Sprite(Drawable):
     animation_ticks = 5  # Enemy animation frames delay
 
-    def update_for_drawing(self, angle_from_player=False):
+    def update_for_drawing(self, angle_from_player=None):
         # Requires delta_(x/y), dist_squared
         self.visible_to_player = False
         if self.dist_squared < MAX_DRAW_DIST_SQUARED:
@@ -1406,6 +1443,10 @@ class Level:
     def start(self, level_nr):
         self.load(level_nr)
 
+        global BLUE_PORTAL
+        BLUE_PORTAL = Portal(True)
+        global RED_PORTAL
+        RED_PORTAL = Portal(False)
         global TIME
         TIME = 0
         global MESSAGES
@@ -1548,7 +1589,7 @@ def squared_dist(from_, to):
 def fixed_angle(angle):
     while angle > pi:
         angle -= 2 * pi
-    while angle < -pi:
+    while angle <= -pi:
         angle += 2 * pi
     return angle
 
@@ -1647,41 +1688,52 @@ def send_rays():
     WALLS = []
     global SEETHROUGH_WALLS
     SEETHROUGH_WALLS = []
+    global DISPLAY_X
 
     # Send rays
-    for display_x, rayangle_offset in enumerate(CAMERA_PLANE.rayangle_offsets):
+    for DISPLAY_X, rayangle_offset in enumerate(CAMERA_PLANE.rayangle_offsets):
         ray_start = (PLAYER.x, PLAYER.y)
-        if not display_x % WALL_RES:
-            while True:
-                # Get values from raycast()
-                collision_x, collision_y, texture, column, seethrough_wall = \
-                    raycast(ray_start, PLAYER.viewangle + rayangle_offset, True)
+        if not DISPLAY_X % WALL_RES:
+            # Get values from raycast()
+            delta_x, delta_y, texture, column = \
+                raycast(ray_start, PLAYER.viewangle + rayangle_offset, extra_values=True, can_go_through_portal=True)
 
-                # Calculate perpendicular distance (needed to avoid fisheye effect)
-                delta_x = collision_x - PLAYER.x
-                delta_y = collision_y - PLAYER.y
-                perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
+            # Calculate perpendicular distance (needed to avoid fisheye effect)
+            perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
 
-                if not seethrough_wall:
-                    new_dist = delta_x**2 + delta_y**2
-                    if new_dist > MAX_DRAW_DIST_SQUARED:
-                        MAX_DRAW_DIST_SQUARED = new_dist
+            new_dist = delta_x**2 + delta_y**2
+            if new_dist > MAX_DRAW_DIST_SQUARED:
+                MAX_DRAW_DIST_SQUARED = new_dist
 
-                    # Create Wall object
-                    WALLS.append(WallColumn(texture, column, perp_dist, display_x))
-                    break
-                else:
-                    SEETHROUGH_WALLS.append(WallColumn(texture, column, perp_dist, display_x))
-                    ray_start = (collision_x, collision_y)
-                    continue
+            # Create Wall object
+            WALLS.append(WallColumn(texture, column, perp_dist, DISPLAY_X))
         else:
             WALLS.append(None)
 
 
-def raycast(start_pos, rayangle, extra_values=False):
+def raycast(start_pos, rayangle, extra_values=False,
+            can_go_through_portal=False, previous_rayangle_diff=0.0, previous_delta_x=0.0, previous_delta_y=0.0):
     def check_collision(collision_x, collision_y, x_step, y_step):
         # x_step is the distance needed to move in x to get to the next similar type interception
         # y_step is the distance needed to move in y to get to the next similar type interception
+
+        def get_delta_x_and_y():
+            current_delta_x = collision_x - start_pos[0]
+            current_delta_y = collision_y - start_pos[1]
+            if previous_rayangle_diff:
+                if previous_rayangle_diff == pi:
+                    delta_x = previous_delta_x - current_delta_x
+                    delta_y = previous_delta_y - current_delta_y
+                elif previous_rayangle_diff > 0:
+                    delta_x = previous_delta_x + current_delta_y
+                    delta_y = previous_delta_y - current_delta_x
+                else:
+                    delta_x = previous_delta_x - current_delta_y
+                    delta_y = previous_delta_y + current_delta_x
+            else:
+                delta_x = previous_delta_x + current_delta_x
+                delta_y = previous_delta_y + current_delta_y
+            return delta_x, delta_y
 
         if (map_x, map_y) in DOOR_TILES:
             # Get the door that ray hits
@@ -1693,7 +1745,7 @@ def raycast(start_pos, rayangle, extra_values=False):
             collision_x += x_step / 2
             collision_y += y_step / 2
             if (int(collision_x), int(collision_y)) == (map_x, map_y):
-                if x_step == 1 or x_step == -1:
+                if abs(x_step) == 1:
                     surface_offset = collision_y - int(collision_y)
                     column = TEXTURE_SIZE
                 else:
@@ -1703,7 +1755,8 @@ def raycast(start_pos, rayangle, extra_values=False):
                     if extra_values:
                         texture = TILE_VALUES_INFO[TILEMAP[map_y][map_x]].texture
                         column += int(TEXTURE_SIZE * abs(surface_offset - door.closed_state))
-                        return collision_x, collision_y, texture, column, False
+                        delta_x, delta_y = get_delta_x_and_y()
+                        return delta_x, delta_y, texture, column
                     else:
                         return collision_x, collision_y
 
@@ -1712,7 +1765,7 @@ def raycast(start_pos, rayangle, extra_values=False):
                 for thin_wall in THIN_WALLS:
                     if (thin_wall.x, thin_wall.y) == (map_x, map_y):
 
-                        if x_step == 1 or x_step == -1:
+                        if abs(x_step) == 1:
                             if thin_wall.vertical:
                                 collision_x += x_step / 2
                                 collision_y += y_step / 2
@@ -1725,6 +1778,7 @@ def raycast(start_pos, rayangle, extra_values=False):
                                     collision_y = int(collision_y) + 0.5
                                 else:
                                     return
+                            column = TEXTURE_SIZE
 
                         else:
                             if thin_wall.vertical:
@@ -1739,6 +1793,7 @@ def raycast(start_pos, rayangle, extra_values=False):
                             else:
                                 collision_x += x_step / 2
                                 collision_y += y_step / 2
+                            column = 0
 
                         if (int(collision_x), int(collision_y)) == (map_x, map_y):
                             if thin_wall.vertical:
@@ -1746,8 +1801,11 @@ def raycast(start_pos, rayangle, extra_values=False):
                             else:
                                 surface_offset = collision_x - int(collision_x)
                             texture = TILE_VALUES_INFO[TILEMAP[map_y][map_x]].texture
-                            column = int(TEXTURE_SIZE * surface_offset)
-                            return collision_x, collision_y, texture, column, True
+                            column += int(TEXTURE_SIZE * surface_offset)
+                            delta_x, delta_y = get_delta_x_and_y()
+
+                            perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
+                            SEETHROUGH_WALLS.append(WallColumn(texture, column, perp_dist, DISPLAY_X))
                         break
 
         else:
@@ -1762,18 +1820,80 @@ def raycast(start_pos, rayangle, extra_values=False):
                         break
 
             if extra_values:
+                if abs(x_step) == 1:
+                    surface_offset = abs((1 - a) - (collision_y - int(collision_y)))
+                    column = int(TEXTURE_SIZE * surface_offset)
+                    column += TEXTURE_SIZE
+                else:
+                    surface_offset = abs(b - (collision_x - int(collision_x)))
+                    column = int(TEXTURE_SIZE * surface_offset)
+                delta_x, delta_y = get_delta_x_and_y()
+
+                portal = False
+                if BLUE_PORTAL.created and (map_x, map_y) == (BLUE_PORTAL.map_x, BLUE_PORTAL.map_y):
+                    portal = BLUE_PORTAL
+                    other_portal = RED_PORTAL
+                elif RED_PORTAL.created and (map_x, map_y) == (RED_PORTAL.map_x, RED_PORTAL.map_y):
+                    portal = RED_PORTAL
+                    other_portal = BLUE_PORTAL
+                if portal:
+                    # Ray hits block portal is attached to
+                    if (abs(x_step) == 1 and portal.vertical and portal.side == (1 - a)) or \
+                            (abs(x_step) != 1 and not portal.vertical and portal.side == (1 - b)):
+                        # Ray hits portal
+
+                        # Draw a seethrough wall - portal edges
+                        texture = portal.texture
+                        perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
+                        SEETHROUGH_WALLS.append(WallColumn(texture, column, perp_dist, DISPLAY_X))
+
+                        if can_go_through_portal and other_portal.created:
+                            if portal.vertical:
+                                if other_portal.vertical:
+                                    if portal.side == other_portal.side:
+                                        rayangle_diff = pi
+                                    else:
+                                        rayangle_diff = 0
+                                else:
+                                    if portal.side == 0:
+                                        rayangle_diff = -(0.5 - other_portal.side) * pi
+                                    else:
+                                        rayangle_diff = (0.5 - other_portal.side) * pi
+                            else:
+                                if not other_portal.vertical:
+                                    if portal.side == other_portal.side:
+                                        rayangle_diff = pi
+                                    else:
+                                        rayangle_diff = 0
+                                else:
+                                    if portal.side == 0:
+                                        rayangle_diff = (0.5 - other_portal.side) * pi
+                                    else:
+                                        rayangle_diff = -(0.5 - other_portal.side) * pi
+
+                            if other_portal.vertical:
+                                start_x = other_portal.map_x + other_portal.side
+                                if other_portal.side == 1:
+                                    start_y = other_portal.map_y + surface_offset
+                                else:
+                                    start_y = other_portal.map_y + (1 - surface_offset)
+                            else:
+                                start_y = other_portal.map_y + other_portal.side
+                                if other_portal.side == 1:
+                                    start_x = other_portal.map_x + (1 - surface_offset)
+                                else:
+                                    start_x = other_portal.map_x + surface_offset
+
+                            return raycast((start_x, start_y), rayangle + rayangle_diff, extra_values=True,
+                                           can_go_through_portal=False, previous_rayangle_diff=rayangle_diff,
+                                           previous_delta_x=delta_x, previous_delta_y=delta_y)
+
                 if (x - a, y - b) in DOOR_TILES:
                     texture = Door.side_texture
                 else:
                     texture = TILE_VALUES_INFO[TILEMAP[map_y][map_x]].texture
-                if x_step == 1 or x_step == -1:
-                    surface_offset = collision_y - int(collision_y)
-                    column = int(TEXTURE_SIZE * abs(a - surface_offset))
-                    column += TEXTURE_SIZE
-                else:
-                    surface_offset = collision_x - int(collision_x)
-                    column = int(TEXTURE_SIZE * abs(b - surface_offset))
-                return collision_x, collision_y, texture, column, False
+
+                return delta_x, delta_y, texture, column
             else:
                 return collision_x, collision_y
 
@@ -1798,28 +1918,32 @@ def raycast(start_pos, rayangle, extra_values=False):
     #      b = 1 | b = 1
     rayangle = fixed_angle(rayangle + 0.0000001)
     tan_rayangle = tan(rayangle)
-    x = int(start_pos[0])
-    y = int(start_pos[1])
-    dx = start_pos[0] - x + 0.0000001
-    dy = start_pos[1] - y + 0.0000001
 
     if abs(rayangle) < pi / 2:
         a = 1
+        start_x = start_pos[0] + 0.0000001
         tile_step_x = 1
         y_step = tan_rayangle
     else:
         a = 0
+        start_x = start_pos[0] - 0.0000001
         tile_step_x = -1
         y_step = -tan_rayangle
     if rayangle > 0:
         b = 1
+        start_y = start_pos[1] + 0.0000001
         tile_step_y = 1
         x_step = 1 / tan_rayangle
     else:
         b = 0
+        start_y = start_pos[1] - 0.0000001
         tile_step_y = -1
         x_step = 1 / -tan_rayangle
 
+    x = int(start_x)
+    y = int(start_y)
+    dx = start_x - x
+    dy = start_y - y
     x_intercept = x + dx + (b - dy) / tan_rayangle
     y_intercept = y + dy + (a - dx) * tan_rayangle
     x += a
@@ -1909,11 +2033,14 @@ def events():
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
-                    if not WEAPON_MODEL.switching:
-                        if PLAYER.ammo >= WEAPON_MODEL.weapon.ammo_consumption:
-                            WEAPON_MODEL.shooting = True
-                        elif not pygame.mixer.Channel(WeaponModel.channel_id).get_busy():
-                            play_sound(WEAPON_MODEL.weapon.sounds.no_ammo, WeaponModel.channel_id)
+                    BLUE_PORTAL.create_portal()
+                    #if not WEAPON_MODEL.switching:
+                    #    if PLAYER.ammo >= WEAPON_MODEL.weapon.ammo_consumption:
+                    #        WEAPON_MODEL.shooting = True
+                    #    elif not pygame.mixer.Channel(WeaponModel.channel_id).get_busy():
+                    #        play_sound(WEAPON_MODEL.weapon.sounds.no_ammo, WeaponModel.channel_id)
+                elif event.button == 3:
+                    RED_PORTAL.create_portal()
 
 
 def update_gameobjects():
@@ -2111,7 +2238,7 @@ def update_sound_channels():
             pygame.mixer.Channel(channel_id).unpause()
 
 
-def play_sound(sound, channel_id, source_pos=(0, 0), source_dist_squared=0):
+def play_sound(sound, channel_id, source_pos=(0.0, 0.0), source_dist_squared=0.0):
     def set_channel_stereo_volume(angle):
         if abs(angle) < pi / 2:
             volume = 1 - abs(angle) / (pi / 2)
@@ -2213,7 +2340,6 @@ if __name__ == '__main__':
     GAME_FONT_24 = pygame.font.Font('../font/LCD_Solid.ttf', 24)
     GAME_FONT_32 = pygame.font.Font('../font/LCD_Solid.ttf', 32)
 
-    Door.side_texture = graphics.get_door_side_texture()
     ENEMY_INFO = enemies.get_enemy_info()
     TILE_VALUES_INFO = graphics.get_tile_values_info(ENEMY_INFO)
     WEAPONS = weapons.get()
@@ -2226,6 +2352,11 @@ if __name__ == '__main__':
     ITEM_PICKUP_SOUND,\
     WEAPON_PICKUP_SOUND,\
     SWITCH_SOUND = sounds.get()
+
+    # Textures
+    Door.side_texture,\
+    Portal.blue_texture,\
+    Portal.red_texture = graphics.get_door_side_and_portal_textures()
 
     QUIT = False
     PAUSED = False

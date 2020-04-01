@@ -16,15 +16,17 @@ def get_floor_textures(raw_floor_texture):
     return floor_texture, big_floor_texture
 
 
-def get_door_side_texture():
+def get_door_side_and_portal_textures():
     try:
-        side_texture = pygame.image.load('../textures/doors/side.png').convert()
+        door_side = pygame.image.load('../textures/doors/side.png').convert()
+        blue_portal = pygame.image.load('../textures/walls/blueportal.png').convert_alpha()
+        red_portal = pygame.image.load('../textures/walls/redportal.png').convert_alpha()
 
     except pygame.error as loading_error:
         sys.exit(loading_error)
 
     else:
-        return side_texture
+        return door_side, blue_portal, red_portal
 
 
 def get_tile_values_info(enemy_info):
