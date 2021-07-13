@@ -2,31 +2,34 @@ import pygame
 import sys
 
 
-def get_floor_textures(raw_floor_texture):
-    from game.settings import TEXTURE_SIZE, FLOOR_RES
-
-    floor_texture = pygame.Surface((TEXTURE_SIZE + FLOOR_RES, TEXTURE_SIZE))
-    floor_texture.blit(raw_floor_texture, (0, 0))
-    floor_texture.blit(raw_floor_texture.subsurface(0, 0, FLOOR_RES, TEXTURE_SIZE), (TEXTURE_SIZE, 0))
-
-    big_floor_texture = pygame.Surface(((TEXTURE_SIZE + FLOOR_RES) * 2, TEXTURE_SIZE * 2))
-    big_floor_texture.blit(pygame.transform.scale(raw_floor_texture, (TEXTURE_SIZE * 2, TEXTURE_SIZE * 2)), (0, 0))
-    big_floor_texture.blit(pygame.transform.scale(raw_floor_texture.subsurface(0, 0, FLOOR_RES * 2, TEXTURE_SIZE),
-                                                  (FLOOR_RES * 2, TEXTURE_SIZE * 2)), (TEXTURE_SIZE * 2, 0))
-    return floor_texture, big_floor_texture
-
-
-def get_door_side_and_portal_textures():
+def get_playermodel_spritesheet():
     try:
-        door_side = pygame.image.load('../textures/doors/side.png').convert()
-        blue_portal = pygame.image.load('../textures/walls/blueportal.png').convert_alpha()
-        red_portal = pygame.image.load('../textures/walls/redportal.png').convert_alpha()
-
+        playermodel = pygame.image.load('../textures/spritesheets/playermodel.png').convert_alpha()
     except pygame.error as loading_error:
         sys.exit(loading_error)
-
     else:
-        return door_side, blue_portal, red_portal
+        return playermodel
+
+
+def get_portal_textures():
+    try:
+        blue_portal = pygame.image.load('../textures/walls/blueportal.png').convert_alpha()
+        blue_portal_closed = pygame.image.load('../textures/walls/blueportalclosed.png').convert_alpha()
+        red_portal = pygame.image.load('../textures/walls/redportal.png').convert_alpha()
+        red_portal_closed = pygame.image.load('../textures/walls/redportalclosed.png').convert_alpha()
+    except pygame.error as loading_error:
+        sys.exit(loading_error)
+    else:
+        return blue_portal, blue_portal_closed, red_portal, red_portal_closed
+
+
+def get_door_side_texture():
+    try:
+        door_side = pygame.image.load('../textures/doors/side.png').convert()
+    except pygame.error as loading_error:
+        sys.exit(loading_error)
+    else:
+        return door_side
 
 
 def get_tile_values_info(enemy_info):

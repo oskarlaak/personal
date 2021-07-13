@@ -106,8 +106,7 @@ class Tilemap(DisplayBlock):
             with open(filepath, 'w') as f:
                 for row in self.list:
                     f.write('{}\n'.format(row))
-                f.write(str(SKYTEXTURE_BOX.value) + '\n')
-                f.write(str(FLOOR_TEXTURE_BOX.value))
+                f.write(str(SKYTEXTURE_BOX.value))
 
             filepath = '../levels/{}/player.txt'.format(LEVEL_NR.text)
             os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -129,13 +128,12 @@ class Tilemap(DisplayBlock):
             with open('../levels/{}/tilemap.txt'.format(LEVEL_NR.text), 'r') as f:
                 self.list = []
                 lines = list(f)
-                for line in lines[:-2]:
+                for line in lines[:-1]:
                     row = line[1:-2]  # Get rid of '[' and ']'
                     row = row.split(',')  # Split line into list
                     row = [int(i) for i in row]  # Turn all number strings to an int
                     self.list.append(row)
-                SKYTEXTURE_BOX.value = int(lines[-2])
-                FLOOR_TEXTURE_BOX.value = int(lines[-1])
+                SKYTEXTURE_BOX.value = int(lines[-1])
 
             with open('../levels/{}/player.txt'.format(LEVEL_NR.text), 'r') as f:
                 player_pos = f.readline().replace('\n', '').split(',')
@@ -502,23 +500,23 @@ def create_sidebar_objects():
     global SKYTEXTURE_BOX
     SKYTEXTURE_BOX = BackgroundBox('SKYTEXTURE:', (Sidebar.x_safezone, SIDEBAR.rect.h - 190), skytextures)
 
-    # Floor texture box
-    try:
-        floor_textures_image = pygame.image.load('../textures/walls/floor.png').convert()
-    except pygame.error as loading_error:
-        sys.exit(loading_error)
-    else:
-        floor_textures = []
-        for y in range(0, floor_textures_image.get_height(), TEXTURE_SIZE):
-            floor_textures.append(floor_textures_image.subsurface(0, y, TEXTURE_SIZE, TEXTURE_SIZE))
-        global FLOOR_TEXTURE_BOX
-        FLOOR_TEXTURE_BOX = BackgroundBox('FLOOR TEXTURE:', (Sidebar.x_safezone, SIDEBAR.rect.h - 95), floor_textures)
+    ## Floor texture box
+    #try:
+    #    floor_textures_image = pygame.image.load('../textures/walls/floor.png').convert()
+    #except pygame.error as loading_error:
+    #    sys.exit(loading_error)
+    #else:
+    #    floor_textures = []
+    #    for y in range(0, floor_textures_image.get_height(), TEXTURE_SIZE):
+    #        floor_textures.append(floor_textures_image.subsurface(0, y, TEXTURE_SIZE, TEXTURE_SIZE))
+    #    global FLOOR_TEXTURE_BOX
+    #    FLOOR_TEXTURE_BOX = BackgroundBox('FLOOR TEXTURE:', (Sidebar.x_safezone, SIDEBAR.rect.h - 95), floor_textures)
 
     global SIDEBAR_OBJECTS
-    SIDEBAR_OBJECTS = TEXTUREGROUPS + [LEVEL_NR] + [ANGLE_BOX] + [SKYTEXTURE_BOX] + [FLOOR_TEXTURE_BOX]
+    SIDEBAR_OBJECTS = TEXTUREGROUPS + [LEVEL_NR] + [ANGLE_BOX] + [SKYTEXTURE_BOX]# + [FLOOR_TEXTURE_BOX]
 
     global SELECTION_BOXES
-    SELECTION_BOXES = TEXTUREGROUPS + [SKYTEXTURE_BOX] + [FLOOR_TEXTURE_BOX]
+    SELECTION_BOXES = TEXTUREGROUPS + [SKYTEXTURE_BOX]# + [FLOOR_TEXTURE_BOX]
 
 
 def get_tilevaluesinfo():
@@ -541,7 +539,8 @@ def get_tilevaluesinfo():
         for value in TILE_VALUES_INFO:
             if value:
                 # Crop all textures to 64x64 pixels
-                TILE_VALUES_INFO[value].texture = TILE_VALUES_INFO[value].texture.subsurface(0, 0, TEXTURE_SIZE, TEXTURE_SIZE)
+                TILE_VALUES_INFO[value].texture = \
+                    TILE_VALUES_INFO[value].texture.subsurface(0, 0, TEXTURE_SIZE, TEXTURE_SIZE)
             if TILE_VALUES_INFO[value].desc == 'End-trigger':
                 # Replace the end-trigger textures with start and end texture
                 TILE_VALUES_INFO[value].texture = end_texture
@@ -570,7 +569,7 @@ import game.graphics as graphics
 import game.enemies as enemies
 
 pygame.init()
-pygame.display.set_caption('Raycaster Level Editor')
+pygame.display.set_caption('Raycaster Tilemap Editor')
 TILEMAP = Tilemap(1024)
 SIDEBAR = Sidebar(512, 1024)
 DISPLAY = pygame.display.set_mode((TILEMAP.surface_size + SIDEBAR.rect.w, max((TILEMAP.surface_size, SIDEBAR.rect.h))))

@@ -14,13 +14,14 @@ def get():
     class Weapon:
         cell_size = 192
 
-        def __init__(self, name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_delay, damage, automatic):
+        def __init__(self, name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_columns, fire_delay, damage, automatic):
             self.name = name
             self.weapon_sheet = weapon_sheet
             self.animation_frames = int(weapon_sheet.get_width() / Weapon.cell_size) - 1
             self.sounds = sounds
             self.ammo_consumption = ammo_consumption
             self.shot_column = shot_column
+            self.fire_columns = fire_columns  # Columns which contain visual weapon fire
             self.fire_delay = fire_delay  # Has to match with number of animation frames
             self.damage = damage
             self.automatic = automatic
@@ -28,26 +29,26 @@ def get():
     class Melee(Weapon):
         type = 'Melee'
 
-        def __init__(self, name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_delay, damage, automatic,
+        def __init__(self, name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_columns, fire_delay, damage, automatic,
                      range):
-            super().__init__(name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_delay, damage, automatic)
+            super().__init__(name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_columns, fire_delay, damage, automatic)
             self.range_squared = range**2
 
     class HitscanWeapon(Weapon):
         type = 'Hitscan'
 
-        def __init__(self, name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_delay, damage, automatic,
+        def __init__(self, name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_columns, fire_delay, damage, automatic,
                      spread):
-            super().__init__(name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_delay, damage, automatic)
+            super().__init__(name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_columns, fire_delay, damage, automatic)
             camera_plane_dist = 0.5 / math.tan(FOV / 2)
             self.max_x_spread = int(math.tan(spread) * camera_plane_dist * D_W)
 
     class Shotgun(Weapon):
         type = 'Shotgun'
 
-        def __init__(self, name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_delay, damage, automatic,
+        def __init__(self, name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_columns, fire_delay, damage, automatic,
                      spread, shot_bullets):
-            super().__init__(name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_delay, damage, automatic)
+            super().__init__(name, weapon_sheet, sounds, ammo_consumption, shot_column, fire_columns, fire_delay, damage, automatic)
             camera_plane_dist = 0.5 / math.tan(FOV / 2)
             self.max_x_spread = int(math.tan(spread) * camera_plane_dist * D_W)
             self.shot_bullets = shot_bullets
@@ -82,6 +83,7 @@ def get():
                     fire=pistol_sound),
                 ammo_consumption=1,
                 shot_column=1,
+                fire_columns=[1],
                 fire_delay=8,
                 damage=14,
                 automatic=False,
@@ -93,6 +95,7 @@ def get():
                     fire=shotgun_sound),
                 ammo_consumption=3,
                 shot_column=1,
+                fire_columns=[1, 2],
                 fire_delay=21,
                 damage=10,
                 automatic=False,
@@ -105,6 +108,7 @@ def get():
                     fire=chaingun_sound),
                 ammo_consumption=1,
                 shot_column=1,
+                fire_columns=[1, 2],
                 fire_delay=4,
                 damage=14,
                 automatic=True,
@@ -116,6 +120,7 @@ def get():
                     fire=supershotgun_sound),
                 ammo_consumption=5,
                 shot_column=1,
+                fire_columns=[1, 2],
                 fire_delay=40,
                 damage=10,
                 automatic=False,
@@ -129,6 +134,7 @@ def get():
                     hit=fist_hit_sound),
                 ammo_consumption=0,
                 shot_column=2,
+                fire_columns=[],
                 fire_delay=6,
                 damage=40,
                 automatic=False,

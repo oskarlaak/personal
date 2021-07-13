@@ -13,8 +13,9 @@ def get_enemy_info():
     class Enemy:
         type = 'Normal'
 
-        def __init__(self, channel_id, sounds, hp, speed, wandering_radius, shooting_range, looting_ammo,
-                     damage_multiplier, accuracy, pain_chance, patience, death_frames, shooting_frames, shot_columns):
+        def __init__(self, channel_id, sounds, hp, speed, wandering_radius, shooting_range, looting_ammo, damage_multiplier, accuracy, pain_chance, memory,
+                     death_frames, shooting_rows, shot_rows, shooting_pattern):
+            # Behaviour description
             self.channel_id = channel_id
             self.sounds = sounds
             self.hp = hp
@@ -22,21 +23,20 @@ def get_enemy_info():
             self.wandering_radius = wandering_radius
             self.shooting_range_squared = shooting_range**2  # Max shooting range squared
             self.looting_ammo = looting_ammo  # Amount of ammo dropped when killed
-
             self.damage_multiplier = damage_multiplier
             self.accuracy = accuracy  # 0 will never hit, 1 is normal, can go higher
             self.pain_chance = pain_chance  # From 0 to 1, determines how likely enemy will be shown hurt when shot
+            self.memory = memory
 
-            self.patience = patience  # Max time in ticks enemy will remain without action
-
-            self.running_rows = (1, 2, 3, 4)
-
-            self.death_frames = death_frames
-            self.hit_row = 5
-
-            self.shooting_frames = shooting_frames
-            self.shot_columns = shot_columns
-            self.shooting_row = 6
+            # Spritesheet description
+            self.running_rows = (0, 1, 2, 3)  # Rows that contain running frames
+            self.hit_row = 4  # Row that contains getting hit frames
+            self.death_row = 5  # Row that contains death frames
+            self.death_frames = death_frames  # Amount of death frames in death row
+            self.shooting_rows = shooting_rows  # Rows that contain shooting frames
+            self.shot_rows = shot_rows  # Rows that contain actual attacking/weapon firing
+            self.shooting_pattern = shooting_pattern  # The order of which the shooting rows will be displayed
+            self.shooting_frames = len(shooting_pattern)  # Amount of shooting frames in a shooting pattern
 
     class Boss:
         type = 'Boss'
@@ -66,16 +66,17 @@ def get_enemy_info():
     try:
         # Spritesheets
         # Bosses
-        ottogiftmacher = pygame.image.load('../textures/enemies/ottogiftmacher.png').convert_alpha()
-        hansgrosse = pygame.image.load('../textures/enemies/hansgrosse.png').convert_alpha()
-        hitler = pygame.image.load('../textures/enemies/hitler.png').convert_alpha()
+        ottogiftmacher = pygame.image.load('../textures/spritesheets/enemies/ottogiftmacher.png').convert_alpha()
+        hansgrosse = pygame.image.load('../textures/spritesheets/enemies/hansgrosse.png').convert_alpha()
+        hitler = pygame.image.load('../textures/spritesheets/enemies/hitler.png').convert_alpha()
 
         # Normal enemies
-        guard = pygame.image.load('../textures/enemies/guard.png').convert_alpha()
-        officer = pygame.image.load('../textures/enemies/officer.png').convert_alpha()
-        ss = pygame.image.load('../textures/enemies/ss.png').convert_alpha()
-        mutant = pygame.image.load('../textures/enemies/mutant.png').convert_alpha()
-        dog = pygame.image.load('../textures/enemies/dog.png').convert_alpha()
+        guard = pygame.image.load('../textures/spritesheets/enemies/guard.png').convert_alpha()
+        officer = pygame.image.load('../textures/spritesheets/enemies/officer.png').convert_alpha()
+        ss = pygame.image.load('../textures/spritesheets/enemies/ss.png').convert_alpha()
+        mutant = pygame.image.load('../textures/spritesheets/enemies/mutant.png').convert_alpha()
+        dog = pygame.image.load('../textures/spritesheets/enemies/dog.png').convert_alpha()
+        formerhuman = pygame.image.load('../textures/spritesheets/enemies/formerhuman.png').convert_alpha()
 
         # Sounds
         # Attack
@@ -159,93 +160,130 @@ def get_enemy_info():
                 shot_columns=[3, 4, 5, 6, 7]),
             # Normal enemies
             guard: Enemy(
-                channel_id=2,
-                sounds=EnemySounds(
-                    attack=pistol,
-                    death=scream_2,
-                    appearance=achtung),
-                hp=20,
-                speed=0.07,
-                wandering_radius=2,
-                shooting_range=5,
-                looting_ammo=4,
-                damage_multiplier=1.00,
-                accuracy=1.00,
-                pain_chance=1.00,
-                patience=60,
-                death_frames=5,
-                shooting_frames=6,
-                shot_columns=[4]),
-            officer: Enemy(
-                channel_id=3,
-                sounds=EnemySounds(
-                    attack=pistol,
-                    death=scream_3,
-                    appearance=halt_1),
-                hp=40,
-                speed=0.08,
-                wandering_radius=2,
-                shooting_range=8,
-                looting_ammo=6,
-                damage_multiplier=0.90,
-                accuracy=1.10,
-                pain_chance=0.75,
-                patience=90,
-                death_frames=5,
-                shooting_frames=7,
-                shot_columns=[2, 4, 6]),
-            ss: Enemy(
                 channel_id=4,
                 sounds=EnemySounds(
                     attack=machinegun,
                     death=scream_4,
-                    appearance=halt_2),
+                    appearance=halt_2
+                ),
                 hp=50,
                 speed=0.06,
                 wandering_radius=3,
                 shooting_range=8,
                 looting_ammo=8,
-                damage_multiplier=1.00,
+                damage_multiplier=0.00,
                 accuracy=1.05,
                 pain_chance=0.50,
-                patience=180,
+                memory=90,
                 death_frames=5,
-                shooting_frames=7,
-                shot_columns=[3, 4, 5]),
+                shooting_rows=(6, 7),
+                shot_rows=7,
+                shooting_pattern=(0, 0, 1, 0, 1)
+            ),
+            officer: Enemy(
+                channel_id=4,
+                sounds=EnemySounds(
+                    attack=machinegun,
+                    death=scream_4,
+                    appearance=halt_2
+                ),
+                hp=50,
+                speed=0.06,
+                wandering_radius=3,
+                shooting_range=8,
+                looting_ammo=8,
+                damage_multiplier=0.00,
+                accuracy=1.05,
+                pain_chance=0.50,
+                memory=90,
+                death_frames=5,
+                shooting_rows=(6, 7),
+                shot_rows=7,
+                shooting_pattern=(0, 0, 1, 0, 1)
+            ),
+            ss: Enemy(
+                channel_id=4,
+                sounds=EnemySounds(
+                    attack=machinegun,
+                    death=scream_4,
+                    appearance=halt_2
+                ),
+                hp=50,
+                speed=0.06,
+                wandering_radius=3,
+                shooting_range=8,
+                looting_ammo=8,
+                damage_multiplier=0.00,
+                accuracy=1.05,
+                pain_chance=0.50,
+                memory=90,
+                death_frames=5,
+                shooting_rows=(6, 7),
+                shot_rows=7,
+                shooting_pattern=(0, 0, 1, 0, 1)
+            ),
             mutant: Enemy(
-                channel_id=5,
+                channel_id=4,
                 sounds=EnemySounds(
-                    attack=pistol,
-                    death=scream_2),
-                hp=30,
-                speed=0.07,
-                wandering_radius=5,
-                shooting_range=6,
-                looting_ammo=4,
-                damage_multiplier=0.60,
-                accuracy=1.00,
-                pain_chance=0.75,
-                patience=60,
+                    attack=machinegun,
+                    death=scream_4,
+                    appearance=halt_2
+                ),
+                hp=50,
+                speed=0.06,
+                wandering_radius=3,
+                shooting_range=8,
+                looting_ammo=8,
+                damage_multiplier=0.00,
+                accuracy=1.05,
+                pain_chance=0.50,
+                memory=90,
                 death_frames=5,
-                shooting_frames=4,
-                shot_columns=[1, 3]),
+                shooting_rows=(6, 7),
+                shot_rows=7,
+                shooting_pattern=(0, 0, 1, 0, 1)
+            ),
             dog: Enemy(
-                channel_id=6,
+                channel_id=4,
                 sounds=EnemySounds(
-                    attack=dog_woof,
-                    death=dog_pain,
-                    appearance=dog_woof_long),
-                hp=5,
-                speed=0.10,
-                wandering_radius=4,
-                shooting_range=1.2,
-                looting_ammo=0,
-                damage_multiplier=0.50,
-                accuracy=5.00,
-                pain_chance=0.00,
-                patience=0,
-                death_frames=4,
-                shooting_frames=4,
-                shot_columns=[1, 2])
+                    attack=machinegun,
+                    death=scream_4,
+                    appearance=halt_2
+                ),
+                hp=50,
+                speed=0.06,
+                wandering_radius=3,
+                shooting_range=8,
+                looting_ammo=8,
+                damage_multiplier=0.00,
+                accuracy=1.05,
+                pain_chance=0.50,
+                memory=90,
+                death_frames=5,
+                shooting_rows=(6, 7),
+                shot_rows=7,
+                shooting_pattern=(0, 0, 1, 0, 1)
+            ),
+            formerhuman: Enemy(
+                channel_id=4,
+                sounds=EnemySounds(
+                    attack=machinegun,
+                    death=scream_4,
+                    appearance=halt_2
+                ),
+                hp=50,
+                speed=0.06,
+                wandering_radius=3,
+                shooting_range=8,
+                looting_ammo=8,
+                damage_multiplier=1.10,
+                accuracy=1.05,
+                pain_chance=0.50,
+                memory=90,
+                death_frames=5,
+                shooting_rows=(6, 7),
+                shot_rows=(7),
+                shooting_pattern=(0, 0, 1, 0, 1)
+            )
         }
         return enemy_info

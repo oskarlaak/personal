@@ -1,8 +1,13 @@
 # TO DO:
-# Redo the secret wall moving logic
 # Main menu system
-# Try to remove all shadows from sprites
 # Make boss health bar update() func and add it to update_gameobjects()
+# Replace self.sound-s with ExplodingBarrel-somund etc
+# Fix level restart drawing system
+# Max draw dist system
+# Better portal/weapon system
+# Quitting from YOU DIED doesnt shut down properly
+# BOSSES
+# If enemy doesnt see player, it sould check portals
 
 # Extras:
 # Move sounds to different folders
@@ -52,10 +57,7 @@ class Player:
     speed = 0.15  # Must be < half_hitbox, otherwise player can clip through walls
     half_hitbox = 0.2
 
-    def __init__(self):
-        self.saved_weapon_loadout = [5]
-
-    def setup(self, pos, angle):  # Called every time level (re)starts
+    def __init__(self, pos, angle):
         self.x, self.y = pos
         self.viewangle = angle
         self.dir_x = cos(self.viewangle)
@@ -63,11 +65,8 @@ class Player:
         self.hp = Player.max_hp
         self.ammo = 20
         self.has_key = False
-        self.weapon_nr = len(WEAPONS) - 1
-        self.weapon_loadout = self.saved_weapon_loadout[:]
-
-    def save_weapon_loadout(self):
-        self.saved_weapon_loadout = self.weapon_loadout[:]
+        self.weapon_nr = 1
+        self.weapon_loadout = [1, 2, 3, 4]
 
     def add_ammo(self, amount):
         self.ammo += amount
@@ -82,13 +81,14 @@ class Player:
     def rotate(self, radians):
         self.viewangle = fixed_angle(self.viewangle + radians)
 
-    def hurt(self, damage, enemy):
+    def hurt(self, damage, damage_source=None):  # If damage source not given, player must've shot himself
         EFFECTS.update(Colour.red)
         self.hp -= damage
         if self.hp <= 0:
-            for channel_id in range(8):
-                pygame.mixer.Channel(channel_id).fadeout(150)
-            LEVEL.restart(enemy)
+            self.hp = 0
+            self.death_source = damage_source
+            WEAPON_MODEL.switching = 0
+            pygame.mixer.Channel(WEAPON_MODEL.channel_id).fadeout(150)
 
     def handle_movement(self):
         # Checks for movement (WASD)
@@ -362,39 +362,76 @@ class ThinWall:
 
 
 class Portal:
-    def __init__(self, blue):
-        if blue:
-            self.texture = Portal.blue_texture
-        else:
-            self.texture = Portal.red_texture
+    def __init__(self, texture, closed_texture):
+        self.texture = texture
+        self.closed_texture = closed_texture
         self.created = False
+        self.map_x = 0
+        self.map_y = 0
+
+    def set_other_portal(self, portal):
+        self.other_portal = portal
 
     def create_portal(self):
+        #         non-vertical
+        #           side = 0
+        #          ---------
+        # vertical |       | vertical
+        # side = 0 |       | side = 1
+        #          |       |
+        #          ---------
+        #         non-vertical
+        #           side = 1
         collison_x, collison_y = raycast((PLAYER.x, PLAYER.y), PLAYER.viewangle)
 
         if collison_x == int(collison_x):
             vertical = True
             if (collison_x, int(collison_y)) in EMPTY_TILES:
-                side = 1  # Portal on right side
+                if (collison_x, int(collison_y)) in THIN_WALL_TILES:
+                    return
+                side = 1
             else:
-                side = 0  # Portal on left side
+                if (collison_x - 1, int(collison_y)) in THIN_WALL_TILES:
+                    return
+                side = 0
             map_x = collison_x - side
             map_y = int(collison_y)
         else:
             vertical = False
             if (int(collison_x), collison_y) in EMPTY_TILES:
-                side = 1  # Portal on bottom side
+                if (int(collison_x), collison_y) in THIN_WALL_TILES:
+                    return
+                side = 1
             else:
-                side = 0  # Portal on top side
+                if (int(collison_x), collison_y - 1) in THIN_WALL_TILES:
+                    return
+                side = 0
             map_x = int(collison_x)
             map_y = collison_y - side
 
         if (map_x, map_y) not in DOOR_TILES and (map_x, map_y) not in PUSH_WALL_TILES:
-            self.created = True
-            self.map_x = map_x
-            self.map_y = map_y
-            self.vertical = vertical
-            self.side = side
+            if map_x != self.other_portal.map_x or \
+                    map_y != self.other_portal.map_y or \
+                    vertical != self.other_portal.vertical or \
+                    side != self.other_portal.side:
+                self.created = True
+                self.map_x = map_x
+                self.map_y = map_y
+                self.vertical = vertical
+                self.side = side
+
+                if self.vertical:
+                    self.center_y = self.map_y + 0.5
+                    if self.side:
+                        self.center_x = self.map_x + 1
+                    else:
+                        self.center_x = self.map_x
+                else:
+                    self.center_x = self.map_x + 0.5
+                    if self.side:
+                        self.center_y = self.map_y + 1
+                    else:
+                        self.center_y = self.map_y
 
 
 class WeaponModel:
@@ -414,7 +451,7 @@ class WeaponModel:
     def shoot(self, weapon):
         def get_shootable_things():
             shootable_things = []
-            for sprite in ENEMIES + EXPLOSIVES:
+            for sprite in ENEMIES + EXPLOSIVES + PORTAL_OBJECTS:
                 if sprite.visible_to_player and sprite.hp:
                     shootable_things.append(sprite)
             shootable_things.sort(key=lambda x: x.dist_squared)  # Sort for closest dist first
@@ -447,7 +484,7 @@ class WeaponModel:
 
             if self.column > weapon.animation_frames:  # If finished shot animation
                 # If weapon automatic and mouse down
-                if weapon.automatic and pygame.mouse.get_pressed()[0] and PLAYER.ammo >= self.weapon.ammo_consumption:
+                if weapon.automatic and pygame.mouse.get_pressed()[1] and PLAYER.ammo >= self.weapon.ammo_consumption:
                     self.column = 1  # Keep going
                 else:
                     self.column = 0  # Ends animation
@@ -473,37 +510,38 @@ class WeaponModel:
                 play_sound(weapon_sound, WeaponModel.channel_id)
 
     def switch_weapons(self):
-        self.ticks += 1
-        if self.ticks == WeaponModel.switch_ticks / 2:
-            PLAYER.weapon_nr = self.switching  # Switches weapon model when halfway through
-            #self.sound_channel.stop()
-
-        if self.ticks <= WeaponModel.switch_ticks / 2:
-            self.display_y += int(self.size / WeaponModel.switch_ticks)
-        elif self.ticks <= WeaponModel.switch_ticks:
-            self.display_y -= int(self.size / WeaponModel.switch_ticks)
+        if self.switching:
+            self.ticks += 1
+            if self.ticks == WeaponModel.switch_ticks / 2:
+                PLAYER.weapon_nr = self.switching  # Switches weapon model when halfway through
+            if self.ticks <= WeaponModel.switch_ticks / 2:
+                self.display_y += int(self.size / WeaponModel.switch_ticks)
+            elif self.ticks <= WeaponModel.switch_ticks:
+                self.display_y -= int(self.size / WeaponModel.switch_ticks)
+            else:
+                self.ticks = 0
+                self.switching = False
         else:
-            self.ticks = 0
-            self.switching = False
+            self.display_y += int(self.size / WeaponModel.switch_ticks / 4)
 
     def update(self):
         self.weapon = WEAPONS[PLAYER.weapon_nr]
 
-        if self.shooting:
+        if self.switching is 0:
+            self.switch_weapons()
+
+        elif self.shooting:
             self.shoot(self.weapon)
 
         elif self.switching:
             self.switch_weapons()
 
     def draw(self):
-        #pygame.draw.line(DISPLAY, (0, 255, 0), (H_W - self.weapon.max_x_spread, H_H - 10),
-        #                 (H_W - self.weapon.max_x_spread, H_H + 10), 2)
-        #pygame.draw.line(DISPLAY, (0, 255, 0), (H_W + self.weapon.max_x_spread, H_H - 10),
-        #                 (H_W + self.weapon.max_x_spread, H_H + 10), 2)
-        weapon_image = self.weapon.weapon_sheet.subsurface(self.weapon.cell_size * self.column, 0,
-                                                           self.weapon.cell_size, self.weapon.cell_size)
-        weapon_image = pygame.transform.scale(weapon_image, (self.size, self.size))
-        DISPLAY.blit(weapon_image, ((D_W - self.size) / 2, D_H - self.size + self.display_y))
+        if self.weapon:
+            weapon_image = self.weapon.weapon_sheet.subsurface(self.weapon.cell_size * self.column, 0,
+                                                               self.weapon.cell_size, self.weapon.cell_size)
+            weapon_image = pygame.transform.scale(weapon_image, (self.size, self.size))
+            DISPLAY.blit(weapon_image, ((D_W - self.size) / 2, D_H - self.size + self.display_y))
 
 
 class Effects:
@@ -575,15 +613,6 @@ class CameraPlane:
             angle = atan2(camera_plane_pos, self.dist)
             self.rayangle_offsets.append(angle)
 
-        if FLOOR_RES:
-            # Calculates horizontal floorline's edge distance and step distance for every y position below H_H
-            self.floor_lookup_table = []
-            for y in range(H_H + 1, D_H):  # Starts at H_H + 1 bc H_H would be infinitely far away
-                perp_dist = Drawable.constant / ((y - H_H) * 2)
-                dist = perp_dist / cos(FOV / 2)
-                step_dist = perp_dist * tan(FOV / 2) / H_W
-                self.floor_lookup_table.append((y, dist, step_dist * FLOOR_RES))
-
 
 class Drawable:
     def calc_cropping_height(self):
@@ -604,12 +633,12 @@ class Drawable:
 
 
 class WallColumn(Drawable):
-    def __init__(self, texture, column, perp_dist, display_x):
-        self.perp_dist = perp_dist
+    def __init__(self, delta_x, delta_y, texture, column):
+        self.perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
         self.height = int(Drawable.constant / self.perp_dist)
         self.calc_cropping_height()
         self.image = texture.subsurface((column, (TEXTURE_SIZE - self.cropping_height) / 2, 1, self.cropping_height))
-        self.display_x = display_x
+        self.display_x = DISPLAY_X
         self.display_y = int((D_H - self.height) / 2)
 
     def draw(self):
@@ -619,23 +648,23 @@ class WallColumn(Drawable):
 class Sprite(Drawable):
     animation_ticks = 5  # Enemy animation frames delay
 
-    def update_for_drawing(self, angle_from_player=None):
+    def update_for_drawing(self, walls, angle_from_player=None):
         # Requires delta_(x/y), dist_squared
         self.visible_to_player = False
-        if self.dist_squared < MAX_DRAW_DIST_SQUARED:
-            self.perp_dist = self.delta_x * PLAYER.dir_x + self.delta_y * PLAYER.dir_y
-            if self.perp_dist > 0:
-                if not angle_from_player:
-                    angle_from_player = atan2(self.delta_y, self.delta_x)
-                self.display_pos = H_W + int(tan(angle_from_player - PLAYER.viewangle) * CAMERA_PLANE.dist * D_W)
+        #if self.dist_squared < MAX_DRAW_DIST_SQUARED:
+        self.perp_dist = self.delta_x * PLAYER.dir_x + self.delta_y * PLAYER.dir_y
+        if self.perp_dist > 0:
+            if not angle_from_player:
+                angle_from_player = atan2(self.delta_y, self.delta_x)
+            self.display_pos = H_W + int(tan(angle_from_player - PLAYER.viewangle) * CAMERA_PLANE.dist * D_W)
 
-                self.width = self.height = round(Drawable.constant / self.perp_dist / 2) * 2  # Needs to be even number
-                self.calc_start_and_end_x()
-                if self.start_x is not None and self.end_x is not None:
-                    self.calc_cropping_height()
-                    self.visible_to_player = True
+            self.width = self.height = round(Drawable.constant / self.perp_dist / 2) * 2  # Needs to be even number
+            self.calc_start_and_end_x(walls)
+            if self.start_x is not None and self.end_x is not None:
+                self.calc_cropping_height()
+                self.visible_to_player = True
 
-    def calc_start_and_end_x(self):
+    def calc_start_and_end_x(self, walls):
         # Requires display_pos, width and perp_dist
         self.start_x = None
         self.end_x = None
@@ -649,14 +678,59 @@ class Sprite(Drawable):
             if right_side > D_W:
                 right_side = D_W
 
-            for w in WALLS[left_side:right_side]:  # Go from left to right
+            for w in walls[left_side:right_side]:  # Go from left to right
                 if w and self.perp_dist < w.perp_dist:  # If sprite in front of wall
                     self.start_x = w.display_x
                     break
-            for w in WALLS[right_side:left_side:-1]:  # Go from right to left
+            for w in walls[right_side:left_side:-1]:  # Go from right to left
                 if w and self.perp_dist < w.perp_dist:  # If sprite in front of wall
                     self.end_x = w.display_x
                     break
+
+    def get_portal_clones_info(self):
+        # Returns portal clone pos for each portal
+        if BLUE_PORTAL.created and RED_PORTAL.created:
+            for portal in (BLUE_PORTAL, RED_PORTAL):
+                other_portal = portal.other_portal
+
+                player_to_portal_x = portal.center_x - PLAYER.x
+                player_to_portal_y = portal.center_y - PLAYER.y
+                other_portal_to_object_x = self.x - other_portal.center_x
+                other_portal_to_object_y = self.y - other_portal.center_y
+
+                if other_portal.vertical:
+                    if other_portal.side:
+                        if other_portal_to_object_x < 0:
+                            continue
+                    else:
+                        if other_portal_to_object_x > 0:
+                            continue
+                else:
+                    if other_portal.side:
+                        if other_portal_to_object_y < 0:
+                            continue
+                    else:
+                        if other_portal_to_object_y > 0:
+                            continue
+
+                if portal.vertical == other_portal.vertical:
+                    if portal.side == other_portal.side:
+                        new_delta_x = player_to_portal_x - other_portal_to_object_x
+                        new_delta_y = player_to_portal_y - other_portal_to_object_y
+                    else:
+                        new_delta_x = player_to_portal_x + other_portal_to_object_x
+                        new_delta_y = player_to_portal_y + other_portal_to_object_y
+                elif (portal.vertical + portal.side + other_portal.side) % 2:
+                    new_delta_x = player_to_portal_x - other_portal_to_object_y
+                    new_delta_y = player_to_portal_y + other_portal_to_object_x
+                else:
+                    new_delta_x = player_to_portal_x + other_portal_to_object_y
+                    new_delta_y = player_to_portal_y - other_portal_to_object_x
+
+                if portal == BLUE_PORTAL:
+                    yield (PLAYER.x + new_delta_x, PLAYER.y + new_delta_y), True
+                else:
+                    yield (PLAYER.x + new_delta_x, PLAYER.y + new_delta_y), False
 
 
 class Object(Sprite):
@@ -668,7 +742,12 @@ class Object(Sprite):
         self.delta_x = self.x - PLAYER.x
         self.delta_y = self.y - PLAYER.y
         self.dist_squared = self.delta_x**2 + self.delta_y**2
-        self.update_for_drawing()
+        self.update_for_drawing(WALLS)
+
+    def create_portal_clones(self):
+        clones_info = self.get_portal_clones_info()
+        for clone_pos, portal_colour in clones_info:
+            PORTAL_OBJECTS.append(PortalObject(self.sprite, clone_pos, portal_colour))
 
     def draw(self):
         cropping_rect = (
@@ -693,10 +772,11 @@ class ExplodingBarrel(Object):
     damage_frame = 2
     squared_range = 3**2
 
-    def __init__(self, sprite, pos):
+    def __init__(self, spritesheet, pos):
         self.x, self.y = pos
-        self.full_sprite = sprite
-        self.explosion_frames = int(sprite.get_width() / TEXTURE_SIZE)
+        self.spritesheet = spritesheet
+        self.sprite = self.spritesheet.subsurface((0, 0, TEXTURE_SIZE, TEXTURE_SIZE))
+        self.explosion_frames = int(spritesheet.get_width() / TEXTURE_SIZE)
         self.explosion_frame = 0
         self.anim_ticks = 0
         self.hp = 1  # Every shootable thing needs to have hp
@@ -705,18 +785,20 @@ class ExplodingBarrel(Object):
         self.hp -= damage
         if self.hp <= 0:
             self.hp = 0
-            self.explosion_frame += 1
+            self.explosion_frame = 1
+            self.sprite = self.spritesheet.subsurface((TEXTURE_SIZE, 0, TEXTURE_SIZE, TEXTURE_SIZE))
             play_sound(self.sound, 0, (self.x, self.y), self.dist_squared)
 
     def do_damage(self):
         if self.dist_squared < ExplodingBarrel.squared_range:
             damage = int((1 - (self.dist_squared / ExplodingBarrel.squared_range)) * ExplodingBarrel.damage)
-            PLAYER.hurt(damage, self)
-        for hittable_object in ENEMIES + EXPLOSIVES:
+            PLAYER.hurt(damage)
+        for hittable_object in ENEMIES + EXPLOSIVES + PORTAL_OBJECTS:
             if hittable_object.hp:
                 object_dist_squared = squared_dist((self.x, self.y), (hittable_object.x, hittable_object.y))
                 if object_dist_squared < ExplodingBarrel.squared_range:
-                    damage = int((1 - (object_dist_squared / ExplodingBarrel.squared_range)) * ExplodingBarrel.damage)
+                    damage = \
+                        int((1 - (object_dist_squared / ExplodingBarrel.squared_range)) * ExplodingBarrel.damage)
                     hittable_object.hurt(damage)
 
     def update(self):
@@ -733,11 +815,120 @@ class ExplodingBarrel(Object):
                             del EXPLOSIVES[c]
                             TILEMAP[int(self.y)][int(self.x)] = 0
                             break
-        super().update()
+                else:
+                    self.sprite = self.spritesheet.subsurface(
+                        (self.explosion_frame * TEXTURE_SIZE, 0, TEXTURE_SIZE, TEXTURE_SIZE)
+                    )
 
-    def draw(self):
-        self.sprite = self.full_sprite.subsurface((self.explosion_frame * TEXTURE_SIZE, 0, TEXTURE_SIZE, TEXTURE_SIZE))
-        super().draw()
+        super().update()
+        self.angle_from_player = atan2(self.delta_y, self.delta_x)
+
+    def create_portal_clones(self):
+        clones_info = self.get_portal_clones_info()
+        for clone_pos, portal_colour in clones_info:
+            clone = PortalObject(self.sprite, clone_pos, portal_colour, parent=self)
+            PORTAL_OBJECTS.append(clone)
+
+class PortalObject(Object):
+    def __init__(self, sprite, pos, blue_portal_object, parent=None):
+        self.x, self.y = pos
+        self.sprite = sprite
+
+        # Hp will be used to determine if portal object is shootable or not
+        self.parent = parent
+        if self.parent:
+            self.hp = self.parent.hp
+        else:
+            self.hp = 0
+
+        self.delta_x = self.x - PLAYER.x
+        self.delta_y = self.y - PLAYER.y
+        self.dist_squared = self.delta_x ** 2 + self.delta_y ** 2
+        if blue_portal_object:
+            self.update_for_drawing(BLUE_PORTAL_WALLS)
+        else:
+            self.update_for_drawing(RED_PORTAL_WALLS)
+
+    def hurt(self, damage):
+        self.parent.hurt(damage)
+
+
+class PlayerModel(Sprite):
+    # Spritesheet info
+    running_rows = (0, 1, 2, 3)
+
+    death_row = 5
+    death_frames = 7
+    shooting_rows = (6, 7)
+
+    def __init__(self, spritesheet):
+        self.spritesheet = spritesheet
+        self.row = 0
+        self.column = 0
+        self.anim_ticks = 0
+
+    def get_column(self, angle_from_player):
+        angle = fixed_angle(self.viewangle - angle_from_player)
+        column = round(angle / (pi / 4)) + 4
+        if column == 8:
+            column = 0
+        return column
+
+    def update(self):
+        self.x = PLAYER.x
+        self.y = PLAYER.y
+        self.viewangle = PLAYER.viewangle
+
+        if not PLAYER.hp:
+            self.row = PlayerModel.death_row
+            if self.column != self.death_frames - 1:
+                self.anim_ticks += 1
+                if self.anim_ticks == Sprite.animation_ticks:
+                    self.anim_ticks = 0
+                    self.column += 1
+            else:
+                for channel_id in range(8):
+                    pygame.mixer.Channel(channel_id).fadeout(150)
+                LEVEL.restart(PLAYER.death_source)
+
+        elif WEAPON_MODEL.shooting:
+            if WEAPON_MODEL.column in WEAPON_MODEL.weapon.fire_columns:
+                self.row = PlayerModel.shooting_rows[1]
+            else:
+                self.row = PlayerModel.shooting_rows[0]
+
+        else:
+            if self.row not in self.running_rows:
+                self.row = self.running_rows[0]
+            if PLAYER.total_movement:
+                self.anim_ticks += 1
+                if self.anim_ticks == Sprite.animation_ticks:
+                    self.anim_ticks = 0
+                    self.row += 1
+
+    def create_portal_clones(self):
+        clones_info = self.get_portal_clones_info()
+        for clone_pos, portal_colour in clones_info:
+            clone_row = self.row
+            if not PLAYER.hp:
+                clone_column = self.column
+            else:
+                delta_x = clone_pos[0] - PLAYER.x
+                delta_y = clone_pos[1] - PLAYER.y
+                clone_angle_from_player = atan2(delta_y, delta_x)
+
+                if portal_colour:
+                    clone_angle_from_player += get_rayangle_diff(BLUE_PORTAL, RED_PORTAL)
+                else:
+                    clone_angle_from_player += get_rayangle_diff(RED_PORTAL, BLUE_PORTAL)
+
+                clone_column = self.get_column(clone_angle_from_player)
+
+            clone_sprite = self.spritesheet.subsurface(
+                (clone_column * TEXTURE_SIZE, clone_row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
+            )
+            clone = PortalObject(clone_sprite, clone_pos, portal_colour, parent=PLAYER)
+            PORTAL_OBJECTS.append(clone)
 
 
 class Enemy(Sprite):
@@ -752,7 +943,7 @@ class Enemy(Sprite):
         self.home = int(self.x), int(self.y)
         self.viewangle = 0
 
-        self.sheet = spritesheet
+        self.spritesheet = spritesheet
         self.row = 0  # Spritesheet row
         self.column = 0  # Spritesheet column
 
@@ -762,41 +953,44 @@ class Enemy(Sprite):
         self.appeared = False
 
         # Take attributes from ENEMY_INFO based on spritesheet
-        self.channel_id = ENEMY_INFO[self.sheet].channel_id
+        self.channel_id = ENEMY_INFO[self.spritesheet].channel_id
         self.channel = pygame.mixer.Channel(self.channel_id)
-        self.sounds = ENEMY_INFO[self.sheet].sounds
-        self.hp = ENEMY_INFO[self.sheet].hp
-        self.speed = ENEMY_INFO[self.sheet].speed
-        self.wandering_radius = ENEMY_INFO[self.sheet].wandering_radius
-        self.shooting_range_squared = ENEMY_INFO[self.sheet].shooting_range_squared
-        self.looting_ammo = ENEMY_INFO[self.sheet].looting_ammo
-        self.damage_multiplier = ENEMY_INFO[self.sheet].damage_multiplier
-        self.accuracy = ENEMY_INFO[self.sheet].accuracy
-        self.pain_chance = ENEMY_INFO[self.sheet].pain_chance
-        self.patience = ENEMY_INFO[self.sheet].patience
-        self.running_rows = ENEMY_INFO[self.sheet].running_rows
-        self.death_frames = ENEMY_INFO[self.sheet].death_frames
-        self.hit_row = ENEMY_INFO[self.sheet].hit_row
-        self.shooting_frames = ENEMY_INFO[self.sheet].shooting_frames
-        self.shot_columns = ENEMY_INFO[self.sheet].shot_columns
-        self.shooting_row = ENEMY_INFO[self.sheet].shooting_row
+        self.sounds = ENEMY_INFO[self.spritesheet].sounds
+        self.hp = ENEMY_INFO[self.spritesheet].hp
+        self.speed = ENEMY_INFO[self.spritesheet].speed
+        self.wandering_radius = ENEMY_INFO[self.spritesheet].wandering_radius
+        self.shooting_range_squared = ENEMY_INFO[self.spritesheet].shooting_range_squared
+        self.looting_ammo = ENEMY_INFO[self.spritesheet].looting_ammo
+        self.damage_multiplier = ENEMY_INFO[self.spritesheet].damage_multiplier
+        self.accuracy = ENEMY_INFO[self.spritesheet].accuracy
+        self.pain_chance = ENEMY_INFO[self.spritesheet].pain_chance
+        self.memory = ENEMY_INFO[self.spritesheet].memory
+
+        self.running_rows = ENEMY_INFO[self.spritesheet].running_rows
+        self.hit_row = ENEMY_INFO[self.spritesheet].hit_row
+        self.death_row = ENEMY_INFO[self.spritesheet].death_row
+        self.death_frames = ENEMY_INFO[self.spritesheet].death_frames
+        self.shooting_rows = ENEMY_INFO[self.spritesheet].shooting_rows
+        self.shot_rows = ENEMY_INFO[self.spritesheet].shot_rows
+        self.shooting_pattern = ENEMY_INFO[self.spritesheet].shooting_pattern
+        self.shooting_frames = ENEMY_INFO[self.spritesheet].shooting_frames
 
         # Timed events tick variables (frames passed since some action)
-        self.stationary_ticks = 0
+        self.appearance_ticks = self.memory
         self.anim_ticks = 0
 
-        self.dead_image = self.sheet.subsurface(
-            ((self.death_frames - 1) * TEXTURE_SIZE, self.hit_row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
+        self.dead_image = self.spritesheet.subsurface(
+            ((self.death_frames - 1) * TEXTURE_SIZE, self.death_row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
         )
         if self.looting_ammo:
             self.looted = False
-            self.outline_alpha = 0
             self.outline_image = pygame.Surface((TEXTURE_SIZE, TEXTURE_SIZE))
             self.outline_image.set_colorkey(Colour.black)
             for point in pygame.mask.from_surface(self.dead_image).outline():
                 self.outline_image.set_at(point, Enemy.looting_colour)
         else:
             self.looted = True
+        self.outline_alpha = 0
 
     def __eq__(self, other):
         return self.home == other.home
@@ -828,26 +1022,12 @@ class Enemy(Sprite):
             if squared_dist(self.home, room_point) <= self.wandering_radius**2:
                 self.home_room.append(room_point)
 
-    def calc_row_and_column(self, moved):
-        angle = fixed_angle(self.viewangle - self.angle_from_player)
-        self.column = round(angle / (pi / 4)) + 4
-        if self.column == 8:
-            self.column = 0
-
-        if moved:
-            if self.row not in self.running_rows:
-                self.row = 1
-
-            # Cycle through running animations
-            self.anim_ticks += 1
-            if self.anim_ticks == Sprite.animation_ticks:
-                self.anim_ticks = 0
-                self.row += 1
-                if self.row not in self.running_rows:
-                    self.row = 1
-        else:
-            self.row = 0
-            self.anim_ticks = 0
+    def get_column(self, angle_from_player):
+        angle = fixed_angle(self.viewangle - angle_from_player)
+        column = round(angle / (pi / 4)) + 4
+        if column == 8:
+            column = 0
+        return column
 
     def can_step(self, step_x, step_y):
         # If enemy with decent shooting_range really close to player - don't step
@@ -868,7 +1048,7 @@ class Enemy(Sprite):
         else:
             return False
 
-    def get_nearby_alerted_enemy(self):
+    def get_nearby_chasing_enemy(self):
         for e in ENEMIES:
             if e.chasing and not self == e and can_see((self.x, self.y), (e.x, e.y)):
                     return e
@@ -887,20 +1067,29 @@ class Enemy(Sprite):
     def ready_to_shoot(self):
         return self.dist_squared < self.shooting_range_squared and can_see((self.x, self.y), (PLAYER.x, PLAYER.y))
 
+    def get_shooting_row(self):
+        return self.shooting_rows[self.shooting_pattern[self.shooting_frame - 1]]
+
     def start_shooting(self):
         self.status = 'shooting'
-        self.row = self.shooting_row
-        self.column = 0
+        self.shooting_frame = 1
+        self.row = self.get_shooting_row()
         self.anim_ticks = 0
+        self.viewangle = fixed_angle(self.angle_from_player + pi)
 
     def handle_death(self):
-        self.status = 'dead'
         self.hp = 0
-        self.row = self.hit_row
+        self.status = 'dead'
+        self.chasing = False
+        self.row = self.death_row
         self.column = 0
         self.anim_ticks = 0
-        self.chasing = False
         play_sound(self.sounds.death, self.channel_id, (self.x, self.y), self.dist_squared)
+
+    def handle_hit(self):
+        self.status = 'hit'
+        self.row = self.hit_row
+        self.anim_ticks = 0
 
     def shoot(self):
         # speed_factor ranges between 24 (when player's running) and 32 (when not)
@@ -923,17 +1112,15 @@ class Enemy(Sprite):
         if self.hp <= 0:
             self.handle_death()
         elif self.pain_chance > random.random():
-            self.status = 'hit'
-            self.row = self.hit_row
-            self.column = 7
-            self.anim_ticks = 0
+            self.handle_hit()
 
     def loot(self):
         if PLAYER.ammo < Player.max_ammo:
             play_sound(ITEM_PICKUP_SOUND, 0)
             MESSAGES.append(Message('Ammo +{}'.format(self.looting_ammo)))
-            self.looted = True
             PLAYER.add_ammo(self.looting_ammo)
+            self.looted = True
+            self.outline_alpha = 0
 
     def strafe(self):
         # Sets step_(x/y) to a random new empty neighbour tile (if there is one)
@@ -992,22 +1179,7 @@ class Enemy(Sprite):
                     d.start_opening()
                     break
 
-    def handle_dead_status(self):
-        if not self.looted:
-            if (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
-                self.loot()
-            self.outline_alpha += Enemy.looting_pulse_speed
-            if self.outline_alpha >= 255:
-                self.outline_alpha = -255
-        if self.column != self.death_frames - 1:
-            self.outline_alpha = 0
-            self.anim_ticks += 1
-            if self.anim_ticks == Sprite.animation_ticks:
-                self.anim_ticks = 0
-                self.column += 1
-
     def update(self):
-        moved = False
         self.handle_doors_underneath()
 
         self.delta_x = self.x - PLAYER.x
@@ -1016,92 +1188,175 @@ class Enemy(Sprite):
         self.dist_squared = self.delta_x**2 + self.delta_y**2
 
         if self.status == 'dead':
-            self.handle_dead_status()
+            if not self.looted:
+                if (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
+                    self.loot()
 
-        elif self.status == 'hit':
-            self.anim_ticks += 1
-            if self.anim_ticks == Sprite.animation_ticks - 2:  # -2 plays hit animation a little faster
-                self.anim_ticks = 0
-                self.status = 'default'
-
-        elif self.status == 'shooting':
-            self.anim_ticks += 1
-            if self.anim_ticks == Sprite.animation_ticks:
-                self.anim_ticks = 0
-
-                self.column += 1
-                if self.column in self.shot_columns:
-                    if self.shooting_range_squared > 2 or self.column == self.shot_columns[0]:
-                        play_sound(self.sounds.attack, self.channel_id, (self.x, self.y), self.dist_squared)
-                    if self.ready_to_shoot():
-                        self.shoot()
-
-                elif self.column == self.shooting_frames:
-                    if (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
-                        self.column = 0  # Continues shooting
-                    else:
-                        self.column -= 1
-                        self.status = 'default'
-
+            if self.column != self.death_frames - 1:
+                self.anim_ticks += 1
+                if self.anim_ticks == Sprite.animation_ticks:
+                    self.anim_ticks = 0
+                    self.column += 1
+            else:
+                self.outline_alpha += Enemy.looting_pulse_speed
+                if self.outline_alpha >= 255:
+                    self.outline_alpha = -255
         else:
-            if self.can_see_player_sides():
-                self.chasing = True
-                if not self.appeared:
-                    self.appeared = True
-                    if self.sounds.appearance:
-                        play_sound(self.sounds.appearance, self.channel_id, (self.x, self.y), self.dist_squared)
-                self.target_tile = (int(PLAYER.x), int(PLAYER.y))
+            if self.status == 'hit':
+                self.anim_ticks += 1
+                if self.anim_ticks == Sprite.animation_ticks - 2:  # -2 plays hit animation a little faster
+                    self.anim_ticks = 0
+                    self.status = 'default'
 
-            if self.at(self.target_tile):
-                self.chasing = False
-                self.viewangle = fixed_angle(self.angle_from_player + pi)
-                if self.target_tile == (int(PLAYER.x), int(PLAYER.y)):
-                    self.start_shooting()
-                else:
-                    alerted_enemy = self.get_nearby_alerted_enemy()
-                    if alerted_enemy:
-                        self.chasing = True
-                        self.target_tile = (int(alerted_enemy.x), int(alerted_enemy.y))
-                    elif self.stationary_ticks >= self.patience:
-                        self.appeared = False
-                        if self.at(self.home):
-                            self.target_tile = random.choice(self.home_room)
+            elif self.status == 'shooting':
+                if not DEBUG_FREEZE:
+                    self.viewangle = fixed_angle(self.angle_from_player + pi)
+
+                    if self.row in self.shot_rows and self.anim_ticks == 0:
+                        #if self.shooting_range_squared > 2 or self.column == self.shot_columns[0]:
+                        play_sound(self.sounds.attack, self.channel_id, (self.x, self.y), self.dist_squared)
+                        if self.ready_to_shoot():
+                            self.shoot()
+
+                    self.anim_ticks += 1
+                    if self.anim_ticks == Sprite.animation_ticks:
+                        self.anim_ticks = 0
+
+                        self.shooting_frame += 1
+                        if self.shooting_frame > self.shooting_frames:
+                            if (int(self.x), int(self.y)) == (int(PLAYER.x), int(PLAYER.y)):
+                                self.shooting_frame = 1  # Continues shooting
+                                self.row = self.get_shooting_row()
+                            else:
+                                ##self.shooting_frame -= 1  # Keep the same shooting frame
+                                self.status = 'default'
+                                self.strafe()
                         else:
-                            self.target_tile = self.home
+                            self.row = self.get_shooting_row()
+
+                        #elif self.row in self.shot_rows:
+                        #    if self.shooting_range_squared > 2 or self.column == self.shot_columns[0]:
+                        #        play_sound(self.sounds.attack, self.channel_id, (self.x, self.y), self.dist_squared)
+                        #    if self.ready_to_shoot():
+                        #        self.shoot()
+
 
             else:
-                moved = True  # Technically doesn't mean that enemy moved in all cases but it gets the job done
-                if self.x == self.step_x and self.y == self.step_y:  # If finished step
-                    if self.chasing and random.randint(0, 1) and self.ready_to_shoot():
-                        self.start_shooting()
-                    else:
-                        self.find_next_step_x_y()
+                if not DEBUG_FREEZE:
+                    if self.can_see_player_sides():
+                        self.chasing = True
+                        if not self.appeared:
+                            self.appeared = True
+                            if self.sounds.appearance:
+                                play_sound(self.sounds.appearance, self.channel_id, (self.x, self.y), self.dist_squared)
+                        self.target_tile = (int(PLAYER.x), int(PLAYER.y))
 
-                elif not self.can_step(self.step_x, self.step_y):
-                    if self.chasing and random.randint(0, 1) and self.ready_to_shoot():
-                        self.start_shooting()
+                    if self.at(self.target_tile):
+                        self.chasing = False
+                        #self.viewangle = fixed_angle(self.angle_from_player + pi)
+                        if self.target_tile == (int(PLAYER.x), int(PLAYER.y)):
+                            self.start_shooting()
+                        else:
+                            chasing_enemy = self.get_nearby_chasing_enemy()
+                            if chasing_enemy:
+                                self.chasing = True
+                                self.target_tile = (int(chasing_enemy.x), int(chasing_enemy.y))
+                            elif self.at(self.home):
+                                self.target_tile = random.choice(self.home_room)
+                            else:
+                                self.target_tile = self.home
+
                     else:
-                        self.strafe()
+                        if self.x == self.step_x and self.y == self.step_y:  # If finished step
+                            if self.chasing and random.randint(0, 1) and self.ready_to_shoot():
+                                self.start_shooting()
+                                #print('a1')
+                            else:
+                                self.find_next_step_x_y()
+                                #print('a2')
+                                #############self.viewangle = atan2(self.step_y - self.y, self.step_x - self.x)
+
+
+                        elif not self.can_step(self.step_x, self.step_y):
+                            if self.chasing and random.randint(0, 1) and self.ready_to_shoot():
+                                self.start_shooting()
+                                #print('b1')
+                            else:
+                                self.strafe()
+                                #print('b2')
+                                ###########self.viewangle = atan2(self.step_y - self.y, self.step_x - self.x)
+
+                        else:
+                            #print('c')
+                            #print('sdssd')
+                            #print(self.step_y, self.y)
+                            #print(self.step_x, self.x)
+                            self.viewangle = atan2(self.step_y - self.y, self.step_x - self.x)
+                            self.x += cos(self.viewangle) * self.speed
+                            self.y += sin(self.viewangle) * self.speed
+
+                            if abs(self.x - self.step_x) < self.speed and abs(self.y - self.step_y) < self.speed:
+                                self.x = self.step_x
+                                self.y = self.step_y
+
+                if self.status != 'shooting':
+                    if self.row not in self.running_rows:
+                        self.row = self.running_rows[0]
+
+                    if not DEBUG_FREEZE:
+                        # Cycle through running animations
+                        self.anim_ticks += 1
+                        if self.anim_ticks == Sprite.animation_ticks:
+                            self.anim_ticks = 0
+                            self.row += 1
+                            if self.row not in self.running_rows:
+                                self.row = self.running_rows[0]
+
+            if self.chasing:
+                self.appearance_ticks = 0
+            elif self.appearance_ticks < self.memory:
+                self.appearance_ticks += 1
+            else:
+                self.appeared = False
+            self.column = self.get_column(self.angle_from_player)
+        #print(self.status)
+        #print(self.row, self.column)
+        self.update_for_drawing(WALLS, self.angle_from_player)
+
+    def create_portal_clones(self):
+        clones_info = self.get_portal_clones_info()
+        for clone_pos, portal_colour in clones_info:
+            if not self.hp and self.column == self.death_frames - 1:
+                if not self.looted:
+                    self.outline_image.set_alpha(abs(self.outline_alpha))
+                    clone_sprite = self.dead_image.copy()
+                    clone_sprite.blit(self.outline_image, (0, 0))
                 else:
-                    self.viewangle = atan2(self.step_y - self.y, self.step_x - self.x)
-                    self.x += cos(self.viewangle) * self.speed
-                    self.y += sin(self.viewangle) * self.speed
+                    clone_sprite = self.dead_image
+            else:
+                # Get the row
+                clone_row = self.row
+                # Get the column
+                if self.hp:
+                    delta_x = clone_pos[0] - PLAYER.x
+                    delta_y = clone_pos[1] - PLAYER.y
+                    clone_angle_from_player = atan2(delta_y, delta_x)
 
-                    if abs(self.x - self.step_x) < self.speed and abs(self.y - self.step_y) < self.speed:
-                        self.x = self.step_x
-                        self.y = self.step_y
+                    if portal_colour:
+                        clone_angle_from_player += get_rayangle_diff(BLUE_PORTAL, RED_PORTAL)
+                    else:
+                        clone_angle_from_player += get_rayangle_diff(RED_PORTAL, BLUE_PORTAL)
 
-            if not self.status == 'shooting':
-                self.calc_row_and_column(moved)
+                    clone_column = self.get_column(clone_angle_from_player)
+                else:
+                    clone_column = self.column
+                # Sprite
+                clone_sprite = self.spritesheet.subsurface(
+                    (clone_column * TEXTURE_SIZE, clone_row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
+                )
 
-        if moved:
-            self.stationary_ticks = 0
-        else:
-            self.stationary_ticks += 1
-            if self.stationary_ticks > self.patience:
-                self.stationary_ticks = self.patience
-
-        self.update_for_drawing(self.angle_from_player)
+            clone = PortalObject(clone_sprite, clone_pos, portal_colour, parent=self)
+            PORTAL_OBJECTS.append(clone)
 
     def draw(self):
         if not self.hp and self.column == self.death_frames - 1:
@@ -1126,7 +1381,7 @@ class Enemy(Sprite):
                 (self.end_x - self.start_x) / self.width * TEXTURE_SIZE,
                 self.cropping_height
             )
-            cropped_image = self.sheet.subsurface(cropping_rect)
+            cropped_image = self.spritesheet.subsurface(cropping_rect)
         try:
             DISPLAY.blit(
                 pygame.transform.scale(cropped_image, (self.end_x - self.start_x, self.height)),
@@ -1146,7 +1401,7 @@ class Boss(Enemy):
         self.step_y = self.y
         self.home = (int(self.x), int(self.y))
 
-        self.sheet = spritesheet
+        self.spritesheet = spritesheet
         self.row = 0
         self.column = 0
 
@@ -1155,27 +1410,27 @@ class Boss(Enemy):
         self.seen_player = False
 
         # Take attributes from ENEMY_INFO based on spritesheet
-        self.name = ENEMY_INFO[self.sheet].name
-        self.channel_id = ENEMY_INFO[self.sheet].channel_id
+        self.name = ENEMY_INFO[self.spritesheet].name
+        self.channel_id = ENEMY_INFO[self.spritesheet].channel_id
         self.channel = pygame.mixer.Channel(self.channel_id)
-        self.sounds = ENEMY_INFO[self.sheet].sounds
-        self.max_hp = self.hp = ENEMY_INFO[self.sheet].hp
-        self.speed = ENEMY_INFO[self.sheet].speed
-        self.shooting_range_squared = ENEMY_INFO[self.sheet].shooting_range_squared
-        self.damage_multiplier = ENEMY_INFO[self.sheet].damage_multiplier
-        self.accuracy = ENEMY_INFO[self.sheet].accuracy
-        self.pain_chance = ENEMY_INFO[self.sheet].pain_chance
-        self.running_frames = ENEMY_INFO[self.sheet].running_frames
-        self.death_frames = ENEMY_INFO[self.sheet].death_frames
-        self.hit_row = ENEMY_INFO[self.sheet].hit_row
-        self.shooting_frames = ENEMY_INFO[self.sheet].shooting_frames
-        self.shot_columns = ENEMY_INFO[self.sheet].shot_columns
-        self.shooting_row = ENEMY_INFO[self.sheet].shooting_row
+        self.sounds = ENEMY_INFO[self.spritesheet].sounds
+        self.max_hp = self.hp = ENEMY_INFO[self.spritesheet].hp
+        self.speed = ENEMY_INFO[self.spritesheet].speed
+        self.shooting_range_squared = ENEMY_INFO[self.spritesheet].shooting_range_squared
+        self.damage_multiplier = ENEMY_INFO[self.spritesheet].damage_multiplier
+        self.accuracy = ENEMY_INFO[self.spritesheet].accuracy
+        self.pain_chance = ENEMY_INFO[self.spritesheet].pain_chance
+        self.running_frames = ENEMY_INFO[self.spritesheet].running_frames
+        self.death_frames = ENEMY_INFO[self.spritesheet].death_frames
+        self.hit_row = ENEMY_INFO[self.spritesheet].hit_row
+        self.shooting_frames = ENEMY_INFO[self.spritesheet].shooting_frames
+        self.shot_columns = ENEMY_INFO[self.spritesheet].shot_columns
+        self.shooting_row = ENEMY_INFO[self.spritesheet].shooting_row
 
         self.appearance_ticks = 30  # Time duration in ticks that boss will not shoot when appearing
         self.anim_ticks = 0
 
-        self.dead_image = self.sheet.subsurface(
+        self.dead_image = self.spritesheet.subsurface(
             ((self.death_frames - 1) * TEXTURE_SIZE, self.hit_row * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
         )
         self.looted = False
@@ -1267,7 +1522,7 @@ class Boss(Enemy):
                     if self.column == self.running_frames:
                         self.column = 0
 
-        self.update_for_drawing(self.angle_from_player)
+        self.update_for_drawing(WALLS, self.angle_from_player)
 
 
 class BossHealthBar:
@@ -1287,7 +1542,7 @@ class BossHealthBar:
     def start_showing(self, boss):
         self.visible = True
         self.boss = boss
-        self.boss_image = self.boss.sheet.subsurface(0, 0, TEXTURE_SIZE, TEXTURE_SIZE)
+        self.boss_image = self.boss.spritesheet.subsurface(0, 0, TEXTURE_SIZE, TEXTURE_SIZE)
 
     def draw(self):
         if self.visible:
@@ -1321,7 +1576,7 @@ class BossHealthBar:
 
 
 class Level:
-    def load(self, level_nr):
+    def start(self, level_nr):
         self.nr = level_nr
 
         # Load level file
@@ -1330,13 +1585,13 @@ class Level:
             global TILEMAP
             TILEMAP = []
             lines = list(f)
-            for line in lines[:-2]:
+            for line in lines[:-1]:
                 row = line[1:-2]  # Get rid of '[' and ']'
                 row = row.split(',')  # Split line into list
                 row = [int(i) for i in row]  # Turn all number strings to an int
                 TILEMAP.append(row)
             # Sky texture
-            skytexture_value = int(lines[-2])
+            skytexture_value = int(lines[-1])
             skytexture_name = os.listdir('../textures/skies')[skytexture_value]
             try:
                 raw_skytexture = pygame.image.load('../textures/skies/{}'.format(skytexture_name)).convert()
@@ -1346,15 +1601,6 @@ class Level:
                 self.skytexture = pygame.Surface((D_W * 2, H_H))
                 self.skytexture.blit(pygame.transform.scale(raw_skytexture, (D_W, H_H)), (0, 0))
                 self.skytexture.blit(pygame.transform.scale(raw_skytexture, (D_W, H_H)), (D_W, 0))
-            # Floor texture
-            floor_texture_value = int(lines[-1])
-            cropping_rect = (0, floor_texture_value * TEXTURE_SIZE, TEXTURE_SIZE, TEXTURE_SIZE)
-            try:
-                raw_floor_texture = pygame.image.load('../textures/walls/floor.png').convert().subsurface(cropping_rect)
-            except pygame.error as loading_error:
-                sys.exit(loading_error)
-            else:
-                self.floor_texture, self.big_floor_texture = graphics.get_floor_textures(raw_floor_texture)
 
         # Load player file
         with open('../levels/{}/player.txt'.format(level_nr), 'r') as f:
@@ -1362,7 +1608,9 @@ class Level:
             player_pos = [float(i) for i in player_pos]
             player_angle = float(f.readline().replace('\n', ''))
             global PLAYER
-            PLAYER.setup(player_pos, player_angle)
+            PLAYER = Player(player_pos, player_angle)
+            global PLAYER_MODEL
+            PLAYER_MODEL = PlayerModel(graphics.get_playermodel_spritesheet())
 
         # Load gameobjects
         global OBJECTS
@@ -1432,21 +1680,21 @@ class Level:
                 else:
                     EMPTY_TILES.add((column, row))
 
-        global FLOOR_TILES  # Tiles that need floor rendering, contains everything but normal wall tiles
-        FLOOR_TILES = EMPTY_TILES | DOOR_TILES | PUSH_WALL_TILES | THIN_WALL_TILES
-
         # Get enemy home rooms after enemies have been cleared from the tilemap
         for e in ENEMIES:
             if e.type == 'Normal':
                 e.get_home_room()
 
-    def start(self, level_nr):
-        self.load(level_nr)
-
+        blue_portal, \
+        blue_portal_closed, \
+        red_portal, \
+        red_portal_closed = graphics.get_portal_textures()
         global BLUE_PORTAL
-        BLUE_PORTAL = Portal(True)
+        BLUE_PORTAL = Portal(blue_portal, blue_portal_closed)
         global RED_PORTAL
-        RED_PORTAL = Portal(False)
+        RED_PORTAL = Portal(red_portal, red_portal_closed)
+        BLUE_PORTAL.set_other_portal(RED_PORTAL)
+        RED_PORTAL.set_other_portal(BLUE_PORTAL)
         global TIME
         TIME = 0
         global MESSAGES
@@ -1460,43 +1708,40 @@ class Level:
 
         game_loop()
 
-    def restart(self, enemy=None):
-        def get_turn_radians():
-            turn_speed = 0.05
-            difference = fixed_angle(enemy.angle_from_player - PLAYER.viewangle)
-            if difference > 0:
-                return turn_speed
-            else:
-                return -turn_speed
+    def restart(self, death_source=None):
+        # Instances where player died
+
+        def prepare_frame():
+            send_rays()
+            for sprite in ENEMIES + OBJECTS + EXPLOSIVES:
+                sprite.update_for_drawing(WALLS)
+            create_portal_objects()
 
         global QUIT
         text_alpha = 0
         overlay_alpha = 0
 
         # If enemy, turn towards it
-        while enemy:
-            enemy.angle_from_player = atan2(enemy.delta_y, enemy.delta_x)
-            turn_radians = get_turn_radians()
-            PLAYER.rotate(turn_radians)
-            PLAYER.dir_x = cos(PLAYER.viewangle)
-            PLAYER.dir_y = sin(PLAYER.viewangle)
+        if death_source:
+            turn_speed = 0.05
+            difference = fixed_angle(death_source.angle_from_player - PLAYER.viewangle)
+            if difference > 0:
+                turn_radians = turn_speed
+            else:
+                turn_radians = -turn_speed
+            while True:
+                PLAYER.rotate(turn_radians)
+                PLAYER.dir_x = cos(PLAYER.viewangle)
+                PLAYER.dir_y = sin(PLAYER.viewangle)
 
-            for sprite in ENEMIES + OBJECTS + EXPLOSIVES:
-                sprite.update_for_drawing()
+                prepare_frame()
+                draw_frame()
 
-            if overlay_alpha != 128:
-                overlay_alpha += 8
+                pygame.display.flip()
+                CLOCK.tick(30)
 
-            send_rays()
-            handle_objects_under_player()
-            draw_frame(False)
-            draw_black_overlay(overlay_alpha)
-
-            pygame.display.flip()
-            CLOCK.tick(30)
-
-            if abs(PLAYER.viewangle - enemy.angle_from_player) <= abs(turn_radians):
-                break
+                if abs(PLAYER.viewangle - death_source.angle_from_player) <= abs(turn_radians):
+                    break
 
         # Wait for a button press
         continued = False
@@ -1509,31 +1754,32 @@ class Level:
                     elif event.key == K_SPACE:
                         continued = True
 
+            # Change overlay and text alpha
             if overlay_alpha != 128:
                 overlay_alpha += 8
             text_alpha -= 15
             if text_alpha <= -255:
                 text_alpha = 255
 
-            for sprite in ENEMIES + OBJECTS:
-                sprite.update_for_drawing()
-            send_rays()
-            handle_objects_under_player()
-            draw_frame(False)
-            draw_black_overlay(overlay_alpha)
+            prepare_frame()
+            draw_frame()
 
+            # YOU DIED overlay
+            draw_black_overlay(overlay_alpha)
             you_died = render_text('YOU DIED', Colour.white, abs(text_alpha))
             display_text(1, 1, you_died)
+
             pygame.display.flip()
             CLOCK.tick(30)
 
-        # Start new level
-        pygame.mouse.get_rel()
-        pygame.event.clear()
-        self.start(self.nr)
+        # Start new level if needed, game_loop() will stop the program
+        if not QUIT:
+            pygame.mouse.get_rel()
+            pygame.event.clear()
+            self.start(self.nr)
 
     def finish(self):
-        PLAYER.save_weapon_loadout()
+        # Instances where player was successful
 
         seconds = int(TIME / 30)  # Rounds time spent down, 45.8 seconds will display 45
         minutes = 0
@@ -1567,7 +1813,7 @@ class Level:
 
             send_rays()
             handle_objects_under_player()
-            draw_frame(False)
+            draw_frame()
             draw_black_overlay(overlay_alpha)
 
             level_finished = render_text('LEVEL FINISHED', Colour.white)
@@ -1678,41 +1924,68 @@ def display_text(horizontal_pos, vertical_pos, *rendered_texts):
         y += text_h
 
 
+def get_rayangle_diff(portal, other_portal):
+    if portal.vertical:
+        if other_portal.vertical:
+            if portal.side == other_portal.side:
+                rayangle_diff = pi
+            else:
+                rayangle_diff = 0
+        else:
+            if portal.side == 0:
+                rayangle_diff = -(0.5 - other_portal.side) * pi
+            else:
+                rayangle_diff = (0.5 - other_portal.side) * pi
+    else:
+        if not other_portal.vertical:
+            if portal.side == other_portal.side:
+                rayangle_diff = pi
+            else:
+                rayangle_diff = 0
+        else:
+            if portal.side == 0:
+                rayangle_diff = (0.5 - other_portal.side) * pi
+            else:
+                rayangle_diff = -(0.5 - other_portal.side) * pi
+    return rayangle_diff
+
+
 def send_rays():
-    # MAX_DRAW_DIST_SQUARED is used in drawing enemies and objects
-    global MAX_DRAW_DIST_SQUARED
-    MAX_DRAW_DIST_SQUARED = 0
+    ## MAX_DRAW_DIST_SQUARED is used in drawing enemies and objects
+    #global MAX_DRAW_DIST_SQUARED
+    #MAX_DRAW_DIST_SQUARED = 0
 
     # Deletes previous walls
     global WALLS
     WALLS = []
+    global BLUE_PORTAL_WALLS
+    BLUE_PORTAL_WALLS = []
+    global RED_PORTAL_WALLS
+    RED_PORTAL_WALLS = []
     global SEETHROUGH_WALLS
     SEETHROUGH_WALLS = []
-    global DISPLAY_X
+    global PORTAL_SEETHROUGH_WALLS
+    PORTAL_SEETHROUGH_WALLS = []
 
     # Send rays
+    global DISPLAY_X
     for DISPLAY_X, rayangle_offset in enumerate(CAMERA_PLANE.rayangle_offsets):
         ray_start = (PLAYER.x, PLAYER.y)
         if not DISPLAY_X % WALL_RES:
             # Get values from raycast()
-            delta_x, delta_y, texture, column = \
-                raycast(ray_start, PLAYER.viewangle + rayangle_offset, extra_values=True, can_go_through_portal=True)
+            raycast(ray_start, PLAYER.viewangle + rayangle_offset, create_walls=True, can_go_through_portal=True)
 
-            # Calculate perpendicular distance (needed to avoid fisheye effect)
-            perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
-
-            new_dist = delta_x**2 + delta_y**2
-            if new_dist > MAX_DRAW_DIST_SQUARED:
-                MAX_DRAW_DIST_SQUARED = new_dist
-
-            # Create Wall object
-            WALLS.append(WallColumn(texture, column, perp_dist, DISPLAY_X))
+            #new_dist = delta_x**2 + delta_y**2
+            #if new_dist > MAX_DRAW_DIST_SQUARED:
+            #    MAX_DRAW_DIST_SQUARED = new_dist
         else:
             WALLS.append(None)
+            BLUE_PORTAL_WALLS.append(None)
+            RED_PORTAL_WALLS.append(None)
 
 
-def raycast(start_pos, rayangle, extra_values=False,
-            can_go_through_portal=False, previous_rayangle_diff=0.0, previous_delta_x=0.0, previous_delta_y=0.0):
+def raycast(start_pos, rayangle, create_walls=False, can_go_through_portal=False,
+            previous_portal=None, previous_rayangle_diff=0.0, previous_delta_x=0.0, previous_delta_y=0.0):
     def check_collision(collision_x, collision_y, x_step, y_step):
         # x_step is the distance needed to move in x to get to the next similar type interception
         # y_step is the distance needed to move in y to get to the next similar type interception
@@ -1752,16 +2025,26 @@ def raycast(start_pos, rayangle, extra_values=False,
                     surface_offset = collision_x - int(collision_x)
                     column = 0
                 if surface_offset < door.closed_state:
-                    if extra_values:
+                    if create_walls:
                         texture = TILE_VALUES_INFO[TILEMAP[map_y][map_x]].texture
                         column += int(TEXTURE_SIZE * abs(surface_offset - door.closed_state))
                         delta_x, delta_y = get_delta_x_and_y()
-                        return delta_x, delta_y, texture, column
+                        if can_go_through_portal:
+                            WALLS.append(WallColumn(delta_x, delta_y, texture, column))
+                            BLUE_PORTAL_WALLS.append(None)
+                            RED_PORTAL_WALLS.append(None)
+                        elif previous_portal == BLUE_PORTAL:
+                            BLUE_PORTAL_WALLS.append(WallColumn(delta_x, delta_y, texture, column))
+                            RED_PORTAL_WALLS.append(None)
+                        else:
+                            RED_PORTAL_WALLS.append(WallColumn(delta_x, delta_y, texture, column))
+                            BLUE_PORTAL_WALLS.append(None)
+                        return True
                     else:
                         return collision_x, collision_y
 
         elif (map_x, map_y) in THIN_WALL_TILES:
-            if extra_values:
+            if create_walls:
                 for thin_wall in THIN_WALLS:
                     if (thin_wall.x, thin_wall.y) == (map_x, map_y):
 
@@ -1777,7 +2060,7 @@ def raycast(start_pos, rayangle, extra_values=False,
                                     collision_x += x_step * step_dist
                                     collision_y = int(collision_y) + 0.5
                                 else:
-                                    return
+                                    return  # Ray misses the thin wall
                             column = TEXTURE_SIZE
 
                         else:
@@ -1789,7 +2072,7 @@ def raycast(start_pos, rayangle, extra_values=False,
                                     collision_y += y_step * step_dist
                                     collision_x = int(collision_x) + 0.5
                                 else:
-                                    return
+                                    return  # Ray misses the thin wall
                             else:
                                 collision_x += x_step / 2
                                 collision_y += y_step / 2
@@ -1803,9 +2086,10 @@ def raycast(start_pos, rayangle, extra_values=False,
                             texture = TILE_VALUES_INFO[TILEMAP[map_y][map_x]].texture
                             column += int(TEXTURE_SIZE * surface_offset)
                             delta_x, delta_y = get_delta_x_and_y()
-
-                            perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
-                            SEETHROUGH_WALLS.append(WallColumn(texture, column, perp_dist, DISPLAY_X))
+                            if can_go_through_portal:
+                                SEETHROUGH_WALLS.append(WallColumn(delta_x, delta_y, texture, column))
+                            else:
+                                PORTAL_SEETHROUGH_WALLS.append(WallColumn(delta_x, delta_y, texture, column))
                         break
 
         else:
@@ -1819,7 +2103,7 @@ def raycast(start_pos, rayangle, extra_values=False,
                                 return  # Ray misses the pushwall
                         break
 
-            if extra_values:
+            if create_walls:
                 if abs(x_step) == 1:
                     surface_offset = abs((1 - a) - (collision_y - int(collision_y)))
                     column = int(TEXTURE_SIZE * surface_offset)
@@ -1829,71 +2113,88 @@ def raycast(start_pos, rayangle, extra_values=False,
                     column = int(TEXTURE_SIZE * surface_offset)
                 delta_x, delta_y = get_delta_x_and_y()
 
-                portal = False
-                if BLUE_PORTAL.created and (map_x, map_y) == (BLUE_PORTAL.map_x, BLUE_PORTAL.map_y):
-                    portal = BLUE_PORTAL
-                    other_portal = RED_PORTAL
-                elif RED_PORTAL.created and (map_x, map_y) == (RED_PORTAL.map_x, RED_PORTAL.map_y):
-                    portal = RED_PORTAL
-                    other_portal = BLUE_PORTAL
+                # Search if ray hits portal
+                portal = None
+                while not portal:
+                    if (map_x, map_y) == (BLUE_PORTAL.map_x, BLUE_PORTAL.map_y):
+                        if abs(x_step) == 1:
+                            if BLUE_PORTAL.vertical and BLUE_PORTAL.side == (1 - a):
+                                other_portal = RED_PORTAL
+                                portal = BLUE_PORTAL
+                        else:
+                            if not BLUE_PORTAL.vertical and BLUE_PORTAL.side == (1 - b):
+                                other_portal = RED_PORTAL
+                                portal = BLUE_PORTAL
+                    if (map_x, map_y) == (RED_PORTAL.map_x, RED_PORTAL.map_y):
+                        if abs(x_step) == 1:
+                            if RED_PORTAL.vertical and RED_PORTAL.side == (1 - a):
+                                other_portal = BLUE_PORTAL
+                                portal = RED_PORTAL
+                        else:
+                            if not RED_PORTAL.vertical and RED_PORTAL.side == (1 - b):
+                                other_portal = BLUE_PORTAL
+                                portal = RED_PORTAL
+                    break
+
                 if portal:
                     # Ray hits block portal is attached to
                     if (abs(x_step) == 1 and portal.vertical and portal.side == (1 - a)) or \
                             (abs(x_step) != 1 and not portal.vertical and portal.side == (1 - b)):
                         # Ray hits portal
+                        if can_go_through_portal:
+                            if other_portal.created:
+                                # Draw non-closed wall
+                                WALLS.append(WallColumn(delta_x, delta_y, portal.texture, column))
 
-                        # Draw a seethrough wall - portal edges
-                        texture = portal.texture
-                        perp_dist = delta_x * PLAYER.dir_x + delta_y * PLAYER.dir_y
-                        SEETHROUGH_WALLS.append(WallColumn(texture, column, perp_dist, DISPLAY_X))
+                                rayangle_diff = get_rayangle_diff(portal, other_portal)
 
-                        if can_go_through_portal and other_portal.created:
-                            if portal.vertical:
                                 if other_portal.vertical:
-                                    if portal.side == other_portal.side:
-                                        rayangle_diff = pi
+                                    start_x = other_portal.map_x + other_portal.side
+                                    if other_portal.side == 1:
+                                        start_y = other_portal.map_y + surface_offset
                                     else:
-                                        rayangle_diff = 0
+                                        start_y = other_portal.map_y + (1 - surface_offset)
                                 else:
-                                    if portal.side == 0:
-                                        rayangle_diff = -(0.5 - other_portal.side) * pi
+                                    start_y = other_portal.map_y + other_portal.side
+                                    if other_portal.side == 1:
+                                        start_x = other_portal.map_x + (1 - surface_offset)
                                     else:
-                                        rayangle_diff = (0.5 - other_portal.side) * pi
+                                        start_x = other_portal.map_x + surface_offset
+
+                                raycast((start_x, start_y), rayangle + rayangle_diff,
+                                        create_walls=True, can_go_through_portal=False,
+                                        previous_portal=portal, previous_rayangle_diff=rayangle_diff,
+                                        previous_delta_x=delta_x, previous_delta_y=delta_y)
                             else:
-                                if not other_portal.vertical:
-                                    if portal.side == other_portal.side:
-                                        rayangle_diff = pi
-                                    else:
-                                        rayangle_diff = 0
-                                else:
-                                    if portal.side == 0:
-                                        rayangle_diff = (0.5 - other_portal.side) * pi
-                                    else:
-                                        rayangle_diff = -(0.5 - other_portal.side) * pi
+                                # Draw closed wall
+                                WALLS.append(WallColumn(delta_x, delta_y, portal.closed_texture, column))
+                                BLUE_PORTAL_WALLS.append(None)
+                                RED_PORTAL_WALLS.append(None)
+                        elif previous_portal == BLUE_PORTAL:
+                            # Draw closed portalwall
+                            BLUE_PORTAL_WALLS.append(WallColumn(delta_x, delta_y, portal.closed_texture, column))
+                            RED_PORTAL_WALLS.append(None)
+                        else:
+                            RED_PORTAL_WALLS.append(WallColumn(delta_x, delta_y, portal.closed_texture, column))
+                            BLUE_PORTAL_WALLS.append(None)
+                        return True
 
-                            if other_portal.vertical:
-                                start_x = other_portal.map_x + other_portal.side
-                                if other_portal.side == 1:
-                                    start_y = other_portal.map_y + surface_offset
-                                else:
-                                    start_y = other_portal.map_y + (1 - surface_offset)
-                            else:
-                                start_y = other_portal.map_y + other_portal.side
-                                if other_portal.side == 1:
-                                    start_x = other_portal.map_x + (1 - surface_offset)
-                                else:
-                                    start_x = other_portal.map_x + surface_offset
-
-                            return raycast((start_x, start_y), rayangle + rayangle_diff, extra_values=True,
-                                           can_go_through_portal=False, previous_rayangle_diff=rayangle_diff,
-                                           previous_delta_x=delta_x, previous_delta_y=delta_y)
-
+                # Just a normal wall
                 if (x - a, y - b) in DOOR_TILES:
                     texture = Door.side_texture
                 else:
                     texture = TILE_VALUES_INFO[TILEMAP[map_y][map_x]].texture
-
-                return delta_x, delta_y, texture, column
+                if can_go_through_portal:
+                    WALLS.append(WallColumn(delta_x, delta_y, texture, column))
+                    BLUE_PORTAL_WALLS.append(None)
+                    RED_PORTAL_WALLS.append(None)
+                elif previous_portal == BLUE_PORTAL:
+                    BLUE_PORTAL_WALLS.append(WallColumn(delta_x, delta_y, texture, column))
+                    RED_PORTAL_WALLS.append(None)
+                else:
+                    RED_PORTAL_WALLS.append(WallColumn(delta_x, delta_y, texture, column))
+                    BLUE_PORTAL_WALLS.append(None)
+                return True
             else:
                 return collision_x, collision_y
 
@@ -1971,9 +2272,10 @@ def raycast(start_pos, rayangle, extra_values=False,
 
 
 def events():
+    global QUIT
     global PAUSED
     global SHOW_FPS
-    global QUIT
+    global DEBUG_FREEZE
 
     if PAUSED:
         for event in pygame.event.get():
@@ -1995,8 +2297,16 @@ def events():
                     update_sound_channels()
                 elif event.key == K_F1:
                     SHOW_FPS = not SHOW_FPS
+                elif event.key == K_q:
+                    BLUE_PORTAL.create_portal()
+                elif event.key == K_r:
+                    RED_PORTAL.create_portal()
+                elif event.key == K_f:
+                    #keys_pressed = pygame.key.get_pressed()
+                    #if keys_pressed[K_LCTRL]:
+                    DEBUG_FREEZE = not DEBUG_FREEZE
 
-                if event.key == K_e:
+                elif event.key == K_e:
                     action_x = int(PLAYER.x + PLAYER.dir_x)
                     action_y = int(PLAYER.y + PLAYER.dir_y)
                     tile = TILE_VALUES_INFO[TILEMAP[action_y][action_x]]
@@ -2022,7 +2332,6 @@ def events():
                         play_sound(SWITCH_SOUND, 0, (action_x + 0.5, action_y + 0.5))
                         TILEMAP[action_y][action_x] += 1  # Change trigger block texture
                         LEVEL.finish()
-
                 else:
                     key = pygame.key.name(event.key)
                     numbers = (str(x) for x in range(1, 10))
@@ -2031,16 +2340,12 @@ def events():
                         if number in PLAYER.weapon_loadout and number != PLAYER.weapon_nr:
                             WEAPON_MODEL.switching = number
 
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:
-                    BLUE_PORTAL.create_portal()
-                    #if not WEAPON_MODEL.switching:
-                    #    if PLAYER.ammo >= WEAPON_MODEL.weapon.ammo_consumption:
-                    #        WEAPON_MODEL.shooting = True
-                    #    elif not pygame.mixer.Channel(WeaponModel.channel_id).get_busy():
-                    #        play_sound(WEAPON_MODEL.weapon.sounds.no_ammo, WeaponModel.channel_id)
-                elif event.button == 3:
-                    RED_PORTAL.create_portal()
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if not WEAPON_MODEL.switching:
+                    if PLAYER.ammo >= WEAPON_MODEL.weapon.ammo_consumption:
+                       WEAPON_MODEL.shooting = True
+                    elif not pygame.mixer.Channel(WeaponModel.channel_id).get_busy():
+                       play_sound(WEAPON_MODEL.weapon.sounds.no_ammo, WeaponModel.channel_id)
 
 
 def update_gameobjects():
@@ -2056,7 +2361,15 @@ def update_gameobjects():
         e.update()
     for m in MESSAGES:
         m.update()
+    PLAYER_MODEL.update()
     WEAPON_MODEL.update()
+
+
+def create_portal_objects():
+    global PORTAL_OBJECTS
+    PORTAL_OBJECTS = []
+    for o in OBJECTS + EXPLOSIVES + ENEMIES + [PLAYER_MODEL]:
+        o.create_portal_clones()
 
 
 def handle_objects_under_player():
@@ -2165,69 +2478,44 @@ def draw_background():
     texture_offset = angle / (pi / 2)  # ranges from 0 to 1
     DISPLAY.blit(LEVEL.skytexture, (0, 0), (D_W * texture_offset, 0, D_W, H_H))
 
-    if FLOOR_RES:
-        # Textured floor is drawn poorly to keep the framerate as high as possible (still drops by a lot)
-        pygame.draw.rect(DISPLAY, Colour.dark_grey, (0, H_H, D_W, H_H))
-        start_angle = PLAYER.viewangle - FOV / 2
-        sin_start_angle = sin(start_angle)
-        cos_start_angle = cos(start_angle)
-        step_angle = PLAYER.viewangle + pi / 2
-        sin_step_angle = sin(step_angle)
-        cos_step_angle = cos(step_angle)
-
-        for (y, dist, step_dist) in CAMERA_PLANE.floor_lookup_table[8:40:2]:
-            floor_x = PLAYER.x + dist * cos_start_angle
-            floor_y = PLAYER.y + dist * sin_start_angle
-            step_x = step_dist * cos_step_angle
-            step_y = step_dist * sin_step_angle
-            for x in range(0, D_W, FLOOR_RES):
-                if (int(floor_x), int(floor_y)) in FLOOR_TILES:
-                    texture_x = int((floor_x - int(floor_x)) * TEXTURE_SIZE)
-                    texture_y = int((floor_y - int(floor_y)) * TEXTURE_SIZE)
-                    DISPLAY.blit(LEVEL.floor_texture, (x, y), (texture_x, texture_y, FLOOR_RES, 2))
-                floor_x += step_x
-                floor_y += step_y
-
-        for (y, dist, step_dist) in CAMERA_PLANE.floor_lookup_table[40::2]:
-            floor_x = PLAYER.x + dist * cos_start_angle
-            floor_y = PLAYER.y + dist * sin_start_angle
-            step_x = step_dist * cos_step_angle * 2
-            step_y = step_dist * sin_step_angle * 2
-            for x in range(0, D_W, FLOOR_RES * 2):
-                if (int(floor_x), int(floor_y)) in FLOOR_TILES:
-                    texture_x = int((floor_x - int(floor_x)) * TEXTURE_SIZE * 2)
-                    texture_y = int((floor_y - int(floor_y)) * TEXTURE_SIZE * 2)
-                    DISPLAY.blit(LEVEL.big_floor_texture, (x, y), (texture_x, texture_y, FLOOR_RES * 2, 2))
-                floor_x += step_x
-                floor_y += step_y
-    else:
-        pygame.draw.rect(DISPLAY, Colour.grey, (0, H_H, D_W, H_H))
+    # Floor
+    pygame.draw.rect(DISPLAY, Colour.grey, (0, H_H, D_W, H_H))
 
 
-def draw_frame(hud=True):
+def draw_frame():
     # Draw background
     draw_background()
 
-    # Draw walls
+    # Draw portal walls
+    for w in BLUE_PORTAL_WALLS + RED_PORTAL_WALLS:
+        if w:
+            w.draw()
+
+    # Draw everything inside portals
+    to_draw = PORTAL_SEETHROUGH_WALLS
+    for o in PORTAL_OBJECTS:
+        if o.visible_to_player:
+            to_draw.append(o)
+    to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
+    for s in to_draw:
+        s.draw()
+
+    # Draw regular walls
     for w in WALLS:
         if w:
             w.draw()
 
-    # Get things to draw
+    # Draw everything in front of walls
     to_draw = SEETHROUGH_WALLS
-    for sprite in ENEMIES + OBJECTS + EXPLOSIVES:
-        if sprite.visible_to_player:
-            to_draw.append(sprite)
-
-    # Sort things by perp_dist
+    for s in OBJECTS + EXPLOSIVES + ENEMIES:  # Dont draw player model here
+        if s.visible_to_player:
+            to_draw.append(s)
     to_draw.sort(key=lambda x: x.perp_dist, reverse=True)
+    for s in to_draw:
+        s.draw()
 
-    # Draw things
-    for sprite in to_draw:
-        sprite.draw()
-
-    if hud:
-        draw_hud()
+    #if PLAYER.hp:
+    draw_hud()
 
 
 def update_sound_channels():
@@ -2286,16 +2574,17 @@ def draw_black_overlay(alpha):
 def game_loop():
     global TIME
     while not QUIT:
-        if not PAUSED:
+        if not PAUSED and PLAYER.hp:
             TIME += 1
             PLAYER.rotate(pygame.mouse.get_rel()[0] * SENSITIVITY)
             PLAYER.handle_movement()
 
-        events()
         send_rays()
         if not PAUSED:
             update_gameobjects()
-        handle_objects_under_player()
+            handle_objects_under_player()
+        create_portal_objects()
+        events()
         draw_frame()
         if PAUSED:
             draw_pause_overlay()
@@ -2354,15 +2643,13 @@ if __name__ == '__main__':
     SWITCH_SOUND = sounds.get()
 
     # Textures
-    Door.side_texture,\
-    Portal.blue_texture,\
-    Portal.red_texture = graphics.get_door_side_and_portal_textures()
+    Door.side_texture = graphics.get_door_side_texture()
 
     QUIT = False
     PAUSED = False
     SHOW_FPS = False
+    DEBUG_FREEZE = False
 
-    PLAYER = Player()
     LEVEL = Level()
-    LEVEL.start(1)
+    LEVEL.start(9)
     pygame.quit()
